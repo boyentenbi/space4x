@@ -1209,6 +1209,125 @@ button.res-cell:hover:not(:disabled) {
   background: rgba(126, 200, 255, 0.08);
 }
 
+/* =======================================================
+   Fleet pill (clickable) + fleet modal.
+   ======================================================= */
+.fleet-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.fleet-pill-btn:hover {
+  background: var(--bg-panel-hi);
+}
+
+.fleet-modal .fleet-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.fleet-modal .fleet-portrait {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  image-rendering: pixelated;
+  border-radius: 8px;
+  border: 2px solid var(--accent);
+  flex: 0 0 auto;
+}
+
+.fleet-modal h2 {
+  font-size: 18px;
+  margin: 2px 0 4px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.fleet-sub {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.fleet-empire {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.fleet-blocked {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--warn);
+  background: rgba(255, 182, 115, 0.08);
+  border: 1px solid rgba(255, 182, 115, 0.3);
+  border-radius: 4px;
+}
+
+.fleet-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fleet-section-label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.fleet-move-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fleet-move-btn {
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.fleet-move-btn:hover:not(:disabled) {
+  border-color: var(--accent-dim);
+  background: var(--bg-panel-hi);
+}
+
+.fleet-split-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.fleet-split-row input {
+  width: 64px;
+  padding: 4px 6px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
 .chooser .desc {
   font-size: 12px;
   color: var(--text-dim);

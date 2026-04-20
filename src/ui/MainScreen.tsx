@@ -34,6 +34,7 @@ import { SystemScene } from "./SystemScene";
 import { PortraitMenu } from "./PortraitMenu";
 import { EmpireProfileModal } from "./EmpireProfileModal";
 import { EmpireRosterModal } from "./EmpireRosterModal";
+import { FleetModal } from "./FleetModal";
 import { PoliciesModal } from "./PoliciesModal";
 import { ProjectCompletionModal } from "./ProjectCompletionModal";
 import { StatBreakdownModal } from "./StatBreakdownModal";
@@ -374,6 +375,7 @@ export function MainScreen() {
   const [rosterOpen, setRosterOpen] = useState(false);
   const [policiesOpen, setPoliciesOpen] = useState(false);
   const [profileEmpireId, setProfileEmpireId] = useState<string | null>(null);
+  const [fleetModalId, setFleetModalId] = useState<string | null>(null);
   const [breakdown, setBreakdown] = useState<StatBreakdown | null>(null);
 
   const origin = originById(state.empire.originId);
@@ -563,11 +565,12 @@ export function MainScreen() {
                   {fleets.map((f) => {
                     const empire = empireById(state, f.empireId);
                     return (
-                      <span
+                      <button
                         key={f.id}
-                        className="fleet-pill"
+                        className="fleet-pill fleet-pill-btn"
                         style={{ borderColor: empire?.color ?? "var(--border)" }}
-                        title={empire?.name ?? ""}
+                        title={empire ? `${empire.name} · tap for fleet details` : ""}
+                        onClick={() => setFleetModalId(f.id)}
                       >
                         <svg width="10" height="10" viewBox="0 0 10 10">
                           <polygon
@@ -576,7 +579,7 @@ export function MainScreen() {
                           />
                         </svg>
                         {f.shipCount}
-                      </span>
+                      </button>
                     );
                   })}
                 </div>
@@ -696,6 +699,9 @@ export function MainScreen() {
         />
       )}
       {policiesOpen && <PoliciesModal onClose={() => setPoliciesOpen(false)} />}
+      {fleetModalId && (
+        <FleetModal fleetId={fleetModalId} onClose={() => setFleetModalId(null)} />
+      )}
       {menuOpen && (
         <PortraitMenu onReset={reset} onClose={() => setMenuOpen(false)} />
       )}

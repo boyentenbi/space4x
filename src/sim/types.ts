@@ -30,6 +30,8 @@ export interface Fleet {
   empireId: string;
   systemId: string;
   shipCount: number;
+  // Turn this fleet last moved. A fleet can only move once per turn.
+  movedTurn?: number;
 }
 
 export interface Body {

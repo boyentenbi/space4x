@@ -873,6 +873,59 @@ export function availablePoliciesFor(state: GameState, empire: Empire): Array<{ 
     });
 }
 
+// Resolve contested systems: if fleets from two or more empires occupy
+// the same system, each side takes proportional losses. Simple
+// attrition: damage_in = sum(enemy_ships) * 0.3 per turn, distributed
+// across this side's fleets in that system proportional to their size.
+// Combat plays out over multiple turns; whoever hits zero first is
+// removed from the system.
+function resolveCombat(draft: GameState): void {
+  const bySystem: Record<string, Fleet[]> = {};
+  for (const f of Object.values(draft.fleets)) {
+    (bySystem[f.systemId] ??= []).push(f);
+  }
+  for (const [sysId, fleets] of Object.entries(bySystem)) {
+    const empires = new Set(fleets.map((f) => f.empireId));
+    if (empires.size < 2) continue;
+
+    // Sum ships per empire in this system.
+    const empireShips: Record<string, number> = {};
+    for (const f of fleets) empireShips[f.empireId] = (empireShips[f.empireId] ?? 0) + f.shipCount;
+
+    // Damage incoming = 0.3 * (sum of ships of every OTHER empire).
+    const totalShips = Object.values(empireShips).reduce((s, n) => s + n, 0);
+    const damageIn: Record<string, number> = {};
+    for (const empId of empires) {
+      damageIn[empId] = (totalShips - empireShips[empId]) * 0.3;
+    }
+
+    // Apply losses proportionally across each empire's fleets.
+    for (const f of fleets) {
+      if (f.shipCount <= 0) continue;
+      const empTotal = empireShips[f.empireId];
+      if (empTotal === 0) continue;
+      const share = f.shipCount / empTotal;
+      const losses = Math.max(1, Math.ceil(damageIn[f.empireId] * share));
+      f.shipCount = Math.max(0, f.shipCount - losses);
+    }
+    // Remove empty fleets.
+    for (const f of fleets) {
+      if (f.shipCount <= 0) delete draft.fleets[f.id];
+    }
+
+    // Chronicle if the player's fleet was involved.
+    if (empires.has(draft.empire.id)) {
+      const sys = draft.galaxy.systems[sysId];
+      draft.eventLog.push({
+        turn: draft.turn,
+        eventId: "combat",
+        choiceId: null,
+        text: `Combat in ${sys?.name ?? "a contested system"}.`,
+      });
+    }
+  }
+}
+
 export function fleetsInSystem(state: GameState, systemId: string): Fleet[] {
   return Object.values(state.fleets).filter((f) => f.systemId === systemId);
 }
@@ -1132,7 +1185,7 @@ function aiPlan(state: GameState, empire: Empire): BuildOrder | null {
       bestId = body.id;
     }
   }
-  if (!bestId) return null;
+  if (!bestId) return aiPlanBuildShip(state, empire);
   return {
     kind: "colonize",
     id: nextOrderId(),
@@ -1140,6 +1193,30 @@ function aiPlan(state: GameState, empire: Empire): BuildOrder | null {
     hammersRequired: effHammers,
     hammersPaid: 0,
     politicalCost: effPolitical,
+  };
+}
+
+// Simple AI fleet goal: keep roughly 2 ships per owned system, plus a
+// minimum floor of 2. When under target and we have hammers headroom,
+// queue a Build Frigate on the capital.
+function aiPlanBuildShip(state: GameState, empire: Empire): BuildOrder | null {
+  if (!empire.capitalBodyId) return null;
+  const currentShips = totalFleetShipsFor(state, empire);
+  const target = Math.max(2, empire.systemIds.length * 2);
+  if (currentShips >= target) return null;
+  const proj = projectById("build_frigate");
+  if (!proj) return null;
+  const alloyCost = proj.costs?.alloys ?? 0;
+  const pcCost = proj.costs?.political ?? 0;
+  if (empire.resources.alloys < alloyCost) return null;
+  if (empire.resources.political < pcCost) return null;
+  return {
+    kind: "empire_project",
+    id: nextOrderId(),
+    projectId: proj.id,
+    hammersRequired: proj.hammersRequired,
+    hammersPaid: 0,
+    targetBodyId: empire.capitalBodyId,
   };
 }
 
@@ -1423,8 +1500,57 @@ export function reduce(state: GameState, action: Action): GameState {
     }
 
     case "moveFleet": {
-      // Implemented in the follow-up fleet-movement pass.
-      return state;
+      const fleet = state.fleets[action.fleetId];
+      if (!fleet) return state;
+      if (fleet.empireId !== state.empire.id) return state;
+      if (fleet.movedTurn === state.turn) return state;
+      if (fleet.systemId === action.toSystemId) return state;
+      if (action.count !== undefined && action.count <= 0) return state;
+      const moveCount = Math.min(fleet.shipCount, action.count ?? fleet.shipCount);
+      if (moveCount <= 0) return state;
+
+      // Destination must be reachable via one hyperlane hop.
+      const adjacent = state.galaxy.hyperlanes.some(
+        ([a, b]) =>
+          (a === fleet.systemId && b === action.toSystemId) ||
+          (b === fleet.systemId && a === action.toSystemId),
+      );
+      if (!adjacent) return state;
+
+      return produce(state, (draft) => {
+        const src = draft.fleets[action.fleetId]!;
+        src.shipCount -= moveCount;
+
+        // Find an existing same-empire fleet at the destination to merge into.
+        let destFleet: Fleet | undefined;
+        for (const f of Object.values(draft.fleets)) {
+          if (f.empireId === src.empireId && f.systemId === action.toSystemId) {
+            destFleet = f;
+            break;
+          }
+        }
+        if (destFleet) {
+          destFleet.shipCount += moveCount;
+          destFleet.movedTurn = state.turn;
+        } else {
+          const id = nextFleetId();
+          draft.fleets[id] = {
+            id,
+            empireId: src.empireId,
+            systemId: action.toSystemId,
+            shipCount: moveCount,
+            movedTurn: state.turn,
+          };
+        }
+        // If the source fleet emptied (move-all), delete it.
+        if (src.shipCount <= 0) {
+          delete draft.fleets[action.fleetId];
+        } else {
+          // Partial split still counts as the source having "moved" —
+          // you can't split again until next turn.
+          src.movedTurn = state.turn;
+        }
+      });
     }
 
     case "endTurn": {
@@ -1449,6 +1575,11 @@ export function reduce(state: GameState, action: Action): GameState {
         for (const ai of draft.aiEmpires) {
           tickEmpire(draft, ai, growthRand);
         }
+
+        // Combat in contested systems runs after all empires have
+        // ticked (projects complete -> ships spawn -> fleets maybe
+        // share a system with an enemy).
+        resolveCombat(draft);
       });
 
       // Random event for the player only (for now).
