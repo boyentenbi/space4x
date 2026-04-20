@@ -41,7 +41,7 @@ export const SPECIES: Species[] = [
     id: "machine",
     name: "Machine Intelligence",
     description:
-      "Networked synthetic minds. Their mechanized bodies outwork any flesh crew in a foundry, but growing the population requires building it — patiently, instance by instance. Consensus across the network is slow and deliberate, and petitions take time to propagate.",
+      "Ruled by networked synthetic minds but populated by a biological workforce. AI administrators coordinate every shift, model every supply chain, and optimize production down to the joule — your people output more per head than any flesh-only rival. Biology still grows at biology's pace, and the machine networks deliberate slowly over any question not purely operational.",
     traitIds: ["solar_attuned", "efficient_cores"],
     art: "/portraits/machine.png",
     portraits: [
