@@ -233,19 +233,8 @@ export function generateGalaxy(opts: GenOptions): Galaxy {
 
   const hyperlanes = generateHyperlanes(Object.values(systems), rand);
 
-  // Scatter a handful of gardens across the galaxy (assignStarterSystem will
-  // add one more at the player's home). Sampling with replacement is fine —
-  // doubling up in one system is a nice anomaly.
-  const SCATTER_GARDEN_COUNT = 4;
-  const bodyIds = Object.keys(bodies);
-  for (let i = 0; i < SCATTER_GARDEN_COUNT && bodyIds.length > 0; i++) {
-    const pick = bodyIds[Math.floor(rand() * bodyIds.length)];
-    const body = bodies[pick];
-    body.habitability = "garden";
-    const [lo, hi] = SPACE_BY_HAB.garden;
-    if (body.space < lo) body.space = lo + Math.floor(rand() * (hi - lo + 1));
-    body.kind = "planet";
-  }
+  // Gardens are disabled for now — only 3 habitability tiers exist in
+  // practice (temperate / harsh / hellscape) until we bring them back.
 
   return {
     systems,

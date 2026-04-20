@@ -1,10 +1,12 @@
 import { produce } from "immer";
 import { originById, speciesById, traitById } from "./content";
 import { pickRandomEvent, resolveEventChoice, RESOURCE_KEYS } from "./events";
-import { assignStarterSystem, generateGalaxy } from "./galaxy";
+import { generateGalaxy } from "./galaxy";
 import { mulberry32, nextSeed } from "./rng";
 import type {
   Body,
+  BuildOrder,
+  Empire,
   GameState,
   HabitabilityTier,
   Resources,
@@ -36,11 +38,8 @@ const EMPTY_RESOURCES: Resources = {
   political: 0,
 };
 
-// Oversized grid with a disc shape carved out of it by the generator.
 export const GALAXY_SIZE = { width: 11, height: 9, density: 0.85 };
 
-// Per-pop production by habitability. Gardens farm, hellscapes mine.
-// Net of food consumption: every pop also eats 1 food/turn (applied once at empire level).
 const PER_POP_BY_HAB: Record<HabitabilityTier, Partial<Record<ResourceKey, number>>> = {
   garden:    { food: 2, energy: 1, alloys: 0 },
   temperate: { food: 1, energy: 1, alloys: 1 },
@@ -48,18 +47,62 @@ const PER_POP_BY_HAB: Record<HabitabilityTier, Partial<Record<ResourceKey, numbe
   hellscape: { food: -1, energy: 1, alloys: 3 },
 };
 
-// Flat per-pop hammers (production flow, resets each turn).
+const HAB_COLONIZE_SCORE: Record<HabitabilityTier, number> = {
+  garden: 4,
+  temperate: 3,
+  harsh: 2,
+  hellscape: 1,
+};
+
 const HAMMERS_PER_POP = 1;
-
-// Flat per-body passive compute (stand-in for future data-center buildings).
 const COMPUTE_PER_BODY = 1;
-
-// Food cost to spawn one new pop via natural growth.
 const POP_GROWTH_FOOD_COST = 5;
+
+// ===== AI empire setup =====
+interface AiSpec {
+  id: string;
+  name: string;
+  color: string;
+  speciesId: string;
+  originId: string;
+}
+
+const AI_SPECS: AiSpec[] = [
+  {
+    id: "empire_ai_0",
+    name: "Kepler Directive",
+    color: "#d88a3a",
+    speciesId: "insectoid",
+    originId: "steady_evolution",
+  },
+  {
+    id: "empire_ai_1",
+    name: "Orvak Verdance",
+    color: "#5fa55a",
+    speciesId: "machine",
+    originId: "emancipation",
+  },
+];
+
+function makeEmpire(spec: { id: string; name: string; color: string; speciesId: string; originId: string }): Empire {
+  return {
+    id: spec.id,
+    name: spec.name,
+    speciesId: spec.speciesId,
+    originId: spec.originId,
+    color: spec.color,
+    resources: { ...EMPTY_RESOURCES },
+    compute: { cap: 0, used: 0 },
+    capitalBodyId: null,
+    systemIds: [],
+    projects: [],
+    flags: [],
+  };
+}
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -76,53 +119,29 @@ export function initialState(): GameState {
       projects: [],
       flags: [],
     },
+    aiEmpires: [],
     eventQueue: [],
     eventLog: [],
     gameOver: false,
   };
 }
 
-// True if `systemId` shares a hyperlane with any system the empire owns.
-// Used to gate colonization targets to the "frontier".
-export function isSystemAdjacentToEmpire(state: GameState, systemId: string): boolean {
-  const owned = new Set(state.empire.systemIds);
-  if (owned.has(systemId)) return false;
-  for (const [a, b] of state.galaxy.hyperlanes) {
-    if (a === systemId && owned.has(b)) return true;
-    if (b === systemId && owned.has(a)) return true;
-  }
-  return false;
+// ===== Cross-empire helpers =====
+
+export function allEmpires(state: GameState): Empire[] {
+  return [state.empire, ...state.aiEmpires];
 }
 
-export function colonizeOrderForTarget(state: GameState, targetBodyId: string) {
-  for (const order of state.empire.projects) {
-    if (order.kind === "colonize" && order.targetBodyId === targetBodyId) return order;
-  }
-  return null;
+export function empireById(state: GameState, id: string): Empire | null {
+  if (state.empire.id === id) return state.empire;
+  return state.aiEmpires.find((e) => e.id === id) ?? null;
 }
 
-// Can `target` body be colonized by the player right now?
-// Two cases:
-//  - Intra-system expansion: the body's system is already ours but this
-//    particular body has no pops yet.
-//  - Frontier expansion: the body's system is unclaimed and hyperlane-
-//    adjacent to one of our systems.
-// In both cases the body must be unpopulated and not already targeted.
-export function canColonize(state: GameState, targetBodyId: string): boolean {
-  const target = state.galaxy.bodies[targetBodyId];
-  if (!target) return false;
-  const targetSys = state.galaxy.systems[target.systemId];
-  if (!targetSys) return false;
-  if (target.pops > 0) return false;
-  if (colonizeOrderForTarget(state, targetBodyId)) return false;
-  if (targetSys.ownerId === state.empire.id) return true;   // intra-system
-  if (targetSys.ownerId) return false;                       // someone else owns it
-  return isSystemAdjacentToEmpire(state, targetSys.id);      // frontier
-}
+// ===== Per-empire helpers (empire arg explicit) =====
 
-export function ownedBodies(state: GameState): Body[] {
+export function ownedBodiesOf(state: GameState, empire: Empire): Body[] {
   const out: Body[] = [];
-  for (const sid of state.empire.systemIds) {
+  for (const sid of empire.systemIds) {
     const sys = state.galaxy.systems[sid];
     if (!sys) continue;
     for (const bid of sys.bodyIds) {
@@ -133,12 +152,12 @@ export function ownedBodies(state: GameState): Body[] {
   return out;
 }
 
-export function totalPops(state: GameState): number {
-  return ownedBodies(state).reduce((s, b) => s + b.pops, 0);
+export function totalPopsOf(state: GameState, empire: Empire): number {
+  return ownedBodiesOf(state, empire).reduce((s, b) => s + b.pops, 0);
 }
 
-function traitBonusPerPop(state: GameState): Partial<Record<ResourceKey, number>> {
-  const species = speciesById(state.empire.speciesId);
+function traitBonusPerPopOf(empire: Empire): Partial<Record<ResourceKey, number>> {
+  const species = speciesById(empire.speciesId);
   if (!species) return {};
   const bonus: Partial<Record<ResourceKey, number>> = {};
   for (const tid of species.traitIds) {
@@ -151,9 +170,8 @@ function traitBonusPerPop(state: GameState): Partial<Record<ResourceKey, number>
   return bonus;
 }
 
-// Per-body raw production (no empire-level upkeep or flat bonuses).
-export function bodyIncome(state: GameState, body: Body): Resources {
-  const traitBonus = traitBonusPerPop(state);
+export function bodyIncomeFor(empire: Empire, body: Body): Resources {
+  const traitBonus = traitBonusPerPopOf(empire);
   const base = PER_POP_BY_HAB[body.habitability];
   const out: Resources = { ...EMPTY_RESOURCES };
   for (const k of RESOURCE_KEYS) {
@@ -162,68 +180,237 @@ export function bodyIncome(state: GameState, body: Body): Resources {
   return out;
 }
 
-export function perTurnIncome(state: GameState): Resources {
+export function perTurnIncomeOf(state: GameState, empire: Empire): Resources {
   const income: Resources = { ...EMPTY_RESOURCES };
-  for (const body of ownedBodies(state)) {
-    const contrib = bodyIncome(state, body);
+  for (const body of ownedBodiesOf(state, empire)) {
+    const contrib = bodyIncomeFor(empire, body);
     for (const k of RESOURCE_KEYS) income[k] += contrib[k];
   }
-  // Empire-level food upkeep: 1 per pop.
-  income.food -= totalPops(state);
-  // Baseline political capital tick.
+  income.food -= totalPopsOf(state, empire);
   income.political += 1;
   return income;
 }
 
-export function computeCap(state: GameState): number {
-  return ownedBodies(state).length * COMPUTE_PER_BODY;
+export function computeCapOf(state: GameState, empire: Empire): number {
+  return ownedBodiesOf(state, empire).length * COMPUTE_PER_BODY;
 }
 
-// Applied inside an immer draft when a BuildOrder finishes. Order-specific
-// side effects (ownership flip, resource deduction, chronicle entry) live here.
-function completeOrder(draft: GameState, order: import("./types").BuildOrder): void {
+export function isSystemAdjacentToEmpireOf(
+  state: GameState,
+  empire: Empire,
+  systemId: string,
+): boolean {
+  const owned = new Set(empire.systemIds);
+  if (owned.has(systemId)) return false;
+  for (const [a, b] of state.galaxy.hyperlanes) {
+    if (a === systemId && owned.has(b)) return true;
+    if (b === systemId && owned.has(a)) return true;
+  }
+  return false;
+}
+
+// Cross-empire: does *any* empire already have a colonize order on this body?
+export function colonizeOrderForTarget(state: GameState, targetBodyId: string) {
+  for (const e of allEmpires(state)) {
+    for (const order of e.projects) {
+      if (order.kind === "colonize" && order.targetBodyId === targetBodyId) return order;
+    }
+  }
+  return null;
+}
+
+// Who effectively "holds" a system? If it has a populated/owned body, its
+// ownerId. Otherwise, if any empire has a colonize project targeting any
+// body in the system, that empire is the pending claimant. Simple rule:
+// one empire per system, whether via completion or in-flight claim.
+export function systemClaimant(state: GameState, systemId: string): string | null {
+  const sys = state.galaxy.systems[systemId];
+  if (!sys) return null;
+  if (sys.ownerId) return sys.ownerId;
+  for (const empire of allEmpires(state)) {
+    for (const order of empire.projects) {
+      if (order.kind !== "colonize") continue;
+      const target = state.galaxy.bodies[order.targetBodyId];
+      if (target && target.systemId === systemId) return empire.id;
+    }
+  }
+  return null;
+}
+
+export function canColonizeFor(state: GameState, empire: Empire, targetBodyId: string): boolean {
+  const target = state.galaxy.bodies[targetBodyId];
+  if (!target) return false;
+  const targetSys = state.galaxy.systems[target.systemId];
+  if (!targetSys) return false;
+  if (target.pops > 0) return false;
+  if (colonizeOrderForTarget(state, targetBodyId)) return false;
+  const claimant = systemClaimant(state, targetSys.id);
+  if (claimant && claimant !== empire.id) return false;   // locked to another empire
+  if (claimant === empire.id) return true;                 // we already have presence here
+  return isSystemAdjacentToEmpireOf(state, empire, targetSys.id); // frontier
+}
+
+// ===== Player-facing convenience (default to player empire) =====
+
+export function ownedBodies(state: GameState): Body[] {
+  return ownedBodiesOf(state, state.empire);
+}
+export function totalPops(state: GameState): number {
+  return totalPopsOf(state, state.empire);
+}
+export function bodyIncome(state: GameState, body: Body): Resources {
+  return bodyIncomeFor(state.empire, body);
+}
+export function perTurnIncome(state: GameState): Resources {
+  return perTurnIncomeOf(state, state.empire);
+}
+export function computeCap(state: GameState): number {
+  return computeCapOf(state, state.empire);
+}
+export function canColonize(state: GameState, targetBodyId: string): boolean {
+  return canColonizeFor(state, state.empire, targetBodyId);
+}
+
+// ===== Order completion =====
+
+function completeOrder(draft: GameState, empire: Empire, order: BuildOrder): void {
   if (order.kind === "colonize") {
     const target = draft.galaxy.bodies[order.targetBodyId];
     if (!target) return;
     const targetSys = draft.galaxy.systems[target.systemId];
     if (!targetSys) return;
-    // Pre-empt check: if someone else grabbed it while we were building, bail.
-    if (targetSys.ownerId && targetSys.ownerId !== draft.empire.id) return;
-    draft.empire.resources.political -= order.politicalCost;
-    targetSys.ownerId = draft.empire.id;
-    if (!draft.empire.systemIds.includes(targetSys.id)) {
-      draft.empire.systemIds.push(targetSys.id);
+    if (targetSys.ownerId && targetSys.ownerId !== empire.id) return;
+    empire.resources.political -= order.politicalCost;
+    targetSys.ownerId = empire.id;
+    if (!empire.systemIds.includes(targetSys.id)) {
+      empire.systemIds.push(targetSys.id);
     }
     target.pops = Math.max(target.pops, COLONIZE_STARTER_POPS);
-    draft.eventLog.push({
-      turn: draft.turn,
-      eventId: "colonize",
-      choiceId: null,
-      text: `Colonized ${target.name} in ${targetSys.name}.`,
-    });
+    // Only log player-visible events in the chronicle for now.
+    if (empire.id === draft.empire.id) {
+      draft.eventLog.push({
+        turn: draft.turn,
+        eventId: "colonize",
+        choiceId: null,
+        text: `Colonized ${target.name} in ${targetSys.name}.`,
+      });
+    }
   }
 }
 
-// Simple logistic-ish growth: more headroom => more likely to grow this turn.
-// Gated on food availability to avoid growth during famine.
-function tryGrowPops(state: GameState, rand: () => number): GameState {
-  return produce(state, (draft) => {
-    for (const sid of draft.empire.systemIds) {
-      const sys = draft.galaxy.systems[sid];
-      if (!sys) continue;
-      for (const bid of sys.bodyIds) {
-        const body = draft.galaxy.bodies[bid];
-        if (!body || body.pops >= body.space) continue;
-        if (draft.empire.resources.food < POP_GROWTH_FOOD_COST) continue;
-        const headroom = (body.space - body.pops) / body.space;
-        const chance = headroom * 0.5;
-        if (rand() < chance) {
-          body.pops += 1;
-          draft.empire.resources.food -= POP_GROWTH_FOOD_COST;
-        }
+// ===== Per-empire turn tick =====
+
+function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number): void {
+  // 1. Stock income.
+  const income = perTurnIncomeOf(draft, empire);
+  for (const k of RESOURCE_KEYS) {
+    empire.resources[k] += income[k];
+  }
+  // 2. Reset flow resources on this empire's bodies.
+  empire.compute.cap = computeCapOf(draft, empire);
+  empire.compute.used = 0;
+  for (const body of ownedBodiesOf(draft, empire)) {
+    const live = draft.galaxy.bodies[body.id];
+    if (live) live.hammers = live.pops * HAMMERS_PER_POP;
+  }
+  // 3. Sum hammer pool + drain into FIFO projects.
+  let pool = 0;
+  for (const body of ownedBodiesOf(draft, empire)) {
+    pool += body.hammers;
+  }
+  while (pool > 0 && empire.projects.length > 0) {
+    const order = empire.projects[0];
+    const need = order.hammersRequired - order.hammersPaid;
+    const spent = Math.min(pool, need);
+    order.hammersPaid += spent;
+    pool -= spent;
+    if (order.hammersPaid >= order.hammersRequired) {
+      completeOrder(draft, empire, order);
+      empire.projects.shift();
+    } else {
+      break;
+    }
+  }
+  // 4. Pop growth.
+  for (const sid of empire.systemIds) {
+    const sys = draft.galaxy.systems[sid];
+    if (!sys) continue;
+    for (const bid of sys.bodyIds) {
+      const body = draft.galaxy.bodies[bid];
+      if (!body || body.pops >= body.space) continue;
+      if (empire.resources.food < POP_GROWTH_FOOD_COST) continue;
+      const headroom = (body.space - body.pops) / body.space;
+      const chance = headroom * 0.5;
+      if (growthRand() < chance) {
+        body.pops += 1;
+        empire.resources.food -= POP_GROWTH_FOOD_COST;
       }
     }
-  });
+  }
+}
+
+// Greedy AI colonize policy: queue a project for the best-scoring
+// colonizable target if none is in flight.
+function aiPlan(state: GameState, empire: Empire): BuildOrder | null {
+  if (empire.projects.length > 0) return null;
+  if (empire.resources.political < COLONIZE_POLITICAL) return null;
+  let bestId: string | null = null;
+  let bestScore = -1;
+  for (const body of Object.values(state.galaxy.bodies)) {
+    if (!canColonizeFor(state, empire, body.id)) continue;
+    const score = HAB_COLONIZE_SCORE[body.habitability] ?? 0;
+    if (score > bestScore) {
+      bestScore = score;
+      bestId = body.id;
+    }
+  }
+  if (!bestId) return null;
+  return {
+    kind: "colonize",
+    id: nextOrderId(),
+    targetBodyId: bestId,
+    hammersRequired: COLONIZE_HAMMERS,
+    hammersPaid: 0,
+    politicalCost: COLONIZE_POLITICAL,
+  };
+}
+
+// Pick starter systems that are spread apart: first one random interior,
+// each subsequent one maximizing minimum distance to previously picked.
+function pickSpreadStarters(
+  galaxy: { systems: Record<string, { id: string; q: number; r: number }>; width: number; height: number },
+  rand: () => number,
+  count: number,
+): string[] {
+  const candidates = Object.values(galaxy.systems).filter(
+    (s) =>
+      s.q > 0 &&
+      s.q < galaxy.width - 1 &&
+      s.r > 0 &&
+      s.r < galaxy.height - 1,
+  );
+  const pool = candidates.length >= count ? candidates : Object.values(galaxy.systems);
+  if (pool.length === 0) return [];
+  const picked: typeof pool = [pool[Math.floor(rand() * pool.length)]];
+  while (picked.length < count && picked.length < pool.length) {
+    let best: typeof pool[number] | null = null;
+    let bestMinDist = -1;
+    for (const cand of pool) {
+      if (picked.includes(cand)) continue;
+      let minDist = Infinity;
+      for (const p of picked) {
+        const d = Math.hypot(cand.q - p.q, cand.r - p.r);
+        if (d < minDist) minDist = d;
+      }
+      if (minDist > bestMinDist) {
+        bestMinDist = minDist;
+        best = cand;
+      }
+    }
+    if (!best) break;
+    picked.push(best);
+  }
+  return picked.map((s) => s.id);
 }
 
 export function reduce(state: GameState, action: Action): GameState {
@@ -234,37 +421,94 @@ export function reduce(state: GameState, action: Action): GameState {
 
       const fresh = initialState();
       const galaxy = generateGalaxy({ ...GALAXY_SIZE, seed: action.seed });
-      const starter = assignStarterSystem(
-        galaxy,
-        fresh.empire.id,
-        origin.startingPops,
-        action.seed ^ 0x9e3779b1,
-      );
+      const rand = mulberry32(action.seed ^ 0x243f6a88);
+
+      // Pick three spread-out starters: [player, ai_0, ai_1].
+      const starters = pickSpreadStarters(galaxy, rand, 1 + AI_SPECS.length);
+      const [playerStarterId, ...aiStarterIds] = starters;
+      if (!playerStarterId) return state;
+
+      // Manually assign starter systems (adapted from assignStarterSystem)
+      // so we can place multiple empires in one pass.
+      let nextGalaxy = galaxy;
+      function claimStarter(
+        empireId: string,
+        sysId: string,
+        startingPops: number,
+      ): { galaxy: typeof galaxy; capitalBodyId: string; systemId: string } {
+        const sys = nextGalaxy.systems[sysId];
+        const starterBodyId = sys.bodyIds[0];
+        const starterBody = nextGalaxy.bodies[starterBodyId];
+        // Starter body is guaranteed temperate with generous space.
+        // (Gardens are disabled for now — see galaxy.ts.)
+        const updatedBody = {
+          ...starterBody,
+          habitability: "temperate" as const,
+          kind: "planet" as const,
+          space: Math.max(starterBody.space, 8),
+          pops: startingPops,
+        };
+        const updatedSys = { ...sys, ownerId: empireId };
+        nextGalaxy = {
+          ...nextGalaxy,
+          systems: { ...nextGalaxy.systems, [sysId]: updatedSys },
+          bodies: { ...nextGalaxy.bodies, [starterBodyId]: updatedBody },
+        };
+        return { galaxy: nextGalaxy, capitalBodyId: starterBodyId, systemId: sysId };
+      }
+
+      const playerStarter = claimStarter(fresh.empire.id, playerStarterId, origin.startingPops);
+      const aiStarters = aiStarterIds.map((sid, i) => {
+        const spec = AI_SPECS[i];
+        const aiOrigin = originById(spec.originId);
+        return {
+          spec,
+          starter: claimStarter(spec.id, sid, aiOrigin?.startingPops ?? 4),
+          originObj: aiOrigin,
+        };
+      });
 
       return produce(fresh, (draft) => {
         draft.turn = 1;
         draft.rngSeed = action.seed >>> 0;
-        draft.galaxy = starter.galaxy;
+        draft.galaxy = nextGalaxy;
+
+        // Player empire setup.
         draft.empire.name = action.empireName || "Unnamed Empire";
         draft.empire.originId = action.originId;
         draft.empire.speciesId = action.speciesId;
         const species = speciesById(action.speciesId);
         if (species) draft.empire.color = species.color;
-        draft.empire.capitalBodyId = starter.capitalBodyId;
-        draft.empire.systemIds = [starter.systemId];
+        draft.empire.capitalBodyId = playerStarter.capitalBodyId;
+        draft.empire.systemIds = [playerStarter.systemId];
         for (const key of RESOURCE_KEYS) {
           draft.empire.resources[key] = origin.startingResources[key] ?? 0;
         }
-        // Seed compute cap + per-body hammers for turn 1.
-        draft.empire.compute.cap = starter.galaxy.systems[starter.systemId].bodyIds.length * COMPUTE_PER_BODY;
+        draft.empire.compute.cap = draft.galaxy.systems[playerStarter.systemId].bodyIds.length * COMPUTE_PER_BODY;
         draft.empire.compute.used = 0;
-        for (const bid of starter.galaxy.systems[starter.systemId].bodyIds) {
+        for (const bid of draft.galaxy.systems[playerStarter.systemId].bodyIds) {
           const body = draft.galaxy.bodies[bid];
           if (body) body.hammers = body.pops * HAMMERS_PER_POP;
         }
-        if (origin.flagEvents) {
-          for (const eventId of origin.flagEvents) {
-            draft.eventQueue.push({ eventId, seed: action.seed });
+
+        // AI empires.
+        draft.aiEmpires = aiStarters.map(({ spec, starter, originObj }) => {
+          const empire = makeEmpire(spec);
+          empire.capitalBodyId = starter.capitalBodyId;
+          empire.systemIds = [starter.systemId];
+          if (originObj) {
+            for (const key of RESOURCE_KEYS) {
+              empire.resources[key] = originObj.startingResources[key] ?? 0;
+            }
+          }
+          empire.compute.cap = draft.galaxy.systems[starter.systemId].bodyIds.length * COMPUTE_PER_BODY;
+          return empire;
+        });
+        // Seed AI bodies' hammers too so turn-1 rates show correctly.
+        for (const ai of draft.aiEmpires) {
+          for (const bid of draft.galaxy.systems[ai.systemIds[0]].bodyIds) {
+            const body = draft.galaxy.bodies[bid];
+            if (body) body.hammers = body.pops * HAMMERS_PER_POP;
           }
         }
       });
@@ -296,55 +540,28 @@ export function reduce(state: GameState, action: Action): GameState {
     case "endTurn": {
       if (state.eventQueue.length > 0) return state;
 
-      // 1. Accumulate stock resources (food/energy/alloys/political).
-      const income = perTurnIncome(state);
       let next = produce(state, (draft) => {
         draft.turn += 1;
-        for (const key of RESOURCE_KEYS) {
-          draft.empire.resources[key] += income[key];
-        }
-        // 2. Reset flow resources.
-        draft.empire.compute.cap = computeCap(draft);
-        draft.empire.compute.used = 0;
-        for (const body of ownedBodies(draft)) {
-          const live = draft.galaxy.bodies[body.id];
-          if (live) live.hammers = live.pops * HAMMERS_PER_POP;
-        }
-        // 3. Sum this turn's hammer capacity into a pool and drain it
-        //    FIFO into empire-level projects. body.hammers represents the
-        //    per-turn RATE so the UI can read it — we don't mutate it
-        //    during the drain. Unused hammers are lost (flow-not-stock).
-        let pool = 0;
-        for (const sid of draft.empire.systemIds) {
-          const sys = draft.galaxy.systems[sid];
-          if (!sys) continue;
-          for (const bid of sys.bodyIds) {
-            const body = draft.galaxy.bodies[bid];
-            if (!body) continue;
-            pool += body.hammers;
-          }
-        }
-        while (pool > 0 && draft.empire.projects.length > 0) {
-          const order = draft.empire.projects[0];
-          const need = order.hammersRequired - order.hammersPaid;
-          const spent = Math.min(pool, need);
-          order.hammersPaid += spent;
-          pool -= spent;
-          if (order.hammersPaid >= order.hammersRequired) {
-            completeOrder(draft, order);
-            draft.empire.projects.shift();
-          } else {
-            break;
-          }
-        }
         draft.rngSeed = nextSeed(draft.rngSeed);
+
+        const growthRand = mulberry32(draft.rngSeed ^ 0xa5a5a5a5);
+        const aiPlanRand = mulberry32(draft.rngSeed ^ 0xdeadbeef);
+        void aiPlanRand; // reserved for tie-breaking if we ever randomize AI picks
+
+        // AI planning before ticks, so newly-queued orders drain this turn.
+        for (const ai of draft.aiEmpires) {
+          const plan = aiPlan(draft, ai);
+          if (plan) ai.projects.push(plan);
+        }
+
+        // Tick every empire (player + AIs).
+        tickEmpire(draft, draft.empire, growthRand);
+        for (const ai of draft.aiEmpires) {
+          tickEmpire(draft, ai, growthRand);
+        }
       });
 
-      // 4. Pop growth (uses seeded RNG — deterministic per turn).
-      const growthRand = mulberry32(next.rngSeed ^ 0xa5a5a5a5);
-      next = tryGrowPops(next, growthRand);
-
-      // 4. Roll a random event (same as before).
+      // Random event for the player only (for now).
       const rand = mulberry32(next.rngSeed);
       if (rand() < 0.55) {
         const event = pickRandomEvent(next, next.rngSeed);

@@ -119,11 +119,12 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 5;
+  schemaVersion: 6;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;
-  empire: Empire;
+  empire: Empire;           // The player's empire.
+  aiEmpires: Empire[];      // AI-controlled rivals.
   eventQueue: PendingEvent[];
   eventLog: Array<{ turn: number; eventId: string; choiceId: string | null; text: string }>;
   gameOver: boolean;

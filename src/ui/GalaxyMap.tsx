@@ -1,4 +1,4 @@
-import type { Galaxy, StarSystem } from "../sim/types";
+import type { Empire, Galaxy, StarSystem } from "../sim/types";
 
 const HEX_SIZE = 16;       // radius of each hex
 const SQRT_3 = Math.sqrt(3);
@@ -120,26 +120,28 @@ function polylineD(points: Array<[number, number]>): string {
 
 export function GalaxyMap({
   galaxy,
-  ownedSystemIds,
-  ownerColor,
+  empires,
   selectedId,
   onSelect,
 }: {
   galaxy: Galaxy;
-  ownedSystemIds: string[];
-  ownerColor: string;
+  empires: Empire[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
 }) {
-  const owned = new Set(ownedSystemIds);
   const systems = Object.values(galaxy.systems);
 
-  // Lookup: "q,r" -> system, so we can check if a neighbor is owned.
+  // id -> empire, for ownerId -> color lookup.
+  const empireById = new Map<string, Empire>();
+  for (const e of empires) empireById.set(e.id, e);
+
+  // Lookup: "q,r" -> system (for neighbor ownership check).
   const byCoord = new Map<string, StarSystem>();
   for (const s of systems) byCoord.set(`${s.q},${s.r}`, s);
-  function isOwnedAt(q: number, r: number): boolean {
+
+  function ownerIdAt(q: number, r: number): string | null {
     const s = byCoord.get(`${q},${r}`);
-    return !!s && owned.has(s.id);
+    return s?.ownerId ?? null;
   }
 
   // Bounds for viewBox.
@@ -152,16 +154,13 @@ export function GalaxyMap({
   const w = maxX - minX;
   const h = maxY - minY;
 
-  // Split owned-hex edges into perimeter (outer border — strong) and
-  // interior (shared with another owned hex — drawn faint so the region
-  // still has internal structure without looking like separate hexagons).
-  // Each interior edge is shared by two owned hexes; we emit it once
-  // (when the neighbor's coord is lexicographically greater) to avoid
-  // double-draw.
-  const perimeterEdges: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
-  const interiorEdges: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+  // Per-empire perimeter + interior edges so each empire's territory
+  // renders as one contiguous region with faint internal lines.
+  const perimeterByOwner = new Map<string, Edge[]>();
+  const interiorByOwner = new Map<string, Edge[]>();
   for (const sys of systems) {
-    if (!owned.has(sys.id)) continue;
+    const ownerId = sys.ownerId;
+    if (!ownerId) continue;
     const { x, y } = hexToPixel(sys.q, sys.r);
     const corners = hexCorners(x, y, HEX_SIZE - 1);
     for (let i = 0; i < 6; i++) {
@@ -170,14 +169,15 @@ export function GalaxyMap({
       const nr = sys.r + dr;
       const [ax, ay] = corners[i];
       const [bx, by] = corners[(i + 1) % 6];
-      if (isOwnedAt(nq, nr)) {
-        // Interior — only emit from the hex with the lower (q,r) so each
-        // shared edge appears exactly once.
+      const neighborOwnerId = ownerIdAt(nq, nr);
+      if (neighborOwnerId === ownerId) {
         if (sys.q < nq || (sys.q === nq && sys.r < nr)) {
-          interiorEdges.push({ x1: ax, y1: ay, x2: bx, y2: by });
+          if (!interiorByOwner.has(ownerId)) interiorByOwner.set(ownerId, []);
+          interiorByOwner.get(ownerId)!.push({ x1: ax, y1: ay, x2: bx, y2: by });
         }
       } else {
-        perimeterEdges.push({ x1: ax, y1: ay, x2: bx, y2: by });
+        if (!perimeterByOwner.has(ownerId)) perimeterByOwner.set(ownerId, []);
+        perimeterByOwner.get(ownerId)!.push({ x1: ax, y1: ay, x2: bx, y2: by });
       }
     }
   }
@@ -189,7 +189,8 @@ export function GalaxyMap({
       preserveAspectRatio="xMidYMid meet"
       onClick={() => onSelect(null)}
     >
-      {/* Hyperlanes (behind everything else). */}
+      {/* Hyperlanes (behind everything else). Color a lane with the
+          common owner when both endpoints share one. */}
       <g className="hyperlanes">
         {galaxy.hyperlanes.map(([aId, bId], i) => {
           const a = galaxy.systems[aId];
@@ -197,7 +198,8 @@ export function GalaxyMap({
           if (!a || !b) return null;
           const pa = hexToPixel(a.q, a.r);
           const pb = hexToPixel(b.q, b.r);
-          const bothOwned = owned.has(aId) && owned.has(bId);
+          const sharedOwner = a.ownerId && a.ownerId === b.ownerId ? a.ownerId : null;
+          const color = sharedOwner ? (empireById.get(sharedOwner)?.color ?? "#3a4355") : "#3a4355";
           return (
             <line
               key={i}
@@ -205,66 +207,74 @@ export function GalaxyMap({
               y1={pa.y}
               x2={pb.x}
               y2={pb.y}
-              stroke={bothOwned ? ownerColor : "#3a4355"}
-              strokeWidth={bothOwned ? 1.4 : 0.8}
-              opacity={bothOwned ? 0.7 : 0.5}
+              stroke={color}
+              strokeWidth={sharedOwner ? 1.4 : 0.8}
+              opacity={sharedOwner ? 0.7 : 0.5}
             />
           );
         })}
       </g>
 
-      {/* Owned territory: solid fill on every owned hex (no per-hex border),
-          so adjacent hexes blend into one region. */}
+      {/* Territory fill: one translucent blob per owner. */}
       <g className="territory-fill">
         {systems.map((sys) => {
-          if (!owned.has(sys.id)) return null;
+          if (!sys.ownerId) return null;
+          const empire = empireById.get(sys.ownerId);
+          if (!empire) return null;
           const { x, y } = hexToPixel(sys.q, sys.r);
           return (
             <polygon
               key={`fill-${sys.id}`}
               points={polygonPoints(hexCorners(x, y, HEX_SIZE - 1))}
-              fill={`${ownerColor}22`}
+              fill={`${empire.color}22`}
               stroke="none"
             />
           );
         })}
       </g>
 
-      {/* Interior edges between owned hexes — faint polylines so chained
-          segments miter cleanly. */}
+      {/* Interior edges between hexes owned by the same empire — faint. */}
       <g className="territory-interior">
-        {buildPolylines(interiorEdges).map((pl, i) => (
-          <path
-            key={i}
-            d={polylineD(pl)}
-            fill="none"
-            stroke={ownerColor}
-            strokeWidth={0.6}
-            strokeLinejoin="round"
-            opacity={0.35}
-          />
-        ))}
+        {Array.from(interiorByOwner.entries()).flatMap(([ownerId, edges]) => {
+          const empire = empireById.get(ownerId);
+          if (!empire) return [];
+          return buildPolylines(edges).map((pl, i) => (
+            <path
+              key={`${ownerId}-i-${i}`}
+              d={polylineD(pl)}
+              fill="none"
+              stroke={empire.color}
+              strokeWidth={0.6}
+              strokeLinejoin="round"
+              opacity={0.35}
+            />
+          ));
+        })}
       </g>
 
-      {/* Perimeter outline: chained polylines for clean corner joins. */}
+      {/* Perimeter outline per owner. */}
       <g className="territory-border">
-        {buildPolylines(perimeterEdges).map((pl, i) => (
-          <path
-            key={i}
-            d={polylineD(pl)}
-            fill="none"
-            stroke={ownerColor}
-            strokeWidth={1.6}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
-        ))}
+        {Array.from(perimeterByOwner.entries()).flatMap(([ownerId, edges]) => {
+          const empire = empireById.get(ownerId);
+          if (!empire) return [];
+          return buildPolylines(edges).map((pl, i) => (
+            <path
+              key={`${ownerId}-p-${i}`}
+              d={polylineD(pl)}
+              fill="none"
+              stroke={empire.color}
+              strokeWidth={1.6}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          ));
+        })}
       </g>
 
       {/* Systems — star dot + optional selected highlight. */}
       {systems.map((sys) => {
         const { x, y } = hexToPixel(sys.q, sys.r);
-        const isOwned = owned.has(sys.id);
+        const isOwned = !!sys.ownerId;
         const isSelected = sys.id === selectedId;
         const hasFlavor = sys.bodyIds.some((bid) =>
           (galaxy.bodies[bid]?.flavorFlags.length ?? 0) > 0,

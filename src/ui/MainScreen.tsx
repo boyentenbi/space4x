@@ -2,11 +2,13 @@ import { useState } from "react";
 import { useGame } from "../store";
 import { originById, speciesById } from "../sim/content";
 import {
+  allEmpires,
   bodyIncome,
   canColonize,
   colonizeOrderForTarget,
   COLONIZE_HAMMERS,
   COLONIZE_POLITICAL,
+  empireById,
   perTurnIncome,
   totalPops,
 } from "../sim/reducer";
@@ -218,9 +220,10 @@ export function MainScreen() {
   const focusBodies = focusSystem
     ? focusSystem.bodyIds.map((bid) => state.galaxy.bodies[bid]).filter((b): b is Body => !!b)
     : [];
-  const focusOwned = focusSystem
-    ? state.empire.systemIds.includes(focusSystem.id)
-    : false;
+  const focusOwnerEmpire = focusSystem?.ownerId
+    ? empireById(state, focusSystem.ownerId)
+    : null;
+  const focusIsOurs = focusOwnerEmpire?.id === state.empire.id;
 
   return (
     <>
@@ -275,7 +278,13 @@ export function MainScreen() {
             <div className="panel-label">
               <span>
                 {focusSystem
-                  ? `${focusSystem.name}${focusOwned && focusSystem.id === capitalSystem?.id ? " · home" : focusOwned ? "" : " · unclaimed"}`
+                  ? `${focusSystem.name}${
+                      focusIsOurs && focusSystem.id === capitalSystem?.id
+                        ? " · home"
+                        : focusOwnerEmpire
+                          ? ` · ${focusOwnerEmpire.name}`
+                          : " · unclaimed"
+                    }`
                   : "System"}
               </span>
               {selectedSystemId && (
@@ -288,8 +297,8 @@ export function MainScreen() {
               <SystemScene
                 system={focusSystem}
                 bodies={focusBodies}
-                ownerColor={focusOwned ? state.empire.color : null}
-                capitalBodyId={state.empire.capitalBodyId}
+                ownerColor={focusOwnerEmpire?.color ?? null}
+                capitalBodyId={focusOwnerEmpire?.capitalBodyId ?? null}
                 turn={state.turn}
               />
             ) : (
@@ -304,9 +313,9 @@ export function MainScreen() {
                   <BodyRow
                     key={body.id}
                     body={body}
-                    income={focusOwned ? bodyIncome(state, body) : {}}
+                    income={focusIsOurs ? bodyIncome(state, body) : {}}
                     isCapital={body.id === state.empire.capitalBodyId}
-                    owned={focusOwned}
+                    owned={focusIsOurs}
                     colonizable={canColonize(state, body.id)}
                     activeOrder={order}
                     colonizeTurns={colonizeTurnEstimate}
@@ -334,8 +343,7 @@ export function MainScreen() {
             <span className="panel-label">Galaxy</span>
             <GalaxyMap
               galaxy={state.galaxy}
-              ownedSystemIds={state.empire.systemIds}
-              ownerColor={state.empire.color}
+              empires={allEmpires(state)}
               selectedId={selectedSystemId}
               onSelect={setSelectedSystemId}
             />
