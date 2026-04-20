@@ -1,10 +1,29 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { ORIGINS, SPECIES } from "../sim/content";
+import { ORIGINS, SPECIES, TRAITS } from "../sim/content";
 import type { Modifier, ResourceKey } from "../sim/types";
 import { useGame } from "../store";
 import { Thumb } from "./Thumb";
 import { HAMMERS_ICON, POPS_ICON, RESOURCE_ICON } from "./icons";
+
+// A modifier is "bad" when it pushes a useful quantity in the wrong
+// direction. Used to colour bonus chips red rather than green.
+function isNegativeModifier(mod: Modifier): boolean {
+  switch (mod.kind) {
+    case "perPop":
+    case "flat":
+    case "hammersPerPopDelta":
+    case "habBonus":
+      return mod.value < 0;
+    case "popGrowthMult":
+    case "spaceMult":
+      return mod.value < 1;
+    case "colonizeHammerMult":
+      return mod.value > 1;
+    case "foodUpkeepDelta":
+      return mod.value > 0;
+  }
+}
 
 function ResIcon({ k }: { k: ResourceKey }) {
   return <img className="bonus-icon" src={RESOURCE_ICON[k]} alt={k} />;
@@ -139,8 +158,31 @@ export function NewGame() {
               {s.modifiers.length > 0 && (
                 <span className="bonuses">
                   {s.modifiers.map((m, i) => (
-                    <span key={i} className="bonus-chip">{renderModifier(m)}</span>
+                    <span key={i} className={`bonus-chip ${isNegativeModifier(m) ? "neg" : "pos"}`}>
+                      {renderModifier(m)}
+                    </span>
                   ))}
+                </span>
+              )}
+              {s.traitIds.length > 0 && (
+                <span className="traits">
+                  {s.traitIds.map((tid) => {
+                    const t = TRAITS.find((x) => x.id === tid);
+                    if (!t) return null;
+                    return (
+                      <span key={tid} className="trait-group" title={t.description}>
+                        <span className="trait-name">{t.name}</span>
+                        {t.modifiers.map((m, i) => (
+                          <span
+                            key={i}
+                            className={`bonus-chip ${isNegativeModifier(m) ? "neg" : "pos"}`}
+                          >
+                            {renderModifier(m)}
+                          </span>
+                        ))}
+                      </span>
+                    );
+                  })}
                 </span>
               )}
             </span>

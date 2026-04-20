@@ -895,12 +895,45 @@ button:disabled {
   padding: 2px 6px;
   border: 1px solid var(--border);
   border-radius: 4px;
-  color: var(--good);
   font-variant-numeric: tabular-nums;
   display: inline-flex;
   align-items: center;
   gap: 2px;
   white-space: nowrap;
+}
+
+.chooser .bonus-chip.pos {
+  color: var(--good);
+  border-color: rgba(139, 220, 166, 0.35);
+}
+
+.chooser .bonus-chip.neg {
+  color: var(--bad);
+  border-color: rgba(255, 138, 138, 0.45);
+}
+
+.chooser .traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.chooser .trait-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.chooser .trait-name {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--text);
+  margin-right: 2px;
 }
 
 .chooser .bonus-icon {
