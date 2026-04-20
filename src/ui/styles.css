@@ -924,6 +924,169 @@ button.res-cell:hover:not(:disabled) {
   letter-spacing: 0;
 }
 
+/* =======================================================
+   Empire profile modal — reached from system-panel portrait
+   or from the sidebar roster.
+   ======================================================= */
+.empire-profile .profile-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.empire-profile .profile-portrait {
+  width: 108px;
+  height: 108px;
+  object-fit: cover;
+  image-rendering: pixelated;
+  border-radius: 8px;
+  border: 2px solid var(--accent);
+  flex: 0 0 auto;
+}
+
+.empire-profile .profile-title h2 {
+  margin: 2px 0 6px;
+  font-size: 18px;
+}
+
+.empire-profile .profile-sub {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.empire-profile .profile-archetype {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.archetype-tag {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.empire-profile .profile-manifesto {
+  margin: 4px 0;
+  padding: 10px 12px;
+  border-left: 2px solid var(--accent-dim);
+  background: rgba(126, 200, 255, 0.04);
+  font-style: italic;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.empire-profile .profile-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.empire-profile .profile-section-label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.empire-profile .profile-disposition {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.empire-profile .profile-stats {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.empire-profile .profile-modifiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* =======================================================
+   Empires roster modal — list of all empires with archetype.
+   ======================================================= */
+.empire-roster .roster-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.roster-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: var(--bg-panel);
+  text-align: left;
+  cursor: pointer;
+}
+
+.roster-row:hover:not(:disabled) {
+  background: var(--bg-panel-hi);
+}
+
+.roster-portrait {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  image-rendering: pixelated;
+  border-radius: 6px;
+  border: 2px solid var(--accent);
+  flex: 0 0 auto;
+}
+
+.roster-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.roster-name {
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.roster-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: capitalize;
+}
+
+.owner-portrait-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.owner-portrait-btn:hover .owner-portrait {
+  filter: brightness(1.1);
+}
+
 .chooser .desc {
   font-size: 12px;
   color: var(--text-dim);

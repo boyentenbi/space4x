@@ -82,6 +82,23 @@ export const POP_GROWTH_FOOD_COST = 5;
 // Expected turns until this body grows by +1 pop, or a status string.
 // Matches the actual growth roll: chance = headroom * 0.5 each turn,
 // so expected wait = 1/chance (rounded up). Gated on empire food.
+// Expected pop growth *rate* for an empire this turn — sum of per-body
+// growth chances, capped at 1 per body (single roll per body per turn).
+// Returns 0 if food is below the growth threshold (no body can grow).
+export function expectedPopGrowth(state: GameState, empire: Empire): number {
+  if (empire.resources.food < POP_GROWTH_FOOD_COST) return 0;
+  const growthMult = popGrowthMultiplier(empire);
+  let total = 0;
+  for (const body of ownedBodiesOf(state, empire)) {
+    const cap = effectiveSpace(empire, body);
+    if (body.pops >= cap) continue;
+    const headroom = (cap - body.pops) / cap;
+    const chance = Math.min(1, Math.max(0, headroom * 0.5 * growthMult));
+    total += chance;
+  }
+  return total;
+}
+
 export function growthEstimate(
   _state: GameState,
   empire: Empire,

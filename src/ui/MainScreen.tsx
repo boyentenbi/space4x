@@ -14,6 +14,7 @@ import {
   computeBreakdownFor,
   effectiveSpace,
   empireById,
+  expectedPopGrowth,
   growthEstimate,
   HAMMERS_PER_POP,
   hammersBreakdownFor,
@@ -30,6 +31,8 @@ import { EventModal } from "./EventModal";
 import { GalaxyMap } from "./GalaxyMap";
 import { SystemScene } from "./SystemScene";
 import { PortraitMenu } from "./PortraitMenu";
+import { EmpireProfileModal } from "./EmpireProfileModal";
+import { EmpireRosterModal } from "./EmpireRosterModal";
 import { ProjectCompletionModal } from "./ProjectCompletionModal";
 import { StatBreakdownModal } from "./StatBreakdownModal";
 import { COMPUTE_ICON, HAMMERS_ICON, POPS_ICON, RESOURCE_ICON, planetSpriteFor } from "./icons";
@@ -362,6 +365,8 @@ export function MainScreen() {
 
   const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [profileEmpireId, setProfileEmpireId] = useState<string | null>(null);
   const [breakdown, setBreakdown] = useState<StatBreakdown | null>(null);
 
   const origin = originById(state.empire.originId);
@@ -466,10 +471,14 @@ export function MainScreen() {
           <ResCell
             icon={POPS_ICON}
             value={`${popsNow}/${popsCap}`}
+            delta={expectedPopGrowth(state, state.empire)}
             onClick={() => setBreakdown(popsBreakdownFor(state, state.empire))}
           />
         </div>
 
+        <button className="menu-btn" onClick={() => setRosterOpen(true)}>
+          Empires
+        </button>
         <button className="menu-btn" onClick={() => setMenuOpen(true)}>
           Menu
         </button>
@@ -486,13 +495,21 @@ export function MainScreen() {
             <div className="panel-label">
               <span className="panel-title-left">
                 {focusOwnerEmpire && (focusOwnerEmpire.portraitArt || focusOwnerSpecies?.art) && (
-                  <img
-                    className="owner-portrait"
-                    src={focusOwnerEmpire.portraitArt || focusOwnerSpecies?.art}
-                    alt=""
-                    style={{ borderColor: focusOwnerEmpire.color }}
-                    title={focusOwnerEmpire.name}
-                  />
+                  <button
+                    className="owner-portrait-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setProfileEmpireId(focusOwnerEmpire.id);
+                    }}
+                    title={`${focusOwnerEmpire.name} — profile`}
+                  >
+                    <img
+                      className="owner-portrait"
+                      src={focusOwnerEmpire.portraitArt || focusOwnerSpecies?.art}
+                      alt=""
+                      style={{ borderColor: focusOwnerEmpire.color }}
+                    />
+                  </button>
                 )}
                 <span>
                   {focusSystem
@@ -619,6 +636,21 @@ export function MainScreen() {
       {state.projectCompletions.length === 0 && pendingEvent && <EventModal eventId={pendingEvent.eventId} />}
       {breakdown && (
         <StatBreakdownModal breakdown={breakdown} onClose={() => setBreakdown(null)} />
+      )}
+      {rosterOpen && (
+        <EmpireRosterModal
+          onPick={(id) => {
+            setProfileEmpireId(id);
+            setRosterOpen(false);
+          }}
+          onClose={() => setRosterOpen(false)}
+        />
+      )}
+      {profileEmpireId && (
+        <EmpireProfileModal
+          empireId={profileEmpireId}
+          onClose={() => setProfileEmpireId(null)}
+        />
       )}
       {menuOpen && (
         <PortraitMenu onReset={reset} onClose={() => setMenuOpen(false)} />
