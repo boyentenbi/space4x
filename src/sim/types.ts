@@ -98,6 +98,10 @@ export type Modifier =
   | { kind: "flat"; resource: ResourceKey; value: number }
   // Multiplicative: 1.25 = +25%, 0.8 = -20%.
   | { kind: "popGrowthMult"; value: number }
+  // Flat per-turn probability added to each body's growth roll before
+  // multipliers. Used for things like a Brood Mother that provide a
+  // steady baseline of growth even on near-full bodies.
+  | { kind: "popGrowthAdd"; value: number }
   | { kind: "spaceMult"; value: number }
   | { kind: "colonizeHammerMult"; value: number }
   | { kind: "colonizePoliticalMult"; value: number }

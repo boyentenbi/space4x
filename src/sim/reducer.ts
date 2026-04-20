@@ -88,12 +88,13 @@ export const POP_GROWTH_FOOD_COST = 5;
 export function expectedPopGrowth(state: GameState, empire: Empire): number {
   if (empire.resources.food < POP_GROWTH_FOOD_COST) return 0;
   const growthMult = popGrowthMultiplier(empire);
+  const growthAdd = popGrowthAdditive(empire);
   let total = 0;
   for (const body of ownedBodiesOf(state, empire)) {
     const cap = effectiveSpace(empire, body);
     if (body.pops >= cap) continue;
     const headroom = (cap - body.pops) / cap;
-    const chance = Math.min(1, Math.max(0, headroom * 0.5 * growthMult));
+    const chance = Math.min(1, Math.max(0, (headroom * 0.5 + growthAdd) * growthMult));
     total += chance;
   }
   return total;
@@ -108,7 +109,10 @@ export function growthEstimate(
   if (body.pops >= cap) return { kind: "full" };
   if (empire.resources.food < POP_GROWTH_FOOD_COST) return { kind: "starved" };
   const headroom = (cap - body.pops) / cap;
-  const chance = headroom * 0.5 * popGrowthMultiplier(empire);
+  const chance = Math.max(
+    0,
+    Math.min(1, (headroom * 0.5 + popGrowthAdditive(empire)) * popGrowthMultiplier(empire)),
+  );
   if (chance <= 0) return { kind: "full" };
   return { kind: "growing", turns: Math.ceil(1 / chance) };
 }
@@ -327,10 +331,14 @@ export function effectiveColonizePolitical(empire: Empire): number {
   );
 }
 
-function sumDelta(mods: Modifier[], kind: "foodUpkeepDelta" | "hammersPerPopDelta"): number {
+function sumDelta(mods: Modifier[], kind: "foodUpkeepDelta" | "hammersPerPopDelta" | "popGrowthAdd"): number {
   let s = 0;
   for (const mod of mods) if (mod.kind === kind) s += mod.value;
   return s;
+}
+
+export function popGrowthAdditive(empire: Empire): number {
+  return sumDelta(empireModifiers(empire), "popGrowthAdd");
 }
 
 // Per-pop resource yield: sums `perPop` mods + `habBonus` matching this body.
@@ -615,6 +623,10 @@ export function popsBreakdownFor(state: GameState, empire: Empire): StatBreakdow
       const pct = Math.round((lm.mod.value - 1) * 100);
       modRows.push({ name: lm.label, detail: "growth rate", value: pct / 100 });
     }
+    if (lm.mod.kind === "popGrowthAdd") {
+      const pct = Math.round(lm.mod.value * 100);
+      modRows.push({ name: lm.label, detail: "flat growth chance", value: pct / 100 });
+    }
   }
   const total = bodyRows.reduce((s, r) => s + r.value, 0);
   return {
@@ -892,7 +904,11 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
     }
   }
   // 4. Pop growth — modifier-aware.
+  //    chance = (headroom * 0.5 + additive) * multiplier, clamped [0, 1].
+  //    Additive mods (e.g. Brood Mother) give a baseline of growth even
+  //    on near-full bodies; multiplicative mods scale the whole thing.
   const growthMult = popGrowthMultiplier(empire);
+  const growthAdd = popGrowthAdditive(empire);
   for (const sid of empire.systemIds) {
     const sys = draft.galaxy.systems[sid];
     if (!sys) continue;
@@ -903,7 +919,7 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
       if (body.pops >= cap) continue;
       if (empire.resources.food < POP_GROWTH_FOOD_COST) continue;
       const headroom = (cap - body.pops) / cap;
-      const chance = headroom * 0.5 * growthMult;
+      const chance = Math.max(0, Math.min(1, (headroom * 0.5 + growthAdd) * growthMult));
       if (growthRand() < chance) {
         body.pops += 1;
         empire.resources.food -= POP_GROWTH_FOOD_COST;

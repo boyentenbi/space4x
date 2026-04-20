@@ -11,6 +11,7 @@ export function isNegativeModifier(mod: Modifier): boolean {
     case "perPop":
     case "flat":
     case "hammersPerPopDelta":
+    case "popGrowthAdd":
     case "habBonus":
       return mod.value < 0;
     case "popGrowthMult":
@@ -44,6 +45,14 @@ export function renderModifier(mod: Modifier): ReactNode {
       return (
         <>
           {pct > 0 ? "+" : ""}{pct}% <img className="bonus-icon" src={POPS_ICON} alt="" /> growth
+        </>
+      );
+    }
+    case "popGrowthAdd": {
+      const pct = Math.round(mod.value * 100);
+      return (
+        <>
+          +{pct}% <img className="bonus-icon" src={POPS_ICON} alt="" /> growth (flat)
         </>
       );
     }

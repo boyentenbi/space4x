@@ -49,7 +49,10 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
       removeStoryModifierKeys: ["seeded_colony"],
       grantStoryModifiers: {
         brood_mother: [
-          { kind: "popGrowthMult", value: 1.4 },
+          // Flat per-turn probability added to every body's growth roll
+          // before multipliers. Keeps growth steady even on near-full
+          // bodies while still benefiting from other mults.
+          { kind: "popGrowthAdd", value: 0.15 },
           { kind: "flat", resource: "food", value: -5 },
         ],
       },
