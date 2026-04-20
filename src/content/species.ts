@@ -38,6 +38,8 @@ export const SPECIES: Species[] = [
       { kind: "spaceMult", value: 1.5 },
       { kind: "foodUpkeepDelta", value: -0.25 },
     ],
+    // Hive-minded: cannot run an individualist politic.
+    allowedPolitics: ["collectivist", "centrist"],
   },
   {
     id: "machine",

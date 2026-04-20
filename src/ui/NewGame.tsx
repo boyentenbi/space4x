@@ -1,8 +1,21 @@
 import { useMemo, useState } from "react";
 import { ORIGINS, SPECIES, TRAITS } from "../sim/content";
+import type { Expansionism, Politic } from "../sim/types";
 import { useGame } from "../store";
 import { Thumb } from "./Thumb";
 import { ModifierChip } from "./modifierUi";
+
+const EXPANSIONISM_OPTIONS: Array<{ id: Expansionism; label: string; blurb: string }> = [
+  { id: "conqueror",    label: "Conqueror",    blurb: "Pushes borders aggressively. Refuses pacts." },
+  { id: "pragmatist",   label: "Pragmatist",   blurb: "Expands when profitable. Keeps the deals that work." },
+  { id: "isolationist", label: "Isolationist", blurb: "Digs in. Accepts pacts. Rarely pushes first." },
+];
+
+const POLITIC_OPTIONS: Array<{ id: Politic; label: string; blurb: string }> = [
+  { id: "collectivist",  label: "Collectivist",  blurb: "Consensus politics. Extra political capital per turn." },
+  { id: "centrist",      label: "Centrist",      blurb: "Balanced. No lean." },
+  { id: "individualist", label: "Individualist", blurb: "Lean households. Small food-upkeep discount per pop." },
+];
 
 function originsFor(speciesId: string) {
   return ORIGINS.filter(
@@ -20,6 +33,9 @@ export function NewGame() {
   const currentSpecies = SPECIES.find((s) => s.id === speciesId);
   const portraitOptions = currentSpecies?.portraits ?? (currentSpecies?.art ? [currentSpecies.art] : []);
   const [portraitArt, setPortraitArt] = useState<string>(portraitOptions[0] ?? "");
+  const [expansionism, setExpansionism] = useState<Expansionism>("pragmatist");
+  const allowedPolitics = currentSpecies?.allowedPolitics ?? ["collectivist", "centrist", "individualist"];
+  const [politic, setPolitic] = useState<Politic>(allowedPolitics[0] ?? "centrist");
 
   function onSelectSpecies(id: string) {
     setSpeciesId(id);
@@ -30,6 +46,11 @@ export function NewGame() {
     const species = SPECIES.find((s) => s.id === id);
     const firstPortrait = species?.portraits?.[0] ?? species?.art ?? "";
     setPortraitArt(firstPortrait);
+    // Ensure the selected politic is allowed for the new species.
+    const newAllowed = species?.allowedPolitics ?? ["collectivist", "centrist", "individualist"];
+    if (!newAllowed.includes(politic)) {
+      setPolitic(newAllowed[0] ?? "centrist");
+    }
   }
 
   function start() {
@@ -41,6 +62,8 @@ export function NewGame() {
       speciesId,
       seed,
       portraitArt,
+      expansionism,
+      politic,
     });
   }
 
@@ -114,6 +137,39 @@ export function NewGame() {
           </div>
         </>
       )}
+
+      <label>Archetype — Expansionism</label>
+      <div className="archetype-picker">
+        {EXPANSIONISM_OPTIONS.map((opt) => (
+          <button
+            key={opt.id}
+            className={`archetype-option ${opt.id === expansionism ? "selected" : ""}`}
+            onClick={() => setExpansionism(opt.id)}
+          >
+            <span className="archetype-label">{opt.label}</span>
+            <span className="archetype-blurb">{opt.blurb}</span>
+          </button>
+        ))}
+      </div>
+
+      <label>Archetype — Politic</label>
+      <div className="archetype-picker">
+        {POLITIC_OPTIONS.map((opt) => {
+          const disabled = !allowedPolitics.includes(opt.id);
+          return (
+            <button
+              key={opt.id}
+              className={`archetype-option ${opt.id === politic ? "selected" : ""}`}
+              onClick={() => !disabled && setPolitic(opt.id)}
+              disabled={disabled}
+              title={disabled ? `${currentSpecies?.name ?? "This species"} cannot adopt ${opt.label.toLowerCase()} politics.` : undefined}
+            >
+              <span className="archetype-label">{opt.label}</span>
+              <span className="archetype-blurb">{opt.blurb}</span>
+            </button>
+          );
+        })}
+      </div>
 
       <label>Origin</label>
       <div className="chooser">

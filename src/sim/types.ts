@@ -77,6 +77,13 @@ export interface Galaxy {
 }
 
 // =====================================================================
+// Leader archetype axes. Two orthogonal 3-tier choices — the AI's
+// disposition toward expansion, and its internal political flavour.
+// =====================================================================
+export type Expansionism = "conqueror" | "pragmatist" | "isolationist";
+export type Politic = "collectivist" | "centrist" | "individualist";
+
+// =====================================================================
 // Species / Origins / Traits
 // =====================================================================
 // =====================================================================
@@ -115,6 +122,23 @@ export interface Species {
   portraits?: string[];        // All available portrait variants.
   color: string;
   modifiers: Modifier[];
+  // Politics this species can adopt. Undefined means all three are OK.
+  // Insectoids are hive-minded and cannot be individualist.
+  allowedPolitics?: Politic[];
+}
+
+// Pre-written leaders used to seed AI empires. Each bundles a portrait
+// with a fixed archetype + name + manifesto, so a machine's
+// "Ascendant Directive" always plays as a Conqueror+Individualist,
+// while a human can be mixed-and-matched by the player.
+export interface Leader {
+  id: string;
+  speciesId: string;
+  portraitPath: string;
+  name: string;
+  manifesto: string;
+  expansionism: Expansionism;
+  politic: Politic;
 }
 
 export interface Origin {
@@ -179,12 +203,17 @@ export interface Empire {
   // Chosen portrait URL (from the species' portraits list). Falls back to
   // the species default if unset.
   portraitArt?: string;
+  // Archetype axes — determine AI behaviour, diplomacy rules, and the
+  // modifiers layered on top of species + traits + story bundles.
+  expansionism: Expansionism;
+  politic: Politic;
+  // Optional id of the Leader content object this empire was seeded
+  // from. Present on AI empires; absent on the player empire (the
+  // player assembles their archetype manually).
+  leaderId?: string;
   capitalBodyId: string | null;
   systemIds: string[];       // Owned systems.
   projects: BuildOrder[];    // Empire-level project queue (FIFO).
-  // Named bundles of modifiers layered on top of species + traits. Used
-  // for story/project effects that can be added or removed later
-  // (origin debuffs, brood-mother boosts, etc.).
   storyModifiers: Record<string, Modifier[]>;
   completedProjects: string[];
   flags: string[];
@@ -196,7 +225,7 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 9;
+  schemaVersion: 10;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;

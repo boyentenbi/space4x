@@ -882,6 +882,48 @@ button.res-cell:hover:not(:disabled) {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
 }
 
+.archetype-picker {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.archetype-option {
+  flex: 1 1 calc(33% - 6px);
+  min-width: 140px;
+  padding: 10px 12px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.archetype-option.selected {
+  border-color: var(--accent);
+  background: rgba(126, 200, 255, 0.08);
+}
+
+.archetype-option:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.archetype-option .archetype-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.archetype-option .archetype-blurb {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-dim);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 .chooser .desc {
   font-size: 12px;
   color: var(--text-dim);

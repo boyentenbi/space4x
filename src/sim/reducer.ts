@@ -1,5 +1,5 @@
 import { produce } from "immer";
-import { originById, projectById, speciesById, traitById, EMPIRE_PROJECTS } from "./content";
+import { LEADERS, originById, projectById, speciesById, traitById, EMPIRE_PROJECTS } from "./content";
 import { pickRandomEvent, resolveEventChoice, RESOURCE_KEYS } from "./events";
 import { generateGalaxy } from "./galaxy";
 import { mulberry32, nextSeed } from "./rng";
@@ -7,15 +7,27 @@ import type {
   Body,
   BuildOrder,
   Empire,
+  Expansionism,
   GameState,
   HabitabilityTier,
+  Leader,
   Modifier,
+  Politic,
   Resources,
   ResourceKey,
 } from "./types";
 
 export type Action =
-  | { type: "newGame"; empireName: string; originId: string; speciesId: string; seed: number; portraitArt?: string }
+  | {
+      type: "newGame";
+      empireName: string;
+      originId: string;
+      speciesId: string;
+      seed: number;
+      portraitArt?: string;
+      expansionism: Expansionism;
+      politic: Politic;
+    }
   | { type: "endTurn" }
   | { type: "resolveEvent"; eventId: string; choiceId: string }
   | { type: "queueColonize"; targetBodyId: string }
@@ -85,32 +97,45 @@ export function growthEstimate(
 }
 
 // ===== AI empire setup =====
-interface AiSpec {
+// AI empires are seeded by picking leaders from the content roster.
+// Each leader brings their own portrait + archetype + name/manifesto.
+// The origin is chosen per species (simple mapping for MVP — eventually
+// leaders can carry their own origin preference too).
+const AI_ORIGIN_BY_SPECIES: Record<string, string> = {
+  humans: "steady_evolution",
+  insectoid: "steady_evolution",
+  machine: "graceful_handover",
+};
+const AI_COLOR_OVERRIDES: Record<string, string> = {
+  // Warm amber for humans/insectoid AIs, forest green for machines —
+  // visually distinct from the player's species colours.
+  humans: "#d88a3a",
+  insectoid: "#d88a3a",
+  machine: "#5fa55a",
+};
+
+const AI_EMPIRE_COUNT = 2;
+
+function pickAiLeaders(rand: () => number, count: number): Leader[] {
+  const pool = [...LEADERS];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, count);
+}
+
+function makeEmpire(spec: {
   id: string;
   name: string;
   color: string;
   speciesId: string;
   originId: string;
-}
-
-const AI_SPECS: AiSpec[] = [
-  {
-    id: "empire_ai_0",
-    name: "Kepler Directive",
-    color: "#d88a3a",
-    speciesId: "insectoid",
-    originId: "colony_seeders",
-  },
-  {
-    id: "empire_ai_1",
-    name: "Orvak Verdance",
-    color: "#5fa55a",
-    speciesId: "machine",
-    originId: "emancipation",
-  },
-];
-
-function makeEmpire(spec: { id: string; name: string; color: string; speciesId: string; originId: string }): Empire {
+  expansionism: Expansionism;
+  politic: Politic;
+  leaderId?: string;
+  portraitArt?: string;
+}): Empire {
   return {
     id: spec.id,
     name: spec.name,
@@ -119,6 +144,10 @@ function makeEmpire(spec: { id: string; name: string; color: string; speciesId: 
     color: spec.color,
     resources: { ...EMPTY_RESOURCES },
     compute: { cap: 0, used: 0 },
+    portraitArt: spec.portraitArt,
+    expansionism: spec.expansionism,
+    politic: spec.politic,
+    leaderId: spec.leaderId,
     capitalBodyId: null,
     systemIds: [],
     projects: [],
@@ -130,7 +159,7 @@ function makeEmpire(spec: { id: string; name: string; color: string; speciesId: 
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 9,
+    schemaVersion: 10,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -142,6 +171,8 @@ export function initialState(): GameState {
       color: "#7ec8ff",
       resources: { ...EMPTY_RESOURCES },
       compute: { cap: 0, used: 0 },
+      expansionism: "pragmatist",
+      politic: "centrist",
       capitalBodyId: null,
       systemIds: [],
       projects: [],
@@ -189,8 +220,41 @@ export function totalPopsOf(state: GameState, empire: Empire): number {
 
 // ===== Modifier plumbing =====
 
+// Modifier lean attached to an expansionism tier. Conqueror leans into
+// offence and lower colonize cost; isolationist leans into tall
+// production + more pop room; pragmatist is the baseline with no lean.
+function expansionismModifiers(ex: Expansionism): Modifier[] {
+  switch (ex) {
+    case "conqueror":
+      return [
+        { kind: "colonizeHammerMult", value: 0.85 },
+        { kind: "hammersPerPopDelta", value: 0.25 },
+      ];
+    case "pragmatist":
+      return [];
+    case "isolationist":
+      return [
+        { kind: "hammersPerPopDelta", value: 0.25 },
+        { kind: "spaceMult", value: 1.1 },
+      ];
+  }
+}
+
+// Politic lean — collectivist pools consensus into political capital;
+// individualist runs leaner households; centrist is the baseline.
+function politicModifiers(p: Politic): Modifier[] {
+  switch (p) {
+    case "collectivist":
+      return [{ kind: "flat", resource: "political", value: 0.5 }];
+    case "centrist":
+      return [];
+    case "individualist":
+      return [{ kind: "foodUpkeepDelta", value: -0.1 }];
+  }
+}
+
 // All modifiers that apply to an empire: species innates + trait mods +
-// story bundles granted by origin/projects.
+// archetype leans + story bundles granted by origin/projects.
 export function empireModifiers(empire: Empire): Modifier[] {
   const species = speciesById(empire.speciesId);
   const out: Modifier[] = [];
@@ -201,6 +265,8 @@ export function empireModifiers(empire: Empire): Modifier[] {
       if (t) out.push(...t.modifiers);
     }
   }
+  out.push(...expansionismModifiers(empire.expansionism));
+  out.push(...politicModifiers(empire.politic));
   for (const bundle of Object.values(empire.storyModifiers)) {
     out.push(...bundle);
   }
@@ -816,15 +882,34 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
   }
 }
 
-// Greedy AI colonize policy: queue a project for the best-scoring
-// colonizable target if none is in flight.
+// AI colonize policy. Each expansionism tier has a different threshold
+// for willingness to queue a new colonize project:
+//  - Conqueror  : queues as soon as political capital covers the cost.
+//  - Pragmatist : waits until there's a comfortable surplus.
+//  - Isolationist: only expands into intra-system uncolonized bodies
+//                  (no new system claims) and only with a big surplus.
 function aiPlan(state: GameState, empire: Empire): BuildOrder | null {
   if (empire.projects.length > 0) return null;
-  if (empire.resources.political < COLONIZE_POLITICAL) return null;
+
+  const politicalThreshold = (() => {
+    switch (empire.expansionism) {
+      case "conqueror":    return COLONIZE_POLITICAL;
+      case "pragmatist":   return COLONIZE_POLITICAL + 5;
+      case "isolationist": return COLONIZE_POLITICAL + 15;
+    }
+  })();
+  if (empire.resources.political < politicalThreshold) return null;
+
   let bestId: string | null = null;
   let bestScore = -1;
   for (const body of Object.values(state.galaxy.bodies)) {
     if (!canColonizeFor(state, empire, body.id)) continue;
+    // Isolationists won't claim new systems — only fill in systems they
+    // already own.
+    if (empire.expansionism === "isolationist") {
+      const targetSys = state.galaxy.systems[body.systemId];
+      if (!targetSys || targetSys.ownerId !== empire.id) continue;
+    }
     const score = HAB_COLONIZE_SCORE[body.habitability] ?? 0;
     if (score > bestScore) {
       bestScore = score;
@@ -890,8 +975,9 @@ export function reduce(state: GameState, action: Action): GameState {
       const galaxy = generateGalaxy({ ...GALAXY_SIZE, seed: action.seed });
       const rand = mulberry32(action.seed ^ 0x243f6a88);
 
-      // Pick three spread-out starters: [player, ai_0, ai_1].
-      const starters = pickSpreadStarters(galaxy, rand, 1 + AI_SPECS.length);
+      // Pick N+1 spread-out starters: [player, ai_0, ai_1, ...].
+      const aiLeaders = pickAiLeaders(rand, AI_EMPIRE_COUNT);
+      const starters = pickSpreadStarters(galaxy, rand, 1 + aiLeaders.length);
       const [playerStarterId, ...aiStarterIds] = starters;
       if (!playerStarterId) return state;
 
@@ -926,11 +1012,14 @@ export function reduce(state: GameState, action: Action): GameState {
 
       const playerStarter = claimStarter(fresh.empire.id, playerStarterId, origin.startingPops);
       const aiStarters = aiStarterIds.map((sid, i) => {
-        const spec = AI_SPECS[i];
-        const aiOrigin = originById(spec.originId);
+        const leader = aiLeaders[i];
+        const aiOriginId = AI_ORIGIN_BY_SPECIES[leader.speciesId] ?? "steady_evolution";
+        const aiOrigin = originById(aiOriginId);
         return {
-          spec,
-          starter: claimStarter(spec.id, sid, aiOrigin?.startingPops ?? 4),
+          leader,
+          empireId: `empire_ai_${i}`,
+          color: AI_COLOR_OVERRIDES[leader.speciesId] ?? "#7ec8ff",
+          starter: claimStarter(`empire_ai_${i}`, sid, aiOrigin?.startingPops ?? 4),
           originObj: aiOrigin,
         };
       });
@@ -944,6 +1033,8 @@ export function reduce(state: GameState, action: Action): GameState {
         draft.empire.name = action.empireName || "Unnamed Empire";
         draft.empire.originId = action.originId;
         draft.empire.speciesId = action.speciesId;
+        draft.empire.expansionism = action.expansionism;
+        draft.empire.politic = action.politic;
         const species = speciesById(action.speciesId);
         if (species) draft.empire.color = species.color;
         if (action.portraitArt) draft.empire.portraitArt = action.portraitArt;
@@ -984,20 +1075,21 @@ export function reduce(state: GameState, action: Action): GameState {
           if (body) body.hammers = Math.floor(body.pops * playerHammerRate);
         }
 
-        // AI empires.
-        draft.aiEmpires = aiStarters.map(({ spec, starter, originObj }) => {
-          const empire = makeEmpire(spec);
+        // AI empires — one per leader.
+        draft.aiEmpires = aiStarters.map(({ leader, empireId, color, starter, originObj }) => {
+          const empire = makeEmpire({
+            id: empireId,
+            name: leader.name,
+            color,
+            speciesId: leader.speciesId,
+            originId: originObj?.id ?? "steady_evolution",
+            expansionism: leader.expansionism,
+            politic: leader.politic,
+            leaderId: leader.id,
+            portraitArt: leader.portraitPath,
+          });
           empire.capitalBodyId = starter.capitalBodyId;
           empire.systemIds = [starter.systemId];
-          // Random portrait variant so AI leaders feel distinct.
-          const aiSpecies = speciesById(spec.speciesId);
-          if (aiSpecies?.portraits && aiSpecies.portraits.length > 0) {
-            const aiRand = mulberry32((action.seed ^ 0xc2b2ae3d) + spec.id.charCodeAt(spec.id.length - 1));
-            const idx = Math.floor(aiRand() * aiSpecies.portraits.length);
-            empire.portraitArt = aiSpecies.portraits[idx];
-          } else if (aiSpecies?.art) {
-            empire.portraitArt = aiSpecies.art;
-          }
           if (originObj) {
             for (const key of RESOURCE_KEYS) {
               empire.resources[key] = originObj.startingResources[key] ?? 0;

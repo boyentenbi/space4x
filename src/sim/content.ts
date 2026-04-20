@@ -1,11 +1,12 @@
-import type { EmpireProject, GameEvent, Origin, Species, SpeciesTrait } from "./types";
+import type { EmpireProject, GameEvent, Leader, Origin, Species, SpeciesTrait } from "./types";
 import { ORIGINS } from "../content/origins";
 import { SPECIES } from "../content/species";
 import { TRAITS } from "../content/traits";
 import { EVENTS } from "../content/events";
 import { EMPIRE_PROJECTS, empireProjectById } from "../content/projects";
+import { LEADERS, leaderById, leadersForSpecies } from "../content/leaders";
 
-export { ORIGINS, SPECIES, TRAITS, EVENTS, EMPIRE_PROJECTS, empireProjectById };
+export { ORIGINS, SPECIES, TRAITS, EVENTS, EMPIRE_PROJECTS, LEADERS, empireProjectById, leaderById, leadersForSpecies };
 
 export function originById(id: string): Origin | undefined {
   return ORIGINS.find((o) => o.id === id);
@@ -21,4 +22,7 @@ export function eventById(id: string): GameEvent | undefined {
 }
 export function projectById(id: string): EmpireProject | undefined {
   return empireProjectById(id);
+}
+export function leaderContentById(id: string): Leader | undefined {
+  return leaderById(id);
 }
