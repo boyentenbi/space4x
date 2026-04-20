@@ -23,7 +23,8 @@ const EMPTY_RESOURCES: Resources = {
   influence: 0,
 };
 
-export const GALAXY_SIZE = { width: 9, height: 6, density: 0.75 };
+// Oversized grid with a disc shape carved out of it by the generator.
+export const GALAXY_SIZE = { width: 11, height: 9, density: 0.85 };
 
 // Per-pop production by habitability. Gardens farm, hellscapes mine.
 // Net of food consumption: every pop also eats 1 food/turn (applied once at empire level).

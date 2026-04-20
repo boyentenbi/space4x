@@ -150,6 +150,13 @@ function generateHyperlanes(systems: StarSystem[], rand: () => number): Hyperlan
   return edges;
 }
 
+// Hex distance between two axial coords (in hex cells).
+function axialDistance(q1: number, r1: number, q2: number, r2: number): number {
+  const dq = q1 - q2;
+  const dr = r1 - r2;
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
+}
+
 export function generateGalaxy(opts: GenOptions): Galaxy {
   const rand = mulberry32(opts.seed);
   const systems: Record<string, StarSystem> = {};
@@ -158,8 +165,21 @@ export function generateGalaxy(opts: GenOptions): Galaxy {
   let systemCounter = 0;
   let bodyCounter = 0;
 
+  // Shape the galaxy as a rough disc with a soft, noisy edge.
+  const centerQ = (opts.width - 1) / 2;
+  const centerR = (opts.height - 1) / 2;
+  const radius = Math.min(opts.width, opts.height) / 2;
+  const softEdge = 1.0;  // cells over which the probability decays to 0
+
   for (let r = 0; r < opts.height; r++) {
     for (let q = 0; q < opts.width; q++) {
+      const d = axialDistance(q, r, centerQ, centerR);
+      // Probability falls off as we approach and cross the radius.
+      let shapeP = 1;
+      if (d > radius - softEdge) {
+        shapeP = Math.max(0, 1 - (d - (radius - softEdge)) / softEdge);
+      }
+      if (rand() > shapeP) continue;
       if (rand() > opts.density) continue;
       const sysId = `sys_${systemCounter++}`;
       const name = systemName(rand, takenNames);
