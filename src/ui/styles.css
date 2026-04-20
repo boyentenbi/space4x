@@ -207,6 +207,19 @@ button:disabled {
   gap: 4px;
 }
 
+.chooser button.row {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.chooser button.row .row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
 .chooser button.selected {
   border-color: var(--accent);
   background: rgba(126, 200, 255, 0.08);

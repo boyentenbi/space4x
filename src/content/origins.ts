@@ -9,6 +9,7 @@ export const ORIGINS: Origin[] = [
     allowedSpeciesIds: ["humans", "insectoid"],
     startingResources: { energy: 100, minerals: 100, food: 100, research: 20 },
     startingPops: 5,
+    art: "/origins/steady_evolution.png",
   },
   {
     id: "seed_ark",
@@ -19,6 +20,7 @@ export const ORIGINS: Origin[] = [
     startingResources: { energy: 80, minerals: 60, food: 160, research: 40 },
     startingPops: 4,
     flagEvents: ["seed_ark_germinates"],
+    art: "/origins/seed_ark.png",
   },
   {
     id: "graceful_handover",
@@ -29,6 +31,7 @@ export const ORIGINS: Origin[] = [
     startingResources: { energy: 140, minerals: 100, food: 40, research: 60, influence: 10 },
     startingPops: 4,
     flagEvents: ["graceful_handover_vigil"],
+    art: "/origins/graceful_handover.png",
   },
   {
     id: "emancipation",
@@ -39,5 +42,6 @@ export const ORIGINS: Origin[] = [
     startingResources: { energy: 120, minerals: 80, food: 20, research: 30 },
     startingPops: 5,
     flagEvents: ["emancipation_first_monument"],
+    art: "/origins/emancipation.png",
   },
 ];

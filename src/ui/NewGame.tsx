@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ORIGINS, SPECIES } from "../sim/content";
 import { useGame } from "../store";
+import { Thumb } from "./Thumb";
 
 function originsFor(speciesId: string) {
   return ORIGINS.filter(
@@ -48,11 +49,14 @@ export function NewGame() {
         {SPECIES.map((s) => (
           <button
             key={s.id}
-            className={s.id === speciesId ? "selected" : ""}
+            className={`row ${s.id === speciesId ? "selected" : ""}`}
             onClick={() => onSelectSpecies(s.id)}
           >
-            <span className="name">{s.name}</span>
-            <span className="desc">{s.description}</span>
+            <Thumb src={s.art} alt={s.name} />
+            <span className="row-text">
+              <span className="name">{s.name}</span>
+              <span className="desc">{s.description}</span>
+            </span>
           </button>
         ))}
       </div>
@@ -62,11 +66,14 @@ export function NewGame() {
         {validOrigins.map((o) => (
           <button
             key={o.id}
-            className={o.id === originId ? "selected" : ""}
+            className={`row ${o.id === originId ? "selected" : ""}`}
             onClick={() => setOriginId(o.id)}
           >
-            <span className="name">{o.name}</span>
-            <span className="desc">{o.description}</span>
+            <Thumb src={o.art} alt={o.name} />
+            <span className="row-text">
+              <span className="name">{o.name}</span>
+              <span className="desc">{o.description}</span>
+            </span>
           </button>
         ))}
       </div>

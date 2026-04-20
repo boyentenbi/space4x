@@ -1,0 +1,42 @@
+name: gen-art
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Regenerate even if image already exists"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Generate pixel art
+        env:
+          RD_API_KEY: ${{ secrets.RD_API_KEY }}
+          FORCE: ${{ inputs.force && '1' || '' }}
+        run: node scripts/gen-art.mjs
+
+      - name: Commit and push
+        run: |
+          git config user.name "space4x-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add public/portraits public/origins || true
+          if git diff --staged --quiet; then
+            echo "No new art to commit."
+          else
+            git commit -m "Generate pixel art via Retro Diffusion"
+            git push
+          fi

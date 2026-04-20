@@ -13,6 +13,7 @@ export interface Species {
   name: string;
   description: string;
   traitIds: string[];
+  art?: string;
 }
 
 export interface Origin {
@@ -23,6 +24,7 @@ export interface Origin {
   startingPops: number;
   allowedSpeciesIds?: string[];
   flagEvents?: string[];
+  art?: string;
 }
 
 export interface Empire {
