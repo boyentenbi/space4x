@@ -1,13 +1,10 @@
 import type { GameEvent, Origin, Species, SpeciesTrait } from "./types";
-import originsData from "../content/origins.json";
-import speciesData from "../content/species.json";
-import traitsData from "../content/traits.json";
-import eventsData from "../content/events.json";
+import { ORIGINS } from "../content/origins";
+import { SPECIES } from "../content/species";
+import { TRAITS } from "../content/traits";
+import { EVENTS } from "../content/events";
 
-export const ORIGINS: Origin[] = originsData as Origin[];
-export const SPECIES: Species[] = speciesData as Species[];
-export const TRAITS: SpeciesTrait[] = traitsData as SpeciesTrait[];
-export const EVENTS: GameEvent[] = eventsData as GameEvent[];
+export { ORIGINS, SPECIES, TRAITS, EVENTS };
 
 export function originById(id: string): Origin | undefined {
   return ORIGINS.find((o) => o.id === id);
