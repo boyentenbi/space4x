@@ -121,14 +121,25 @@ button:disabled {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 8px 6px;
+  padding: 6px 4px 6px;
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.resource .res-icon {
+  width: 20px;
+  height: 20px;
+  image-rendering: pixelated;
+  object-fit: contain;
 }
 
 .resource .label {
-  font-size: 10px;
+  font-size: 9px;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   color: var(--text-dim);
 }
 

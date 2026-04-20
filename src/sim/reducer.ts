@@ -20,7 +20,7 @@ const EMPTY_RESOURCES: Resources = {
   food: 0,
   energy: 0,
   alloys: 0,
-  influence: 0,
+  political: 0,
 };
 
 // Oversized grid with a disc shape carved out of it by the generator.
@@ -46,7 +46,7 @@ const POP_GROWTH_FOOD_COST = 5;
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -118,8 +118,8 @@ export function perTurnIncome(state: GameState): Resources {
   }
   // Empire-level food upkeep: 1 per pop.
   income.food -= totalPops(state);
-  // Baseline influence tick.
-  income.influence += 1;
+  // Baseline political capital tick.
+  income.political += 1;
   return income;
 }
 
@@ -199,7 +199,7 @@ export function reduce(state: GameState, action: Action): GameState {
     case "endTurn": {
       if (state.eventQueue.length > 0) return state;
 
-      // 1. Accumulate stock resources (food/energy/alloys/influence).
+      // 1. Accumulate stock resources (food/energy/alloys/political).
       const income = perTurnIncome(state);
       let next = produce(state, (draft) => {
         draft.turn += 1;

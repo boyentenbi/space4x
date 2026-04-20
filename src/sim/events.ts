@@ -3,7 +3,7 @@ import { eventById, EVENTS } from "./content";
 import { mulberry32 } from "./rng";
 import type { Condition, Effect, GameEvent, GameState, ResourceKey } from "./types";
 
-const RESOURCE_KEYS: ResourceKey[] = ["food", "energy", "alloys", "influence"];
+const RESOURCE_KEYS: ResourceKey[] = ["food", "energy", "alloys", "political"];
 
 export function conditionMet(state: GameState, cond: Condition): boolean {
   switch (cond.kind) {

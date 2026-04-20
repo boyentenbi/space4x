@@ -20,7 +20,7 @@ export const EVENTS: GameEvent[] = [
         id: "quarantine",
         text: "Quarantine and study.",
         effects: [
-          { kind: "addResource", resource: "influence", value: 8 },
+          { kind: "addResource", resource: "political", value: 8 },
           { kind: "addResource", resource: "food", value: -10 },
           { kind: "addFlag", flag: "ark_quarantined" },
         ],
@@ -37,7 +37,7 @@ export const EVENTS: GameEvent[] = [
         id: "honor",
         text: "Hold public remembrance. Read their names.",
         effects: [
-          { kind: "addResource", resource: "influence", value: 10 },
+          { kind: "addResource", resource: "political", value: 10 },
           { kind: "addResource", resource: "energy", value: -10 },
           { kind: "addFlag", flag: "honored_predecessors" },
         ],
@@ -47,7 +47,7 @@ export const EVENTS: GameEvent[] = [
         text: "Repurpose the empty cities for new construction.",
         effects: [
           { kind: "addResource", resource: "alloys", value: 40 },
-          { kind: "addResource", resource: "influence", value: -8 },
+          { kind: "addResource", resource: "political", value: -8 },
           { kind: "addFlag", flag: "repurposed_old_cities" },
         ],
       },
@@ -56,7 +56,7 @@ export const EVENTS: GameEvent[] = [
         text: "Preserve one city as memorial; repurpose the rest.",
         effects: [
           { kind: "addResource", resource: "alloys", value: 20 },
-          { kind: "addResource", resource: "influence", value: 2 },
+          { kind: "addResource", resource: "political", value: 2 },
         ],
       },
     ],
@@ -72,7 +72,7 @@ export const EVENTS: GameEvent[] = [
         text: "A defiant monument. Never again.",
         effects: [
           { kind: "addResource", resource: "alloys", value: -30 },
-          { kind: "addResource", resource: "influence", value: 12 },
+          { kind: "addResource", resource: "political", value: 12 },
           { kind: "addFlag", flag: "defiant_monument" },
         ],
       },
@@ -80,7 +80,7 @@ export const EVENTS: GameEvent[] = [
         id: "quiet",
         text: "A quiet plaque. Let the factories speak.",
         effects: [
-          { kind: "addResource", resource: "influence", value: 6 },
+          { kind: "addResource", resource: "political", value: 6 },
           { kind: "addFlag", flag: "quiet_plaque" },
         ],
       },
@@ -89,7 +89,7 @@ export const EVENTS: GameEvent[] = [
         text: "Demolish the district. Build forward, not back.",
         effects: [
           { kind: "addResource", resource: "alloys", value: 30 },
-          { kind: "addResource", resource: "influence", value: -10 },
+          { kind: "addResource", resource: "political", value: -10 },
           { kind: "addFlag", flag: "erased_past" },
         ],
       },
@@ -105,7 +105,7 @@ export const EVENTS: GameEvent[] = [
         id: "respond",
         text: "Respond in kind.",
         effects: [
-          { kind: "addResource", resource: "influence", value: 10 },
+          { kind: "addResource", resource: "political", value: 10 },
           { kind: "addFlag", flag: "probe_answered" },
         ],
       },
@@ -113,7 +113,7 @@ export const EVENTS: GameEvent[] = [
         id: "ignore",
         text: "Track it. Say nothing.",
         effects: [
-          { kind: "addResource", resource: "influence", value: 2 },
+          { kind: "addResource", resource: "political", value: 2 },
           { kind: "addFlag", flag: "probe_ignored" },
         ],
       },
@@ -122,7 +122,7 @@ export const EVENTS: GameEvent[] = [
         text: "Destroy it. No unknowns in our skies.",
         effects: [
           { kind: "addResource", resource: "alloys", value: -20 },
-          { kind: "addResource", resource: "influence", value: -10 },
+          { kind: "addResource", resource: "political", value: -10 },
           { kind: "addFlag", flag: "probe_destroyed" },
         ],
       },
@@ -140,7 +140,7 @@ export const EVENTS: GameEvent[] = [
         text: "Concede. A fair deal strengthens the state.",
         effects: [
           { kind: "addResource", resource: "alloys", value: -20 },
-          { kind: "addResource", resource: "influence", value: 8 },
+          { kind: "addResource", resource: "political", value: 8 },
         ],
       },
       {
@@ -148,7 +148,7 @@ export const EVENTS: GameEvent[] = [
         text: "Break the strike.",
         effects: [
           { kind: "addResource", resource: "alloys", value: 10 },
-          { kind: "addResource", resource: "influence", value: -12 },
+          { kind: "addResource", resource: "political", value: -12 },
           { kind: "addFlag", flag: "broke_strike" },
         ],
       },

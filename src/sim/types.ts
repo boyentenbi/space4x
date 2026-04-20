@@ -2,7 +2,7 @@
 // Resources
 // =====================================================================
 // Empire-wide stocks (accumulate across turns).
-export type ResourceKey = "food" | "energy" | "alloys" | "influence";
+export type ResourceKey = "food" | "energy" | "alloys" | "political";
 export type Resources = Record<ResourceKey, number>;
 
 // Empire-wide flow (resets every turn — capacity, not stockpile).
@@ -17,6 +17,8 @@ export interface Compute {
 export type HabitabilityTier = "garden" | "temperate" | "harsh" | "hellscape";
 
 export type BodyKind = "planet" | "moon";
+
+export type StarKind = "yellow_main" | "blue_giant" | "red_dwarf";
 
 export interface Body {
   id: string;
@@ -44,6 +46,7 @@ export interface StarSystem {
   name: string;
   q: number;               // Axial hex coord.
   r: number;
+  starKind: StarKind;
   bodyIds: string[];
   ownerId: string | null;  // Empire id, null = unclaimed.
 }
@@ -111,7 +114,7 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 3;
+  schemaVersion: 4;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;

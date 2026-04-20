@@ -13,7 +13,7 @@ const RES_LABEL: Record<ResourceKey, string> = {
   food: "food",
   energy: "energy",
   alloys: "alloys",
-  influence: "infl",
+  political: "pol",
 };
 
 function BodyRow({
@@ -38,7 +38,7 @@ function BodyRow({
         <span>hammers +{body.hammers}</span>
       </div>
       <div className="chips">
-        {RESOURCE_KEYS.filter((k) => k !== "influence").map((k) => {
+        {RESOURCE_KEYS.filter((k) => k !== "political").map((k) => {
           const v = income[k] ?? 0;
           if (v === 0) return null;
           const cls = v > 0 ? "pos" : "neg";

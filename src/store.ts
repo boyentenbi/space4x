@@ -2,14 +2,14 @@ import { create } from "zustand";
 import { initialState, reduce, type Action } from "./sim/reducer";
 import type { GameState } from "./sim/types";
 
-const STORAGE_KEY = "space4x:save:v3";
+const STORAGE_KEY = "space4x:save:v4";
 
 function loadSaved(): GameState | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as GameState;
-    if (parsed.schemaVersion !== 3) return null;
+    if (parsed.schemaVersion !== 4) return null;
     return parsed;
   } catch {
     return null;

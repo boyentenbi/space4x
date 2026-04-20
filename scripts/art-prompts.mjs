@@ -11,6 +11,18 @@ export const PORTRAIT_TEMPLATE =
 export const SCENE_TEMPLATE =
   "pixel art scene, wide shot, cinematic composition, painterly sci-fi landscape";
 
+// Small UI icons — square, crisp edges, dark background.
+export const ICON_TEMPLATE =
+  "pixel art game UI icon, single object centered in frame, crisp edges, dark neutral background, bold silhouette, 256x256";
+
+// Star sprites — the object fills most of the frame, pure black space behind it.
+export const STAR_TEMPLATE =
+  "pixel art sprite of a star, single stellar object centered, subtle corona glow, pure black space background, no planets, no text, 256x256";
+
+// Planet sprites — spherical body in the center, black space behind.
+export const PLANET_TEMPLATE =
+  "pixel art sprite of a planet, single spherical body centered and filling frame, subtle shading on the lit side, pure black space background, no ships, no text, no moons, 256x256";
+
 export const PORTRAITS = [
   {
     id: "humans",
@@ -59,6 +71,70 @@ export const SCENES = [
   },
 ];
 
+export const ICONS = [
+  {
+    id: "food",
+    path: "public/icons/food.png",
+    subject: "golden wheat sheaf, bound bundle, warm yellow tones",
+  },
+  {
+    id: "energy",
+    path: "public/icons/energy.png",
+    subject: "stylized lightning bolt, bright cyan glow",
+  },
+  {
+    id: "alloys",
+    path: "public/icons/alloys.png",
+    subject: "stack of three refined metal ingots, cool silver tones with faint blue sheen",
+  },
+  {
+    id: "political",
+    path: "public/icons/political.png",
+    subject: "waving flag on a pole, deep red banner with gold trim",
+  },
+];
+
+export const STARS = [
+  {
+    id: "yellow_main",
+    path: "public/stars/yellow_main.png",
+    subject: "yellow main-sequence star, warm golden-white core, soft orange corona",
+  },
+  {
+    id: "red_dwarf",
+    path: "public/stars/red_dwarf.png",
+    subject: "small dim red dwarf star, deep crimson surface, subtle dull glow",
+  },
+  {
+    id: "blue_giant",
+    path: "public/stars/blue_giant.png",
+    subject: "massive blue giant star, brilliant white-blue core, bright cyan corona, dense glow",
+  },
+];
+
+export const PLANETS = [
+  {
+    id: "garden",
+    path: "public/planets/garden.png",
+    subject: "lush garden world, vibrant blue oceans, green continents, swirling white cloud bands",
+  },
+  {
+    id: "temperate",
+    path: "public/planets/temperate.png",
+    subject: "temperate planet, tan and dusty-green continents, scattered clouds, some small seas",
+  },
+  {
+    id: "harsh",
+    path: "public/planets/harsh.png",
+    subject: "harsh arid planet, rust-red cratered surface, thin dusty atmosphere, barren",
+  },
+  {
+    id: "hellscape",
+    path: "public/planets/hellscape.png",
+    subject: "volcanic hellscape planet, dark crust cracked with glowing lava flows, angry red atmosphere",
+  },
+];
+
 function buildPrompt(template, subject) {
   return `${template}, ${subject}`;
 }
@@ -74,6 +150,24 @@ export function allJobs() {
     ...SCENES.map((s) => ({
       path: s.path,
       prompt: buildPrompt(SCENE_TEMPLATE, s.subject),
+      style: STYLE,
+      size: SIZE,
+    })),
+    ...ICONS.map((i) => ({
+      path: i.path,
+      prompt: buildPrompt(ICON_TEMPLATE, i.subject),
+      style: STYLE,
+      size: SIZE,
+    })),
+    ...STARS.map((s) => ({
+      path: s.path,
+      prompt: buildPrompt(STAR_TEMPLATE, s.subject),
+      style: STYLE,
+      size: SIZE,
+    })),
+    ...PLANETS.map((p) => ({
+      path: p.path,
+      prompt: buildPrompt(PLANET_TEMPLATE, p.subject),
       style: STYLE,
       size: SIZE,
     })),

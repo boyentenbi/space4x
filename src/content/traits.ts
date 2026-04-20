@@ -17,7 +17,7 @@ export const TRAITS: SpeciesTrait[] = [
     id: "charismatic",
     name: "Charismatic",
     description: "A natural talent for diplomacy and influence.",
-    modifiers: { influence: 1 },
+    modifiers: { political: 1 },
   },
   {
     id: "solar_attuned",

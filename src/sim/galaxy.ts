@@ -5,6 +5,7 @@ import type {
   Galaxy,
   HabitabilityTier,
   Hyperlane,
+  StarKind,
   StarSystem,
 } from "./types";
 
@@ -34,6 +35,13 @@ function rollHabitability(r: Rand): HabitabilityTier {
   if (roll < 0.35) return "temperate";
   if (roll < 0.7) return "harsh";
   return "hellscape";
+}
+
+function rollStarKind(r: Rand): StarKind {
+  const roll = r();
+  if (roll < 0.55) return "yellow_main";
+  if (roll < 0.85) return "red_dwarf";
+  return "blue_giant";
 }
 
 // Space cap per body depends on habitability.
@@ -209,6 +217,7 @@ export function generateGalaxy(opts: GenOptions): Galaxy {
         name,
         q,
         r,
+        starKind: rollStarKind(rand),
         bodyIds,
         ownerId: null,
       };
