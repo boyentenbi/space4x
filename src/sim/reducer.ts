@@ -54,7 +54,6 @@ function nextOrderId(): string {
 const EMPTY_RESOURCES: Resources = {
   food: 0,
   energy: 0,
-  alloys: 0,
   political: 0,
 };
 
@@ -63,14 +62,14 @@ const EMPTY_RESOURCES: Resources = {
 // empires room to maneuver without the map becoming unreadable.
 export const GALAXY_SIZE = { width: 15, height: 13, density: 0.85 };
 
-// Food is produced ONLY on temperate/garden worlds and only per pop.
-// Harsh and hellscape bodies generate 0 food. Everything else
-// (energy/alloys) still scales per pop by habitability.
+// Food is produced only on temperate/garden worlds. Energy comes from
+// pops on every habitable body. Hammers come from a separate flow
+// pipeline (HAMMERS_PER_POP + modifiers), not from this table.
 const PER_POP_BY_HAB: Record<HabitabilityTier, Partial<Record<ResourceKey, number>>> = {
-  garden:    { food: 2, energy: 1, alloys: 0 },
-  temperate: { food: 2, energy: 1, alloys: 1 },
-  harsh:     { food: 0, energy: 1, alloys: 2 },
-  hellscape: { food: 0, energy: 1, alloys: 3 },
+  garden:    { food: 2, energy: 1 },
+  temperate: { food: 2, energy: 1 },
+  harsh:     { food: 0, energy: 1 },
+  hellscape: { food: 0, energy: 1 },
 };
 
 const HAB_COLONIZE_SCORE: Record<HabitabilityTier, number> = {
@@ -186,7 +185,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 13,
+    schemaVersion: 14,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -544,13 +543,11 @@ function labelledModifiers(empire: Empire): LabelledMod[] {
 const RESOURCE_LABEL: Record<ResourceKey, string> = {
   food: "Food",
   energy: "Energy",
-  alloys: "Alloys",
   political: "Political Capital",
 };
 const RESOURCE_ICON_PATH: Record<ResourceKey, string> = {
   food: "/icons/food.png",
   energy: "/icons/energy.png",
-  alloys: "/icons/alloys.png",
   political: "/icons/political.png",
 };
 
@@ -1206,9 +1203,7 @@ function aiPlanBuildShip(state: GameState, empire: Empire): BuildOrder | null {
   if (currentShips >= target) return null;
   const proj = projectById("build_frigate");
   if (!proj) return null;
-  const alloyCost = proj.costs?.alloys ?? 0;
   const pcCost = proj.costs?.political ?? 0;
-  if (empire.resources.alloys < alloyCost) return null;
   if (empire.resources.political < pcCost) return null;
   return {
     kind: "empire_project",

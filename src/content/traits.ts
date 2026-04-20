@@ -1,5 +1,8 @@
 import type { SpeciesTrait } from "../sim/types";
 
+// Traits are currently parked — species carry `traitIds: []` so none of
+// these are applied in-game. Kept as content so a future player-pickable
+// trait system can turn them back on.
 export const TRAITS: SpeciesTrait[] = [
   {
     id: "agrarian",
@@ -12,11 +15,9 @@ export const TRAITS: SpeciesTrait[] = [
   {
     id: "industrious",
     name: "Industrious",
-    description: "Hard-working hands and a keen sense for metallurgy — especially in hostile mines.",
+    description: "Hard-working hands — more hammers per pop, and especially efficient on hostile worlds.",
     modifiers: [
-      { kind: "perPop", resource: "alloys", value: 1 },
-      { kind: "habBonus", habitability: "harsh", resource: "alloys", value: 2 },
-      { kind: "habBonus", habitability: "hellscape", resource: "alloys", value: 3 },
+      { kind: "hammersPerPopDelta", value: 0.25 },
     ],
   },
   {

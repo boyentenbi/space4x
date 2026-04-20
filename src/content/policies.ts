@@ -25,9 +25,9 @@ export const POLICIES: Policy[] = [
     id: "open_markets",
     name: "Open Markets",
     description:
-      "Trade charters, rail corridors, merchant guilds. Alloys flow faster where hands are free to move them.",
+      "Trade charters, rail corridors, merchant guilds. Industrial output rises where hands are free to move goods.",
     basePoliticalCost: 18,
-    modifiers: [{ kind: "perPop", resource: "alloys", value: 0.25 }],
+    modifiers: [{ kind: "hammersPerPopDelta", value: 0.25 }],
   },
   {
     id: "martial_law",

@@ -2,7 +2,9 @@
 // Resources
 // =====================================================================
 // Empire-wide stocks (accumulate across turns).
-export type ResourceKey = "food" | "energy" | "alloys" | "political";
+// Industrial output is tracked as hammers (flow resource) — alloys has
+// been retired. Remaining stock resources: food, energy, political.
+export type ResourceKey = "food" | "energy" | "political";
 export type Resources = Record<ResourceKey, number>;
 
 // Empire-wide flow (resets every turn — capacity, not stockpile).
@@ -268,7 +270,7 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 13;
+  schemaVersion: 14;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;

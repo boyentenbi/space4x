@@ -40,7 +40,7 @@ import { ProjectCompletionModal } from "./ProjectCompletionModal";
 import { StatBreakdownModal } from "./StatBreakdownModal";
 import { COMPUTE_ICON, HAMMERS_ICON, POPS_ICON, RESOURCE_ICON, planetSpriteFor } from "./icons";
 
-const RESOURCE_ORDER: ResourceKey[] = ["food", "energy", "alloys", "political"];
+const RESOURCE_ORDER: ResourceKey[] = ["food", "energy", "political"];
 
 // Matches SystemScene: planet sprite radius 13, moon radius 8.
 // Scale both proportionally for the body-list thumbnails.

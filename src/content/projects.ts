@@ -9,7 +9,7 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     hammersRequired: 200,
     scope: "body",
     bodyRequirement: "any_owned",
-    costs: { alloys: 100, political: 2 },
+    costs: { political: 2 },
     availability: {
       // Repeatable: no excludesFlag, no excludesCompleted.
     },

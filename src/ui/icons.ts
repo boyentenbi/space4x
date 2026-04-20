@@ -12,7 +12,6 @@ export const HAB_COLOR: Record<HabitabilityTier, string> = {
 export const RESOURCE_ICON: Record<ResourceKey, string> = {
   food: "/icons/food.png",
   energy: "/icons/energy.png",
-  alloys: "/icons/alloys.png",
   political: "/icons/political.png",
 };
 
