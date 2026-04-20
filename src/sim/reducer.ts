@@ -97,14 +97,22 @@ function traitBonusPerPop(state: GameState): Partial<Record<ResourceKey, number>
   return bonus;
 }
 
+// Per-body raw production (no empire-level upkeep or flat bonuses).
+export function bodyIncome(state: GameState, body: Body): Resources {
+  const traitBonus = traitBonusPerPop(state);
+  const base = PER_POP_BY_HAB[body.habitability];
+  const out: Resources = { ...EMPTY_RESOURCES };
+  for (const k of RESOURCE_KEYS) {
+    out[k] = ((base[k] ?? 0) + (traitBonus[k] ?? 0)) * body.pops;
+  }
+  return out;
+}
+
 export function perTurnIncome(state: GameState): Resources {
   const income: Resources = { ...EMPTY_RESOURCES };
-  const traitBonus = traitBonusPerPop(state);
   for (const body of ownedBodies(state)) {
-    const base = PER_POP_BY_HAB[body.habitability];
-    for (const k of RESOURCE_KEYS) {
-      income[k] += ((base[k] ?? 0) + (traitBonus[k] ?? 0)) * body.pops;
-    }
+    const contrib = bodyIncome(state, body);
+    for (const k of RESOURCE_KEYS) income[k] += contrib[k];
   }
   // Empire-level food upkeep: 1 per pop.
   income.food -= totalPops(state);

@@ -77,9 +77,9 @@ button:disabled {
 
 .resources {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
-  padding: 10px 0;
+  padding: 10px 0 4px;
 }
 
 .resource {
@@ -102,6 +102,108 @@ button:disabled {
   font-variant-numeric: tabular-nums;
   margin-top: 2px;
 }
+
+.resource .delta {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+  color: var(--text-dim);
+}
+
+.resource .delta.pos { color: var(--good); }
+.resource .delta.neg { color: var(--bad); }
+
+.compute-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.compute-strip .value {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+}
+
+.body-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--border);
+  background: rgba(255, 255, 255, 0.015);
+  border-radius: 0 6px 6px 0;
+  margin-bottom: 6px;
+}
+
+.body-row.capital {
+  border-left-color: var(--accent);
+  background: rgba(126, 200, 255, 0.04);
+}
+
+.body-row .body-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.body-row .body-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.body-row .hab {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.body-row .hab.garden { color: var(--good); }
+.body-row .hab.temperate { color: #a8d8ff; }
+.body-row .hab.harsh { color: var(--warn); }
+.body-row .hab.hellscape { color: var(--bad); }
+
+.body-row .body-stats {
+  font-size: 12px;
+  color: var(--text-dim);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.body-row .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.body-row .chip {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.body-row .chip.pos { color: var(--good); border-color: rgba(139, 220, 166, 0.3); }
+.body-row .chip.neg { color: var(--bad); border-color: rgba(255, 138, 138, 0.3); }
+.body-row .chip.flavor { color: var(--warn); border-color: rgba(255, 182, 115, 0.4); }
 
 .main {
   flex: 1;

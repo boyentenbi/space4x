@@ -1,8 +1,57 @@
 import { useGame } from "../store";
 import { originById, speciesById } from "../sim/content";
-import { totalPops } from "../sim/reducer";
+import { bodyIncome, perTurnIncome, totalPops } from "../sim/reducer";
+import { RESOURCE_KEYS } from "../sim/events";
+import type { Body, ResourceKey } from "../sim/types";
 import { ResourceBar } from "./ResourceBar";
 import { EventModal } from "./EventModal";
+
+const RES_LABEL: Record<ResourceKey, string> = {
+  food: "food",
+  energy: "energy",
+  alloys: "alloys",
+  influence: "infl",
+};
+
+function BodyRow({
+  body,
+  income,
+  isCapital,
+}: {
+  body: Body;
+  income: Partial<Record<ResourceKey, number>>;
+  isCapital: boolean;
+}) {
+  return (
+    <div className={`body-row ${isCapital ? "capital" : ""}`}>
+      <div className="body-head">
+        <span className="body-name">
+          {body.name} {body.kind === "moon" ? "◐" : "●"}
+        </span>
+        <span className={`hab ${body.habitability}`}>{body.habitability}</span>
+      </div>
+      <div className="body-stats">
+        <span>pops {body.pops}/{body.space}</span>
+        <span>hammers +{body.hammers}</span>
+      </div>
+      <div className="chips">
+        {RESOURCE_KEYS.filter((k) => k !== "influence").map((k) => {
+          const v = income[k] ?? 0;
+          if (v === 0) return null;
+          const cls = v > 0 ? "pos" : "neg";
+          return (
+            <span key={k} className={`chip ${cls}`}>
+              {v > 0 ? "+" : ""}{v} {RES_LABEL[k]}
+            </span>
+          );
+        })}
+        {body.flavorFlags.map((f) => (
+          <span key={f} className="chip flavor">{f.replace(/_/g, " ")}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function MainScreen() {
   const state = useGame((s) => s.state);
@@ -17,10 +66,13 @@ export function MainScreen() {
     ? state.galaxy.bodies[state.empire.capitalBodyId]
     : null;
   const capitalSystem = capital ? state.galaxy.systems[capital.systemId] : null;
-  const ownedBodies = state.empire.systemIds
-    .flatMap((sid) => state.galaxy.systems[sid]?.bodyIds ?? [])
-    .map((bid) => state.galaxy.bodies[bid])
-    .filter(Boolean);
+
+  const deltas = perTurnIncome(state);
+  const totalHammers = state.empire.systemIds.reduce((sum, sid) => {
+    const sys = state.galaxy.systems[sid];
+    if (!sys) return sum;
+    return sum + sys.bodyIds.reduce((s, bid) => s + (state.galaxy.bodies[bid]?.hammers ?? 0), 0);
+  }, 0);
 
   return (
     <>
@@ -29,7 +81,16 @@ export function MainScreen() {
         <span className="turn">Turn {state.turn}</span>
       </div>
 
-      <ResourceBar resources={state.empire.resources} />
+      <ResourceBar resources={state.empire.resources} deltas={deltas} />
+
+      <div className="compute-strip">
+        <span>Compute · Hammers</span>
+        <span className="value">
+          {state.empire.compute.used}/{state.empire.compute.cap}
+          {" · "}
+          {totalHammers}/turn
+        </span>
+      </div>
 
       <div className="main">
         <div className="panel">
@@ -52,28 +113,30 @@ export function MainScreen() {
         </div>
 
         <div className="panel">
-          <h2>Systems</h2>
-          <div style={{ fontSize: 13, lineHeight: 1.5 }}>
-            {state.empire.systemIds.map((sid) => {
-              const sys = state.galaxy.systems[sid];
-              if (!sys) return null;
-              const bodies = sys.bodyIds.map((bid) => state.galaxy.bodies[bid]).filter(Boolean);
-              return (
-                <div key={sid} style={{ marginBottom: 8 }}>
-                  <div style={{ fontWeight: 600 }}>{sys.name}</div>
-                  {bodies.map((b) => (
-                    <div key={b.id} style={{ color: "var(--text-dim)", paddingLeft: 8 }}>
-                      • {b.name} — {b.habitability}, pops {b.pops}/{b.space}
-                      {b.flavorFlags.length > 0 && ` · ${b.flavorFlags.join(", ")}`}
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 6 }}>
-            {Object.keys(state.galaxy.systems).length} systems in the galaxy ·{" "}
-            {ownedBodies.length} bodies yours
+          <h2>Systems ({state.empire.systemIds.length})</h2>
+          {state.empire.systemIds.map((sid) => {
+            const sys = state.galaxy.systems[sid];
+            if (!sys) return null;
+            return (
+              <div key={sid} style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{sys.name}</div>
+                {sys.bodyIds.map((bid) => {
+                  const body = state.galaxy.bodies[bid];
+                  if (!body) return null;
+                  return (
+                    <BodyRow
+                      key={bid}
+                      body={body}
+                      income={bodyIncome(state, body)}
+                      isCapital={body.id === state.empire.capitalBodyId}
+                    />
+                  );
+                })}
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6 }}>
+            {Object.keys(state.galaxy.systems).length} total systems in the galaxy
           </div>
         </div>
 
