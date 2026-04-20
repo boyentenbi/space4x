@@ -9,6 +9,7 @@ import type {
   Empire,
   GameState,
   HabitabilityTier,
+  Modifier,
   Resources,
   ResourceKey,
 } from "./types";
@@ -66,10 +67,11 @@ export function growthEstimate(
   empire: Empire,
   body: Body,
 ): { kind: "full" } | { kind: "starved" } | { kind: "growing"; turns: number } {
-  if (body.pops >= body.space) return { kind: "full" };
+  const cap = effectiveSpace(empire, body);
+  if (body.pops >= cap) return { kind: "full" };
   if (empire.resources.food < POP_GROWTH_FOOD_COST) return { kind: "starved" };
-  const headroom = (body.space - body.pops) / body.space;
-  const chance = headroom * 0.5;
+  const headroom = (cap - body.pops) / cap;
+  const chance = headroom * 0.5 * popGrowthMultiplier(empire);
   if (chance <= 0) return { kind: "full" };
   return { kind: "growing", turns: Math.ceil(1 / chance) };
 }
@@ -118,7 +120,7 @@ function makeEmpire(spec: { id: string; name: string; color: string; speciesId: 
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 6,
+    schemaVersion: 7,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -172,32 +174,87 @@ export function totalPopsOf(state: GameState, empire: Empire): number {
   return ownedBodiesOf(state, empire).reduce((s, b) => s + b.pops, 0);
 }
 
-function traitBonusPerPopOf(empire: Empire): Partial<Record<ResourceKey, number>> {
+// ===== Modifier plumbing =====
+
+// All modifiers that apply to an empire: species-level innates + trait mods.
+export function empireModifiers(empire: Empire): Modifier[] {
   const species = speciesById(empire.speciesId);
-  if (!species) return {};
-  const bonus: Partial<Record<ResourceKey, number>> = {};
+  if (!species) return [];
+  const out: Modifier[] = [...species.modifiers];
   for (const tid of species.traitIds) {
     const t = traitById(tid);
-    if (!t) continue;
-    for (const k of RESOURCE_KEYS) {
-      bonus[k] = (bonus[k] ?? 0) + (t.modifiers[k] ?? 0);
-    }
+    if (t) out.push(...t.modifiers);
   }
-  return bonus;
+  return out;
 }
 
-// Per-body NET contribution: production (by habitability + traits) minus
-// this body's pop upkeep for food. Empire-level income sums these, so
-// per-body food chips read truthfully (e.g. hellscape -8 food net).
+// Multiplicative modifiers multiply together; returns 1.0 if none.
+function productMult(mods: Modifier[], kind: "popGrowthMult" | "spaceMult" | "colonizeHammerMult"): number {
+  let m = 1;
+  for (const mod of mods) if (mod.kind === kind) m *= mod.value;
+  return m;
+}
+
+function sumDelta(mods: Modifier[], kind: "foodUpkeepDelta" | "hammersPerPopDelta"): number {
+  let s = 0;
+  for (const mod of mods) if (mod.kind === kind) s += mod.value;
+  return s;
+}
+
+// Per-pop resource yield: sums `perPop` mods + `habBonus` matching this body.
+function perPopYield(
+  mods: Modifier[],
+  hab: HabitabilityTier,
+  resource: ResourceKey,
+): number {
+  let v = 0;
+  for (const m of mods) {
+    if (m.kind === "perPop" && m.resource === resource) v += m.value;
+    else if (m.kind === "habBonus" && m.habitability === hab && m.resource === resource) v += m.value;
+  }
+  return v;
+}
+
+function flatEmpireIncome(mods: Modifier[], resource: ResourceKey): number {
+  let v = 0;
+  for (const m of mods) if (m.kind === "flat" && m.resource === resource) v += m.value;
+  return v;
+}
+
+// Effective food upkeep per pop, clamped at 0.
+export function foodUpkeepPerPop(empire: Empire): number {
+  return Math.max(0, 1 + sumDelta(empireModifiers(empire), "foodUpkeepDelta"));
+}
+
+// Effective hammer yield per pop.
+export function hammersPerPop(empire: Empire): number {
+  return HAMMERS_PER_POP + sumDelta(empireModifiers(empire), "hammersPerPopDelta");
+}
+
+// Effective space cap on a body (species spaceMult applied).
+export function effectiveSpace(empire: Empire, body: Body): number {
+  return Math.floor(body.space * productMult(empireModifiers(empire), "spaceMult"));
+}
+
+export function popGrowthMultiplier(empire: Empire): number {
+  return productMult(empireModifiers(empire), "popGrowthMult");
+}
+
+// ===== Income =====
+
+// Per-body NET contribution: production (base + modifiers) minus
+// this body's pop food upkeep. Empire-level income sums these so per-body
+// chips show truthful net values.
 export function bodyIncomeFor(empire: Empire, body: Body): Resources {
-  const traitBonus = traitBonusPerPopOf(empire);
+  const mods = empireModifiers(empire);
   const base = PER_POP_BY_HAB[body.habitability];
   const out: Resources = { ...EMPTY_RESOURCES };
   for (const k of RESOURCE_KEYS) {
-    out[k] = ((base[k] ?? 0) + (traitBonus[k] ?? 0)) * body.pops;
+    const perPop = (base[k] ?? 0) + perPopYield(mods, body.habitability, k);
+    out[k] = perPop * body.pops;
   }
-  // Food upkeep: 1 per pop, per body.
-  out.food -= body.pops;
+  // Food upkeep (modifier-aware).
+  out.food -= foodUpkeepPerPop(empire) * body.pops;
   return out;
 }
 
@@ -207,6 +264,11 @@ export function perTurnIncomeOf(state: GameState, empire: Empire): Resources {
     const contrib = bodyIncomeFor(empire, body);
     for (const k of RESOURCE_KEYS) income[k] += contrib[k];
   }
+  const mods = empireModifiers(empire);
+  for (const k of RESOURCE_KEYS) {
+    income[k] += flatEmpireIncome(mods, k);
+  }
+  // Baseline political tick (empires always get +1 regardless of traits).
   income.political += 1;
   return income;
 }
@@ -329,9 +391,10 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
   // 2. Reset flow resources on this empire's bodies.
   empire.compute.cap = computeCapOf(draft, empire);
   empire.compute.used = 0;
+  const hammerRate = hammersPerPop(empire);
   for (const body of ownedBodiesOf(draft, empire)) {
     const live = draft.galaxy.bodies[body.id];
-    if (live) live.hammers = live.pops * HAMMERS_PER_POP;
+    if (live) live.hammers = Math.floor(live.pops * hammerRate);
   }
   // 3. Sum hammer pool + drain into FIFO projects.
   let pool = 0;
@@ -351,16 +414,19 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
       break;
     }
   }
-  // 4. Pop growth.
+  // 4. Pop growth — modifier-aware.
+  const growthMult = popGrowthMultiplier(empire);
   for (const sid of empire.systemIds) {
     const sys = draft.galaxy.systems[sid];
     if (!sys) continue;
     for (const bid of sys.bodyIds) {
       const body = draft.galaxy.bodies[bid];
-      if (!body || body.pops >= body.space) continue;
+      if (!body) continue;
+      const cap = effectiveSpace(empire, body);
+      if (body.pops >= cap) continue;
       if (empire.resources.food < POP_GROWTH_FOOD_COST) continue;
-      const headroom = (body.space - body.pops) / body.space;
-      const chance = headroom * 0.5;
+      const headroom = (cap - body.pops) / cap;
+      const chance = headroom * 0.5 * growthMult;
       if (growthRand() < chance) {
         body.pops += 1;
         empire.resources.food -= POP_GROWTH_FOOD_COST;
@@ -506,9 +572,10 @@ export function reduce(state: GameState, action: Action): GameState {
         }
         draft.empire.compute.cap = draft.galaxy.systems[playerStarter.systemId].bodyIds.length * COMPUTE_PER_BODY;
         draft.empire.compute.used = 0;
+        const playerHammerRate = hammersPerPop(draft.empire);
         for (const bid of draft.galaxy.systems[playerStarter.systemId].bodyIds) {
           const body = draft.galaxy.bodies[bid];
-          if (body) body.hammers = body.pops * HAMMERS_PER_POP;
+          if (body) body.hammers = Math.floor(body.pops * playerHammerRate);
         }
 
         // AI empires.
@@ -526,9 +593,10 @@ export function reduce(state: GameState, action: Action): GameState {
         });
         // Seed AI bodies' hammers too so turn-1 rates show correctly.
         for (const ai of draft.aiEmpires) {
+          const rate = hammersPerPop(ai);
           for (const bid of draft.galaxy.systems[ai.systemIds[0]].bodyIds) {
             const body = draft.galaxy.bodies[bid];
-            if (body) body.hammers = body.pops * HAMMERS_PER_POP;
+            if (body) body.hammers = Math.floor(body.pops * rate);
           }
         }
       });

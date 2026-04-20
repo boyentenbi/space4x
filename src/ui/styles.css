@@ -743,6 +743,22 @@ button:disabled {
   white-space: normal;
 }
 
+.chooser .bonuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.chooser .bonus-chip {
+  font-size: 10px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--good);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ==================================================================
    Modals.
    ================================================================== */

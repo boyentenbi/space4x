@@ -69,11 +69,31 @@ export interface Galaxy {
 // =====================================================================
 // Species / Origins / Traits
 // =====================================================================
+// =====================================================================
+// Modifiers — the effect primitives shared by species + traits.
+// Species and traits both carry a list of Modifier objects; the reducer
+// sums them to compute per-turn rates, caps, and costs.
+// =====================================================================
+export type Modifier =
+  // Per-pop per-turn resource yield on any body.
+  | { kind: "perPop"; resource: ResourceKey; value: number }
+  // Flat per-turn empire income (not scaled by pops).
+  | { kind: "flat"; resource: ResourceKey; value: number }
+  // Multiplicative: 1.25 = +25%, 0.8 = -20%.
+  | { kind: "popGrowthMult"; value: number }
+  | { kind: "spaceMult"; value: number }
+  | { kind: "colonizeHammerMult"; value: number }
+  // Additive deltas on per-pop costs/yields that don't fit the resource model.
+  | { kind: "foodUpkeepDelta"; value: number }        // default upkeep is 1
+  | { kind: "hammersPerPopDelta"; value: number }     // default hammer yield is 1
+  // Conditional bonus: resource yield per pop on bodies of a given hab tier.
+  | { kind: "habBonus"; habitability: HabitabilityTier; resource: ResourceKey; value: number };
+
 export interface SpeciesTrait {
   id: string;
   name: string;
   description: string;
-  modifiers: Partial<Record<ResourceKey, number>>;
+  modifiers: Modifier[];
 }
 
 export interface Species {
@@ -82,7 +102,9 @@ export interface Species {
   description: string;
   traitIds: string[];
   art?: string;
-  color: string;           // Hex color used for empire territory/UI.
+  color: string;
+  // Species-level innate modifiers (applied before traits).
+  modifiers: Modifier[];
 }
 
 export interface Origin {
@@ -119,7 +141,7 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 6;
+  schemaVersion: 7;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;

@@ -305,26 +305,31 @@ export function GalaxyMap({
             {hasFlavor && (
               <circle cx={x} cy={y} r={haloRadius} fill="none" stroke="var(--warn)" strokeWidth={0.6} opacity={0.7} />
             )}
-            {/* Star dot (smaller now that bodies get their own dots). */}
-            <circle cx={x} cy={y - 2.5} r={2.2} fill={isOwned ? "#fff" : "#8a96ab"} opacity={isOwned ? 0.95 : 0.7} />
-            {/* Body dots — habitability-colored row under the star. */}
-            {sys.bodyIds.map((bid, i) => {
-              const body = galaxy.bodies[bid];
-              if (!body) return null;
-              const n = sys.bodyIds.length;
+            {/* Star dot (centered on the hex). */}
+            <circle cx={x} cy={y} r={2.2} fill={isOwned ? "#fff" : "#8a96ab"} opacity={isOwned ? 0.95 : 0.7} />
+            {/* Body dots — habitability-colored row under the star.
+                Only temperate for now (habitable planets are the only
+                thing worth previewing). */}
+            {(() => {
+              const highlighted = sys.bodyIds
+                .map((bid) => galaxy.bodies[bid])
+                .filter((b): b is NonNullable<typeof b> => !!b && b.habitability === "temperate");
+              const n = highlighted.length;
               const spacing = 2.8;
-              const offsetX = (i - (n - 1) / 2) * spacing;
-              return (
-                <circle
-                  key={bid}
-                  cx={x + offsetX}
-                  cy={y + 4}
-                  r={1.2}
-                  fill={HAB_COLOR[body.habitability]}
-                  opacity={0.92}
-                />
-              );
-            })}
+              return highlighted.map((body, i) => {
+                const offsetX = (i - (n - 1) / 2) * spacing;
+                return (
+                  <circle
+                    key={body.id}
+                    cx={x + offsetX}
+                    cy={y + 5.5}
+                    r={1.2}
+                    fill={HAB_COLOR[body.habitability]}
+                    opacity={0.95}
+                  />
+                );
+              });
+            })()}
             {/* Invisible larger hit target for mobile. */}
             <circle cx={x} cy={y} r={HEX_SIZE * 0.9} fill="transparent" />
           </g>
