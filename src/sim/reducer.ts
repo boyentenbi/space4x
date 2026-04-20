@@ -46,11 +46,14 @@ const EMPTY_RESOURCES: Resources = {
 // empires room to maneuver without the map becoming unreadable.
 export const GALAXY_SIZE = { width: 15, height: 13, density: 0.85 };
 
+// Food is produced ONLY on temperate/garden worlds and only per pop.
+// Harsh and hellscape bodies generate 0 food. Everything else
+// (energy/alloys) still scales per pop by habitability.
 const PER_POP_BY_HAB: Record<HabitabilityTier, Partial<Record<ResourceKey, number>>> = {
   garden:    { food: 2, energy: 1, alloys: 0 },
-  temperate: { food: 1, energy: 1, alloys: 1 },
+  temperate: { food: 2, energy: 1, alloys: 1 },
   harsh:     { food: 0, energy: 1, alloys: 2 },
-  hellscape: { food: -1, energy: 1, alloys: 3 },
+  hellscape: { food: 0, energy: 1, alloys: 3 },
 };
 
 const HAB_COLONIZE_SCORE: Record<HabitabilityTier, number> = {
@@ -552,6 +555,27 @@ function completeOrder(draft: GameState, empire: Empire, order: BuildOrder): voi
 
 // ===== Per-empire turn tick =====
 
+// Kill one pop during a famine. Preferentially target the largest
+// non-capital colony so the capital collapses last; if everything's
+// the same size, fall back to the first owned body with pops > 0.
+function killStarvingPop(draft: GameState, empire: Empire): string | null {
+  const candidates: Body[] = [];
+  for (const body of ownedBodiesOf(draft, empire)) {
+    if (body.pops > 0) candidates.push(body);
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => {
+    const aCap = a.id === empire.capitalBodyId ? 1 : 0;
+    const bCap = b.id === empire.capitalBodyId ? 1 : 0;
+    if (aCap !== bCap) return aCap - bCap;        // non-capital first
+    return b.pops - a.pops;                        // highest pops first
+  });
+  const target = draft.galaxy.bodies[candidates[0].id];
+  if (!target) return null;
+  target.pops -= 1;
+  return target.name;
+}
+
 function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number): void {
   // 1. Stock income.
   const income = perTurnIncomeOf(draft, empire);
@@ -601,6 +625,23 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
         body.pops += 1;
         empire.resources.food -= POP_GROWTH_FOOD_COST;
       }
+    }
+  }
+
+  // 5. Famine check — after income + project completions + growth.
+  //    Food should never stay negative; every turn in deficit kills
+  //    one pop somewhere (non-capital first, largest first) and
+  //    clamps food back to zero.
+  if (empire.resources.food < 0) {
+    const starved = killStarvingPop(draft, empire);
+    empire.resources.food = 0;
+    if (starved && empire.id === draft.empire.id) {
+      draft.eventLog.push({
+        turn: draft.turn,
+        eventId: "famine",
+        choiceId: null,
+        text: `Famine on ${starved}. A pop died.`,
+      });
     }
   }
 }
