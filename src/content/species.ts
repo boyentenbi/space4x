@@ -1,12 +1,15 @@
 import type { Species } from "../sim/types";
 
+// Species carry only their innate modifiers for now. Picking traits is a
+// separate selection step we may add later; the TRAITS content file is
+// kept around for that.
 export const SPECIES: Species[] = [
   {
     id: "humans",
     name: "Humans",
     description:
       "Adaptable descendants of Old Earth. They fold into any biome, breed in any climate, and recover from setbacks faster than their neighbours realise. A loose constitutional habit keeps them arguing; the arguments keep them moving.",
-    traitIds: ["charismatic"],
+    traitIds: [],
     art: "/portraits/humans.png",
     portraits: [
       "/portraits/humans.png",
@@ -15,7 +18,6 @@ export const SPECIES: Species[] = [
     ],
     color: "#2a5a8c",
     modifiers: [
-      // Adaptable: faster pop growth. Fleet bonus reserved for when fleets land.
       { kind: "popGrowthMult", value: 1.25 },
     ],
   },
@@ -24,7 +26,7 @@ export const SPECIES: Species[] = [
     name: "Insectoid",
     description:
       "A chitinous hive-species that nests vertically as well as horizontally. Cities fit more of them per acre than any other species can manage, and they subsist on less — synchronized shifts leave almost nothing on the plate. Surface-unfriendly worlds hold no terror for them.",
-    traitIds: ["agrarian", "industrious"],
+    traitIds: [],
     art: "/portraits/insectoid.png",
     portraits: [
       "/portraits/insectoid.png",
@@ -42,7 +44,7 @@ export const SPECIES: Species[] = [
     name: "Machine Intelligence",
     description:
       "Ruled by networked synthetic minds but populated by a biological workforce. AI administrators coordinate every shift, model every supply chain, and optimize production down to the joule — your people output more per head than any flesh-only rival. Biology still grows at biology's pace, and the machine networks deliberate slowly over any question not purely operational.",
-    traitIds: ["solar_attuned", "efficient_cores"],
+    traitIds: [],
     art: "/portraits/machine.png",
     portraits: [
       "/portraits/machine.png",
