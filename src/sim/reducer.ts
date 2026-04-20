@@ -186,6 +186,9 @@ function traitBonusPerPopOf(empire: Empire): Partial<Record<ResourceKey, number>
   return bonus;
 }
 
+// Per-body NET contribution: production (by habitability + traits) minus
+// this body's pop upkeep for food. Empire-level income sums these, so
+// per-body food chips read truthfully (e.g. hellscape -8 food net).
 export function bodyIncomeFor(empire: Empire, body: Body): Resources {
   const traitBonus = traitBonusPerPopOf(empire);
   const base = PER_POP_BY_HAB[body.habitability];
@@ -193,6 +196,8 @@ export function bodyIncomeFor(empire: Empire, body: Body): Resources {
   for (const k of RESOURCE_KEYS) {
     out[k] = ((base[k] ?? 0) + (traitBonus[k] ?? 0)) * body.pops;
   }
+  // Food upkeep: 1 per pop, per body.
+  out.food -= body.pops;
   return out;
 }
 
@@ -202,7 +207,6 @@ export function perTurnIncomeOf(state: GameState, empire: Empire): Resources {
     const contrib = bodyIncomeFor(empire, body);
     for (const k of RESOURCE_KEYS) income[k] += contrib[k];
   }
-  income.food -= totalPopsOf(state, empire);
   income.political += 1;
   return income;
 }

@@ -1,6 +1,14 @@
 // Single source of truth for UI resource/flow icon paths.
 import type { HabitabilityTier, ResourceKey } from "../sim/types";
 
+// Shared habitability palette — used for text labels, galaxy map dots, etc.
+export const HAB_COLOR: Record<HabitabilityTier, string> = {
+  garden: "#6fbf87",
+  temperate: "#9dd89a",
+  harsh: "#ffb673",
+  hellscape: "#ff8a8a",
+};
+
 export const RESOURCE_ICON: Record<ResourceKey, string> = {
   food: "/icons/food.png",
   energy: "/icons/energy.png",

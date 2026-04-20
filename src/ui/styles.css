@@ -476,8 +476,8 @@ button:disabled {
   color: var(--text-dim);
 }
 
-.body-row .hab.garden { color: var(--good); }
-.body-row .hab.temperate { color: #a8d8ff; }
+.body-row .hab.garden { color: #6fbf87; }
+.body-row .hab.temperate { color: #9dd89a; }
 .body-row .hab.harsh { color: var(--warn); }
 .body-row .hab.hellscape { color: var(--bad); }
 

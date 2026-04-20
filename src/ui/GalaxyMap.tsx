@@ -1,4 +1,5 @@
 import type { Empire, Galaxy, StarSystem } from "../sim/types";
+import { HAB_COLOR } from "./icons";
 
 const HEX_SIZE = 16;       // radius of each hex
 const SQRT_3 = Math.sqrt(3);
@@ -279,7 +280,7 @@ export function GalaxyMap({
         const hasFlavor = sys.bodyIds.some((bid) =>
           (galaxy.bodies[bid]?.flavorFlags.length ?? 0) > 0,
         );
-        const dotSize = 1.8 + sys.bodyIds.length * 0.6;
+        const haloRadius = 6;
 
         return (
           <g
@@ -302,10 +303,28 @@ export function GalaxyMap({
             )}
             {/* Flavor-site ring halo. */}
             {hasFlavor && (
-              <circle cx={x} cy={y} r={dotSize + 3} fill="none" stroke="var(--warn)" strokeWidth={0.6} opacity={0.7} />
+              <circle cx={x} cy={y} r={haloRadius} fill="none" stroke="var(--warn)" strokeWidth={0.6} opacity={0.7} />
             )}
-            {/* Star dot. */}
-            <circle cx={x} cy={y} r={dotSize} fill={isOwned ? "#fff" : "#8a96ab"} opacity={isOwned ? 0.95 : 0.7} />
+            {/* Star dot (smaller now that bodies get their own dots). */}
+            <circle cx={x} cy={y - 2.5} r={2.2} fill={isOwned ? "#fff" : "#8a96ab"} opacity={isOwned ? 0.95 : 0.7} />
+            {/* Body dots — habitability-colored row under the star. */}
+            {sys.bodyIds.map((bid, i) => {
+              const body = galaxy.bodies[bid];
+              if (!body) return null;
+              const n = sys.bodyIds.length;
+              const spacing = 2.8;
+              const offsetX = (i - (n - 1) / 2) * spacing;
+              return (
+                <circle
+                  key={bid}
+                  cx={x + offsetX}
+                  cy={y + 4}
+                  r={1.2}
+                  fill={HAB_COLOR[body.habitability]}
+                  opacity={0.92}
+                />
+              );
+            })}
             {/* Invisible larger hit target for mobile. */}
             <circle cx={x} cy={y} r={HEX_SIZE * 0.9} fill="transparent" />
           </g>
