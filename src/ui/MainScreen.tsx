@@ -1,18 +1,31 @@
 import { useState } from "react";
 import { useGame } from "../store";
 import { originById, speciesById } from "../sim/content";
-import { bodyIncome, perTurnIncome, totalPops } from "../sim/reducer";
+import {
+  bodyIncome,
+  canColonize,
+  colonizeOrderForTarget,
+  COLONIZE_HAMMERS,
+  COLONIZE_POLITICAL,
+  perTurnIncome,
+  totalPops,
+} from "../sim/reducer";
 import { RESOURCE_KEYS } from "../sim/events";
-import type { Body, Resources, ResourceKey } from "../sim/types";
+import type { Body, HabitabilityTier, Resources, ResourceKey } from "../sim/types";
 import { EventModal } from "./EventModal";
 import { GalaxyMap } from "./GalaxyMap";
 import { SystemScene } from "./SystemScene";
 import { PortraitMenu } from "./PortraitMenu";
-import { ProjectPicker } from "./ProjectPicker";
 import { COMPUTE_ICON, HAMMERS_ICON, RESOURCE_ICON } from "./icons";
 
-// 2x3 sidebar grid order: stocks on top, flows on bottom row.
 const RESOURCE_ORDER: ResourceKey[] = ["food", "energy", "alloys", "political"];
+
+const PLANET_SRC: Record<HabitabilityTier, string> = {
+  garden: "/planets/garden.png",
+  temperate: "/planets/temperate.png",
+  harsh: "/planets/harsh.png",
+  hellscape: "/planets/hellscape.png",
+};
 
 function fmtDelta(n: number): string {
   const r = Math.round(n * 10) / 10;
@@ -45,88 +58,87 @@ function BodyRow({
   income,
   isCapital,
   owned,
-  bodyById,
-  onOpenProject,
+  colonizable,
+  activeOrder,
+  onColonize,
   onCancelOrder,
 }: {
   body: Body;
   income: Partial<Record<ResourceKey, number>>;
   isCapital: boolean;
   owned: boolean;
-  bodyById: (id: string) => Body | undefined;
-  onOpenProject: (sourceBodyId: string) => void;
-  onCancelOrder: (sourceBodyId: string, orderId: string) => void;
+  colonizable: boolean;
+  activeOrder: { id: string; hammersPaid: number; hammersRequired: number } | null;
+  onColonize: () => void;
+  onCancelOrder: (orderId: string) => void;
 }) {
-  const activeOrder = body.queue[0];
   return (
     <div className={`body-row ${isCapital ? "capital" : ""}`}>
       <div className="body-head">
         <span className="body-name">
-          {body.name} {body.kind === "moon" ? "◐" : "●"}
+          <img className="body-thumb" src={PLANET_SRC[body.habitability]} alt="" />
+          {body.name} {body.kind === "moon" ? "◐" : ""}
         </span>
         <span className={`hab ${body.habitability}`}>{body.habitability}</span>
       </div>
       <div className="body-stats">
         <span>pops {body.pops}/{body.space}</span>
-        <span>hammers +{body.hammers}</span>
+        {owned && <span>hammers +{body.hammers}</span>}
       </div>
-      <div className="chips">
-        {RESOURCE_KEYS.filter((k) => k !== "political").map((k) => {
-          const v = income[k] ?? 0;
-          if (v === 0) return null;
-          const cls = v > 0 ? "pos" : "neg";
-          return (
-            <span key={k} className={`chip ${cls}`}>
-              <img className="chip-icon" src={RESOURCE_ICON[k]} alt="" />
-              {v > 0 ? "+" : ""}{v}
-            </span>
-          );
-        })}
-        {body.flavorFlags.map((f) => (
-          <span key={f} className="chip flavor">{f.replace(/_/g, " ")}</span>
-        ))}
-      </div>
-
       {owned && (
-        <div className="project-row">
-          {activeOrder ? (
-            <ProjectProgress
-              order={activeOrder}
-              bodyById={bodyById}
-              onCancel={() => onCancelOrder(body.id, activeOrder.id)}
-            />
-          ) : (
-            <button className="project-btn" onClick={() => onOpenProject(body.id)}>
-              + Project
-            </button>
-          )}
+        <div className="chips">
+          {RESOURCE_KEYS.filter((k) => k !== "political").map((k) => {
+            const v = income[k] ?? 0;
+            if (v === 0) return null;
+            const cls = v > 0 ? "pos" : "neg";
+            return (
+              <span key={k} className={`chip ${cls}`}>
+                <img className="chip-icon" src={RESOURCE_ICON[k]} alt="" />
+                {v > 0 ? "+" : ""}{v}
+              </span>
+            );
+          })}
+          {body.flavorFlags.map((f) => (
+            <span key={f} className="chip flavor">{f.replace(/_/g, " ")}</span>
+          ))}
         </div>
       )}
-    </div>
-  );
-}
 
-function ProjectProgress({
-  order,
-  bodyById,
-  onCancel,
-}: {
-  order: { kind: "colonize"; id: string; targetBodyId: string; hammersPaid: number; hammersRequired: number };
-  bodyById: (id: string) => Body | undefined;
-  onCancel: () => void;
-}) {
-  const target = bodyById(order.targetBodyId);
-  const pct = Math.min(100, (order.hammersPaid / order.hammersRequired) * 100);
-  return (
-    <div className="project-progress">
-      <div className="project-head">
-        <span>Colonizing <strong>{target?.name ?? "?"}</strong></span>
-        <button className="project-cancel" onClick={onCancel}>×</button>
-      </div>
-      <div className="project-bar">
-        <div className="project-bar-fill" style={{ width: `${pct}%` }} />
-      </div>
-      <div className="project-stats">{order.hammersPaid}/{order.hammersRequired}</div>
+      {!owned && body.flavorFlags.length > 0 && (
+        <div className="chips">
+          {body.flavorFlags.map((f) => (
+            <span key={f} className="chip flavor">{f.replace(/_/g, " ")}</span>
+          ))}
+        </div>
+      )}
+
+      {activeOrder ? (
+        <div className="project-progress">
+          <div className="project-head">
+            <span>Colonizing</span>
+            <button
+              className="project-cancel"
+              onClick={() => onCancelOrder(activeOrder.id)}
+              title="Cancel"
+            >
+              ×
+            </button>
+          </div>
+          <div className="project-bar">
+            <div
+              className="project-bar-fill"
+              style={{ width: `${Math.min(100, (activeOrder.hammersPaid / activeOrder.hammersRequired) * 100)}%` }}
+            />
+          </div>
+          <div className="project-stats">
+            {activeOrder.hammersPaid}/{activeOrder.hammersRequired}
+          </div>
+        </div>
+      ) : colonizable ? (
+        <button className="project-btn" onClick={onColonize}>
+          + Colonize · {COLONIZE_HAMMERS}⚒ {COLONIZE_POLITICAL}P
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -138,7 +150,6 @@ export function MainScreen() {
 
   const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [projectSourceBodyId, setProjectSourceBodyId] = useState<string | null>(null);
 
   const origin = originById(state.empire.originId);
   const species = speciesById(state.empire.speciesId);
@@ -168,7 +179,7 @@ export function MainScreen() {
 
   return (
     <>
-      {/* ===== Left sidebar: portrait | end turn | 2x3 resources | menu ===== */}
+      {/* ===== Left sidebar ===== */}
       <div className="sidebar">
         {species?.art && (
           <div
@@ -210,7 +221,7 @@ export function MainScreen() {
         </button>
       </div>
 
-      {/* ===== Main: system panel | (galaxy + log) ===== */}
+      {/* ===== Main ===== */}
       <div className="main-column">
         <div className="system-panel">
           <div className="scene-wrap">
@@ -240,20 +251,26 @@ export function MainScreen() {
           </div>
           <div className="detail-scroll">
             {focusSystem ? (
-              focusBodies.map((body) => (
-                <BodyRow
-                  key={body.id}
-                  body={body}
-                  income={focusOwned ? bodyIncome(state, body) : {}}
-                  isCapital={body.id === state.empire.capitalBodyId}
-                  owned={focusOwned}
-                  bodyById={(id) => state.galaxy.bodies[id]}
-                  onOpenProject={setProjectSourceBodyId}
-                  onCancelOrder={(bodyId, orderId) =>
-                    dispatch({ type: "cancelOrder", bodyId, orderId })
-                  }
-                />
-              ))
+              focusBodies.map((body) => {
+                const order = colonizeOrderForTarget(state, body.id);
+                return (
+                  <BodyRow
+                    key={body.id}
+                    body={body}
+                    income={focusOwned ? bodyIncome(state, body) : {}}
+                    isCapital={body.id === state.empire.capitalBodyId}
+                    owned={focusOwned}
+                    colonizable={!focusOwned && canColonize(state, body.id)}
+                    activeOrder={order}
+                    onColonize={() =>
+                      dispatch({ type: "queueColonize", targetBodyId: body.id })
+                    }
+                    onCancelOrder={(orderId) =>
+                      dispatch({ type: "cancelOrder", orderId })
+                    }
+                  />
+                );
+              })
             ) : (
               <div className="empire-card">
                 <div><span className="stat-label">Species:</span> {species?.name ?? "?"}</div>
@@ -303,16 +320,6 @@ export function MainScreen() {
       {pendingEvent && <EventModal eventId={pendingEvent.eventId} />}
       {menuOpen && (
         <PortraitMenu onReset={reset} onClose={() => setMenuOpen(false)} />
-      )}
-      {projectSourceBodyId && (
-        <ProjectPicker
-          state={state}
-          sourceBodyId={projectSourceBodyId}
-          onQueue={(targetBodyId) =>
-            dispatch({ type: "queueColonize", bodyId: projectSourceBodyId, targetBodyId })
-          }
-          onClose={() => setProjectSourceBodyId(null)}
-        />
       )}
     </>
   );

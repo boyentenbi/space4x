@@ -15,8 +15,8 @@ export type Action =
   | { type: "newGame"; empireName: string; originId: string; speciesId: string; seed: number }
   | { type: "endTurn" }
   | { type: "resolveEvent"; eventId: string; choiceId: string }
-  | { type: "queueColonize"; bodyId: string; targetBodyId: string }
-  | { type: "cancelOrder"; bodyId: string; orderId: string };
+  | { type: "queueColonize"; targetBodyId: string }
+  | { type: "cancelOrder"; orderId: string };
 
 // Colonization tunables.
 export const COLONIZE_HAMMERS = 20;
@@ -59,7 +59,7 @@ const POP_GROWTH_FOOD_COST = 5;
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -73,6 +73,7 @@ export function initialState(): GameState {
       compute: { cap: 0, used: 0 },
       capitalBodyId: null,
       systemIds: [],
+      projects: [],
       flags: [],
     },
     eventQueue: [],
@@ -93,10 +94,17 @@ export function isSystemAdjacentToEmpire(state: GameState, systemId: string): bo
   return false;
 }
 
+export function colonizeOrderForTarget(state: GameState, targetBodyId: string) {
+  for (const order of state.empire.projects) {
+    if (order.kind === "colonize" && order.targetBodyId === targetBodyId) return order;
+  }
+  return null;
+}
+
 // Can `target` body be colonized by the player right now?
 // - Target's system must not already be owned.
 // - Target's system must be hyperlane-adjacent to an owned system.
-// - No other queued colonize order currently targets this body.
+// - No existing empire project already targets this body.
 export function canColonize(state: GameState, targetBodyId: string): boolean {
   const target = state.galaxy.bodies[targetBodyId];
   if (!target) return false;
@@ -104,13 +112,7 @@ export function canColonize(state: GameState, targetBodyId: string): boolean {
   if (!targetSys) return false;
   if (targetSys.ownerId) return false;
   if (!isSystemAdjacentToEmpire(state, targetSys.id)) return false;
-  for (const body of Object.values(state.galaxy.bodies)) {
-    for (const order of body.queue) {
-      if (order.kind === "colonize" && order.targetBodyId === targetBodyId) {
-        return false;
-      }
-    }
-  }
+  if (colonizeOrderForTarget(state, targetBodyId)) return false;
   return true;
 }
 
@@ -269,13 +271,8 @@ export function reduce(state: GameState, action: Action): GameState {
 
     case "queueColonize": {
       if (!canColonize(state, action.targetBodyId)) return state;
-      const sourceBody = state.galaxy.bodies[action.bodyId];
-      if (!sourceBody) return state;
-      const sourceSys = state.galaxy.systems[sourceBody.systemId];
-      if (!sourceSys || sourceSys.ownerId !== state.empire.id) return state;
       return produce(state, (draft) => {
-        const body = draft.galaxy.bodies[action.bodyId];
-        body.queue.push({
+        draft.empire.projects.push({
           kind: "colonize",
           id: nextOrderId(),
           targetBodyId: action.targetBodyId,
@@ -288,9 +285,7 @@ export function reduce(state: GameState, action: Action): GameState {
 
     case "cancelOrder": {
       return produce(state, (draft) => {
-        const body = draft.galaxy.bodies[action.bodyId];
-        if (!body) return;
-        body.queue = body.queue.filter((o) => o.id !== action.orderId);
+        draft.empire.projects = draft.empire.projects.filter((o) => o.id !== action.orderId);
       });
     }
 
@@ -311,22 +306,30 @@ export function reduce(state: GameState, action: Action): GameState {
           const live = draft.galaxy.bodies[body.id];
           if (live) live.hammers = live.pops * HAMMERS_PER_POP;
         }
-        // 3. Drain hammers into each body's active project.
+        // 3. Sum all empire hammers, drain them FIFO into empire-level
+        //    projects. Unused hammers this turn are lost (flow-not-stock).
+        let pool = 0;
         for (const sid of draft.empire.systemIds) {
           const sys = draft.galaxy.systems[sid];
           if (!sys) continue;
           for (const bid of sys.bodyIds) {
             const body = draft.galaxy.bodies[bid];
-            if (!body || body.queue.length === 0 || body.hammers <= 0) continue;
-            const order = body.queue[0];
-            const need = order.hammersRequired - order.hammersPaid;
-            const spent = Math.min(body.hammers, need);
-            order.hammersPaid += spent;
-            body.hammers -= spent;
-            if (order.hammersPaid >= order.hammersRequired) {
-              completeOrder(draft, order);
-              body.queue.shift();
-            }
+            if (!body) continue;
+            pool += body.hammers;
+            body.hammers = 0;
+          }
+        }
+        while (pool > 0 && draft.empire.projects.length > 0) {
+          const order = draft.empire.projects[0];
+          const need = order.hammersRequired - order.hammersPaid;
+          const spent = Math.min(pool, need);
+          order.hammersPaid += spent;
+          pool -= spent;
+          if (order.hammersPaid >= order.hammersRequired) {
+            completeOrder(draft, order);
+            draft.empire.projects.shift();
+          } else {
+            break;
           }
         }
         draft.rngSeed = nextSeed(draft.rngSeed);

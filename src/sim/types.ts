@@ -109,6 +109,7 @@ export interface Empire {
   compute: Compute;
   capitalBodyId: string | null;
   systemIds: string[];       // Owned systems.
+  projects: BuildOrder[];    // Empire-level project queue (FIFO).
   flags: string[];
 }
 
@@ -118,7 +119,7 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 4;
+  schemaVersion: 5;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;

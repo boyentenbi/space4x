@@ -421,6 +421,17 @@ button:disabled {
 .body-row .body-name {
   font-size: 12px;
   font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.body-row .body-thumb {
+  width: 18px;
+  height: 18px;
+  image-rendering: pixelated;
+  object-fit: contain;
+  flex: 0 0 auto;
 }
 
 .body-row .hab {
