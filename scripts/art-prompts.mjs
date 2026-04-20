@@ -79,7 +79,7 @@ export const ICONS = [
   {
     id: "food",
     path: "public/icons/food.png",
-    subject: "single glossy green apple, round and ripe, soft highlight on top",
+    subject: "single bright green apple fruit, round, with a small brown stem at the top, glossy highlight, no leaves, no tree, no scenery",
     transparent: true,
   },
   {
