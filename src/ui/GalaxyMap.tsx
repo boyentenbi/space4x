@@ -24,18 +24,20 @@ function hexCorners(cx: number, cy: number, size: number): Array<[number, number
 }
 
 // Neighbor direction for each edge, in the same order as corners[i] -> corners[i+1].
-// Edge 0 (30->90): upper-right  → (+1, -1)
-// Edge 1 (90->150): upper-left   → ( 0, -1)
-// Edge 2 (150->210): left         → (-1,  0)
-// Edge 3 (210->270): lower-left  → (-1, +1)
-// Edge 4 (270->330): lower-right → ( 0, +1)
-// Edge 5 (330->30): right         → (+1,  0)
+// SVG y is down, so sin(30)=+0.5 actually places that corner BELOW center —
+// the edge labels below reflect on-screen position, not math convention.
+// Edge 0 (30->90):   lower-right edge -> (0, +1) neighbor
+// Edge 1 (90->150):  lower-left edge  -> (-1, +1)
+// Edge 2 (150->210): left edge        -> (-1,  0)
+// Edge 3 (210->270): upper-left edge  -> (0, -1)
+// Edge 4 (270->330): upper-right edge -> (+1, -1)
+// Edge 5 (330->30):  right edge       -> (+1,  0)
 const EDGE_NEIGHBOR: Array<[number, number]> = [
-  [1, -1],
-  [0, -1],
-  [-1, 0],
-  [-1, 1],
   [0, 1],
+  [-1, 1],
+  [-1, 0],
+  [0, -1],
+  [1, -1],
   [1, 0],
 ];
 
