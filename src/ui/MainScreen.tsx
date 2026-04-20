@@ -8,13 +8,7 @@ import { ResourceBar } from "./ResourceBar";
 import { EventModal } from "./EventModal";
 import { GalaxyMap } from "./GalaxyMap";
 import { SystemScene } from "./SystemScene";
-
-const RES_LABEL: Record<ResourceKey, string> = {
-  food: "food",
-  energy: "energy",
-  alloys: "alloys",
-  political: "pol",
-};
+import { COMPUTE_ICON, HAMMERS_ICON, RESOURCE_ICON } from "./icons";
 
 function BodyRow({
   body,
@@ -44,7 +38,8 @@ function BodyRow({
           const cls = v > 0 ? "pos" : "neg";
           return (
             <span key={k} className={`chip ${cls}`}>
-              {v > 0 ? "+" : ""}{v} {RES_LABEL[k]}
+              <img className="chip-icon" src={RESOURCE_ICON[k]} alt="" />
+              {v > 0 ? "+" : ""}{v}
             </span>
           );
         })}
@@ -106,11 +101,15 @@ export function MainScreen() {
       </div>
 
       <div className="compute-strip">
-        <span>Compute · Hammers</span>
-        <span className="value">
-          {state.empire.compute.used}/{state.empire.compute.cap}
-          {" · "}
-          {totalHammers}/turn
+        <span className="flow-item">
+          <img className="flow-icon" src={COMPUTE_ICON} alt="" />
+          <span className="flow-label">Compute</span>
+          <span className="value">{state.empire.compute.used}/{state.empire.compute.cap}</span>
+        </span>
+        <span className="flow-item">
+          <img className="flow-icon" src={HAMMERS_ICON} alt="" />
+          <span className="flow-label">Hammers</span>
+          <span className="value">{totalHammers}/turn</span>
         </span>
       </div>
 
@@ -153,6 +152,7 @@ export function MainScreen() {
                   bodies={bodies}
                   ownerColor={owned ? state.empire.color : null}
                   capitalBodyId={state.empire.capitalBodyId}
+                  turn={state.turn}
                 />
                 {bodies.map((body) => (
                   <BodyRow

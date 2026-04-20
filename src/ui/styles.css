@@ -162,24 +162,40 @@ button:disabled {
 .compute-strip {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
+  justify-content: space-around;
+  gap: 14px;
+  padding: 6px 12px;
   margin-bottom: 4px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 8px;
-  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.compute-strip .flow-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.compute-strip .flow-icon {
+  width: 18px;
+  height: 18px;
+  image-rendering: pixelated;
+  object-fit: contain;
+}
+
+.compute-strip .flow-label {
+  font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-dim);
 }
 
 .compute-strip .value {
   font-variant-numeric: tabular-nums;
   color: var(--text);
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 14px;
+  font-size: 13px;
+  margin-left: 2px;
 }
 
 .body-row {
@@ -239,12 +255,22 @@ button:disabled {
 }
 
 .body-row .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 1px 6px;
   border-radius: 4px;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   border: 1px solid var(--border);
   color: var(--text-dim);
+}
+
+.body-row .chip-icon {
+  width: 12px;
+  height: 12px;
+  image-rendering: pixelated;
+  object-fit: contain;
 }
 
 .body-row .chip.pos { color: var(--good); border-color: rgba(139, 220, 166, 0.3); }

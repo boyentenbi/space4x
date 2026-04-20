@@ -1,10 +1,11 @@
 import type { Resources, ResourceKey } from "../sim/types";
+import { RESOURCE_ICON } from "./icons";
 
-const ORDER: { key: ResourceKey; label: string; icon: string }[] = [
-  { key: "food",      label: "Food",     icon: "/icons/food.png" },
-  { key: "energy",    label: "Energy",   icon: "/icons/energy.png" },
-  { key: "alloys",    label: "Alloys",   icon: "/icons/alloys.png" },
-  { key: "political", label: "Pol. Cap.", icon: "/icons/political.png" },
+const ORDER: { key: ResourceKey; label: string }[] = [
+  { key: "food",      label: "Food"    },
+  { key: "energy",    label: "Energy"  },
+  { key: "alloys",    label: "Alloys"  },
+  { key: "political", label: "Pol. Cap." },
 ];
 
 function fmtDelta(n: number): string {
@@ -21,12 +22,12 @@ export function ResourceBar({
 }) {
   return (
     <div className="resources">
-      {ORDER.map(({ key, label, icon }) => {
+      {ORDER.map(({ key, label }) => {
         const d = deltas?.[key] ?? 0;
         const cls = d > 0 ? "pos" : d < 0 ? "neg" : "";
         return (
           <div className="resource" key={key}>
-            <img className="res-icon" src={icon} alt="" />
+            <img className="res-icon" src={RESOURCE_ICON[key]} alt="" />
             <div className="label">{label}</div>
             <div className="value">{Math.round(resources[key])}</div>
             {deltas && <div className={`delta ${cls}`}>{fmtDelta(d)}</div>}

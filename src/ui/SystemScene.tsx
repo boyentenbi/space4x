@@ -30,11 +30,13 @@ export function SystemScene({
   bodies,
   ownerColor,
   capitalBodyId,
+  turn,
 }: {
   system: StarSystem;
   bodies: Body[];
   ownerColor: string | null;
   capitalBodyId: string | null;
+  turn: number;
 }) {
   const width = 320;
   const height = 140;
@@ -83,11 +85,13 @@ export function SystemScene({
         style={{ imageRendering: "pixelated" }}
       />
 
-      {/* Bodies — stable orbit positions derived from id hash. */}
+      {/* Bodies — stable orbit positions derived from id hash, advanced per turn.
+          Inner orbits rotate faster than outer ones (Kepler-ish flavor). */}
       {bodies.map((body, i) => {
         const rx = orbitBase + i * orbitStep;
-        // Phase distributed deterministically from body id + index.
-        const phase = ((hashCode(body.id) % 1000) / 1000) * Math.PI * 2;
+        const basePhase = ((hashCode(body.id) % 1000) / 1000) * Math.PI * 2;
+        const orbitSpeed = 0.18 / (1 + i * 0.5);       // radians per turn
+        const phase = basePhase + turn * orbitSpeed;
         const cx = sunX + rx * Math.cos(phase);
         const cy = sunY + rx * tiltY * Math.sin(phase);
         const isMoon = body.kind === "moon";

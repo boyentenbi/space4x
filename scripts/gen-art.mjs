@@ -2,6 +2,7 @@ import { readFileSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { allJobs } from "./art-prompts.mjs";
+import { alphaMaskBuffer } from "./alpha-bg.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -63,8 +64,10 @@ for (const job of JOBS) {
   process.stdout.write(`generating ${job.path} ... `);
   try {
     const { buffer, remaining, cost } = await generate(job);
-    writeFileSync(outPath, buffer);
-    console.log(`ok (cost ${cost}, balance ${remaining})`);
+    const finalBuffer = job.transparent ? alphaMaskBuffer(buffer) : buffer;
+    writeFileSync(outPath, finalBuffer);
+    const tag = job.transparent ? " [alpha]" : "";
+    console.log(`ok${tag} (cost ${cost}, balance ${remaining})`);
   } catch (err) {
     console.log(`FAIL: ${err.message}`);
     process.exitCode = 1;
