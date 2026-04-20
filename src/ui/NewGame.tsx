@@ -49,12 +49,16 @@ export function NewGame() {
         {SPECIES.map((s) => (
           <button
             key={s.id}
-            className={`row ${s.id === speciesId ? "selected" : ""}`}
+            className={`row species-row ${s.id === speciesId ? "selected" : ""}`}
             onClick={() => onSelectSpecies(s.id)}
+            style={{ borderLeftColor: s.color, borderLeftWidth: 4, borderLeftStyle: "solid" }}
           >
             <Thumb src={s.art} alt={s.name} />
             <span className="row-text">
-              <span className="name">{s.name}</span>
+              <span className="name">
+                {s.name}
+                <span className="species-swatch" style={{ backgroundColor: s.color }} />
+              </span>
               <span className="desc">{s.description}</span>
             </span>
           </button>

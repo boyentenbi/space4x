@@ -8,7 +8,7 @@ export const SPECIES: Species[] = [
       "Adaptable descendants of Old Earth. Curious, argumentative, disproportionately fond of flags.",
     traitIds: ["charismatic"],
     art: "/portraits/humans.png",
-    color: "#3578b0", // Navy blue of the bridge uniform.
+    color: "#2a5a8c", // Deep navy blue of the bridge uniform.
   },
   {
     id: "insectoid",

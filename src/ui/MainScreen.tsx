@@ -3,14 +3,14 @@ import { useGame } from "../store";
 import { originById, speciesById } from "../sim/content";
 import { bodyIncome, perTurnIncome, totalPops } from "../sim/reducer";
 import { RESOURCE_KEYS } from "../sim/events";
-import type { Body, ResourceKey } from "../sim/types";
+import type { Body, Resources, ResourceKey } from "../sim/types";
 import { EventModal } from "./EventModal";
 import { GalaxyMap } from "./GalaxyMap";
 import { SystemScene } from "./SystemScene";
-import { ChronicleModal } from "./ChronicleModal";
 import { PortraitMenu } from "./PortraitMenu";
 import { COMPUTE_ICON, HAMMERS_ICON, RESOURCE_ICON } from "./icons";
 
+// 2x3 sidebar grid order: stocks on top, flows on bottom row.
 const RESOURCE_ORDER: ResourceKey[] = ["food", "energy", "alloys", "political"];
 
 function fmtDelta(n: number): string {
@@ -19,7 +19,7 @@ function fmtDelta(n: number): string {
   return `${r}`;
 }
 
-function FlowPill({
+function ResCell({
   icon,
   value,
   delta,
@@ -31,11 +31,11 @@ function FlowPill({
   const d = delta ?? 0;
   const cls = d > 0 ? "pos" : d < 0 ? "neg" : "";
   return (
-    <span className="flow-pill">
-      <img className="pill-icon" src={icon} alt="" />
-      <span>{value}</span>
-      {delta !== undefined && <span className={`pill-delta ${cls}`}>{fmtDelta(d)}</span>}
-    </span>
+    <div className="res-cell">
+      <img className="cell-icon" src={icon} alt="" />
+      <span className="cell-value">{value}</span>
+      {delta !== undefined && <span className={`cell-delta ${cls}`}>{fmtDelta(d)}</span>}
+    </div>
   );
 }
 
@@ -86,7 +86,6 @@ export function MainScreen() {
   const reset = useGame((s) => s.reset);
 
   const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
-  const [chronicleOpen, setChronicleOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const origin = originById(state.empire.originId);
@@ -98,7 +97,7 @@ export function MainScreen() {
     : null;
   const capitalSystem = capital ? state.galaxy.systems[capital.systemId] : null;
 
-  const deltas = perTurnIncome(state);
+  const deltas: Resources = perTurnIncome(state);
   const totalHammers = state.empire.systemIds.reduce((sum, sid) => {
     const sys = state.galaxy.systems[sid];
     if (!sys) return sum;
@@ -115,17 +114,15 @@ export function MainScreen() {
     ? state.empire.systemIds.includes(focusSystem.id)
     : false;
 
-  const lastChronicle = state.eventLog.length > 0 ? state.eventLog[state.eventLog.length - 1] : null;
-
   return (
     <>
-      {/* ===== Left sidebar ===== */}
+      {/* ===== Left sidebar: portrait | end turn | 2x3 resources | menu ===== */}
       <div className="sidebar">
         {species?.art && (
           <button
             className="portrait-card"
             style={{ borderColor: state.empire.color }}
-            title={`${species.name} · ${state.empire.name} — menu`}
+            title={`${species.name} · ${state.empire.name}`}
             onClick={() => setMenuOpen(true)}
           >
             <img src={species.art} alt={species.name} />
@@ -140,83 +137,79 @@ export function MainScreen() {
           <span className="turn-num">T{state.turn}</span>
           <span>End Turn</span>
         </button>
-      </div>
 
-      {/* ===== Main column ===== */}
-      <div className="main-column">
-        {/* Narrow flows strip */}
-        <div className="flows-inline">
+        <div className="res-grid">
           {RESOURCE_ORDER.map((k) => (
-            <FlowPill
+            <ResCell
               key={k}
               icon={RESOURCE_ICON[k]}
               value={Math.round(state.empire.resources[k])}
               delta={deltas[k]}
             />
           ))}
-          <span className="flow-divider" />
-          <FlowPill
+          <ResCell
             icon={COMPUTE_ICON}
             value={`${state.empire.compute.used}/${state.empire.compute.cap}`}
           />
-          <FlowPill icon={HAMMERS_ICON} value={`${totalHammers}/t`} />
+          <ResCell icon={HAMMERS_ICON} value={`${totalHammers}/t`} />
         </div>
 
-        {/* System (left) + Galaxy (right), equal-width, equal-height. */}
-        <div className="panels-row">
-          <div className="system-panel">
-            <div className="scene-wrap">
-              <div className="panel-label">
-                <span>
-                  {focusSystem
-                    ? `${focusSystem.name}${focusOwned && focusSystem.id !== capitalSystem?.id ? "" : focusOwned ? " · home" : " · unclaimed"}`
-                    : "System"}
-                </span>
-                {selectedSystemId && (
-                  <button className="deselect-btn" onClick={() => setSelectedSystemId(null)}>
-                    home
-                  </button>
-                )}
-              </div>
-              {focusSystem ? (
-                <SystemScene
-                  system={focusSystem}
-                  bodies={focusBodies}
-                  ownerColor={focusOwned ? state.empire.color : null}
-                  capitalBodyId={state.empire.capitalBodyId}
-                  turn={state.turn}
-                />
-              ) : (
-                <div className="scene-empty">Tap a star on the galaxy map.</div>
-              )}
-            </div>
-            <div className="detail-scroll">
-              {focusSystem ? (
-                focusBodies.map((body) => (
-                  <BodyRow
-                    key={body.id}
-                    body={body}
-                    income={focusOwned ? bodyIncome(state, body) : {}}
-                    isCapital={body.id === state.empire.capitalBodyId}
-                  />
-                ))
-              ) : (
-                <div className="empire-card">
-                  <div><span className="stat-label">Species:</span> {species?.name ?? "?"}</div>
-                  <div><span className="stat-label">Origin:</span> {origin?.name ?? "?"}</div>
-                  <div><span className="stat-label">Population:</span> {totalPops(state)}</div>
-                </div>
-              )}
-              <div className="chronicle-ticker" onClick={() => setChronicleOpen(true)}>
-                <span className="ticker-label">Log</span>
-                <span className="ticker-text">
-                  {lastChronicle ? lastChronicle.text : "Nothing recorded yet."}
-                </span>
-                <span className="ticker-count">{state.eventLog.length}</span>
-              </div>
-            </div>
-          </div>
+        <div className="sidebar-spacer" />
 
+        <button className="menu-btn" onClick={() => setMenuOpen(true)}>
+          Menu
+        </button>
+      </div>
+
+      {/* ===== Main: system panel | (galaxy + log) ===== */}
+      <div className="main-column">
+        <div className="system-panel">
+          <div className="scene-wrap">
+            <div className="panel-label">
+              <span>
+                {focusSystem
+                  ? `${focusSystem.name}${focusOwned && focusSystem.id === capitalSystem?.id ? " · home" : focusOwned ? "" : " · unclaimed"}`
+                  : "System"}
+              </span>
+              {selectedSystemId && (
+                <button className="deselect-btn" onClick={() => setSelectedSystemId(null)}>
+                  home
+                </button>
+              )}
+            </div>
+            {focusSystem ? (
+              <SystemScene
+                system={focusSystem}
+                bodies={focusBodies}
+                ownerColor={focusOwned ? state.empire.color : null}
+                capitalBodyId={state.empire.capitalBodyId}
+                turn={state.turn}
+              />
+            ) : (
+              <div className="scene-empty">Tap a star on the galaxy map.</div>
+            )}
+          </div>
+          <div className="detail-scroll">
+            {focusSystem ? (
+              focusBodies.map((body) => (
+                <BodyRow
+                  key={body.id}
+                  body={body}
+                  income={focusOwned ? bodyIncome(state, body) : {}}
+                  isCapital={body.id === state.empire.capitalBodyId}
+                />
+              ))
+            ) : (
+              <div className="empire-card">
+                <div><span className="stat-label">Species:</span> {species?.name ?? "?"}</div>
+                <div><span className="stat-label">Origin:</span> {origin?.name ?? "?"}</div>
+                <div><span className="stat-label">Population:</span> {totalPops(state)}</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="right-column">
           <div className="galaxy-panel">
             <span className="panel-label">Galaxy</span>
             <GalaxyMap
@@ -230,13 +223,29 @@ export function MainScreen() {
               {state.empire.systemIds.length}/{Object.keys(state.galaxy.systems).length} yours
             </span>
           </div>
+
+          <div className="chronicle-panel">
+            <div className="panel-label">
+              <span>Chronicle</span>
+              <span className="count">{state.eventLog.length}</span>
+            </div>
+            <div className="log-scroll">
+              {state.eventLog.length === 0 ? (
+                <div className="log-empty">Nothing recorded yet. End a turn to see what happens.</div>
+              ) : (
+                [...state.eventLog].reverse().map((entry, i) => (
+                  <div key={`${entry.turn}-${i}`} className="log-item">
+                    <span className="turn-tag">T{entry.turn}</span>
+                    {entry.text}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
       {pendingEvent && <EventModal eventId={pendingEvent.eventId} />}
-      {chronicleOpen && (
-        <ChronicleModal log={state.eventLog} onClose={() => setChronicleOpen(false)} />
-      )}
       {menuOpen && (
         <PortraitMenu onReset={reset} onClose={() => setMenuOpen(false)} />
       )}
