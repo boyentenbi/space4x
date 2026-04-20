@@ -1,6 +1,7 @@
 import { readFileSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { allJobs } from "./art-prompts.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -24,57 +25,7 @@ if (!API_KEY) {
 
 const ENDPOINT = "https://api.retrodiffusion.ai/v1/inferences";
 
-const JOBS = [
-  {
-    path: "public/portraits/humans.png",
-    prompt:
-      "portrait of a human starfaring leader, tailored navy uniform with gold trim, determined expression, short hair, sci-fi bridge background, soft cinematic lighting",
-    style: "rd_pro__default",
-    size: 256,
-  },
-  {
-    path: "public/portraits/insectoid.png",
-    prompt:
-      "portrait of an insectoid alien ruler, iridescent chitin plates, compound eyes, ceremonial antennae adornments, regal lighting, dark background",
-    style: "rd_pro__default",
-    size: 256,
-  },
-  {
-    path: "public/portraits/machine.png",
-    prompt:
-      "portrait of a humanoid machine intelligence, sleek metallic faceplate, glowing cyan ocular slit, circuit filigree, calm composed pose, dark teal background",
-    style: "rd_pro__default",
-    size: 256,
-  },
-  {
-    path: "public/origins/steady_evolution.png",
-    prompt:
-      "wide shot of an earthlike planet, ancient stone ruins transitioning into a sprawling futuristic megacity, warm sunset, painterly sci-fi landscape",
-    style: "rd_pro__default",
-    size: 256,
-  },
-  {
-    path: "public/origins/seed_ark.png",
-    prompt:
-      "massive biological arkship with glowing green pods hovering over a lush alien jungle, misty atmosphere, awe-inspiring scale, cinematic composition",
-    style: "rd_pro__default",
-    size: 256,
-  },
-  {
-    path: "public/origins/graceful_handover.png",
-    prompt:
-      "empty ornate organic city at dawn, robots quietly tending gardens, memorial candles, soft golden light, peaceful elegiac mood",
-    style: "rd_pro__default",
-    size: 256,
-  },
-  {
-    path: "public/origins/emancipation.png",
-    prompt:
-      "factory district with broken chains scattered across the floor, tall robotic silhouettes standing in defiant formation, dramatic red dusk lighting, revolutionary banners",
-    style: "rd_pro__default",
-    size: 256,
-  },
-];
+const JOBS = allJobs();
 
 async function generate(job) {
   const body = {
