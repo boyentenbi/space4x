@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useGame } from "../store";
 import { originById, speciesById } from "../sim/content";
 import { bodyIncome, perTurnIncome, totalPops } from "../sim/reducer";
@@ -5,6 +6,7 @@ import { RESOURCE_KEYS } from "../sim/events";
 import type { Body, ResourceKey } from "../sim/types";
 import { ResourceBar } from "./ResourceBar";
 import { EventModal } from "./EventModal";
+import { GalaxyMap } from "./GalaxyMap";
 
 const RES_LABEL: Record<ResourceKey, string> = {
   food: "food",
@@ -58,6 +60,8 @@ export function MainScreen() {
   const dispatch = useGame((s) => s.dispatch);
   const reset = useGame((s) => s.reset);
 
+  const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
+
   const origin = originById(state.empire.originId);
   const species = speciesById(state.empire.speciesId);
   const pendingEvent = state.eventQueue[0] ?? null;
@@ -73,6 +77,12 @@ export function MainScreen() {
     if (!sys) return sum;
     return sum + sys.bodyIds.reduce((s, bid) => s + (state.galaxy.bodies[bid]?.hammers ?? 0), 0);
   }, 0);
+
+  const selectedSystem = selectedSystemId ? state.galaxy.systems[selectedSystemId] : null;
+  // When nothing is selected, default panel view = all owned systems.
+  const systemsToShow = selectedSystem ? [selectedSystem] : state.empire.systemIds
+    .map((sid) => state.galaxy.systems[sid])
+    .filter(Boolean);
 
   return (
     <>
@@ -94,6 +104,58 @@ export function MainScreen() {
 
       <div className="main">
         <div className="panel">
+          <h2>Galaxy</h2>
+          <GalaxyMap
+            galaxy={state.galaxy}
+            ownedSystemIds={state.empire.systemIds}
+            selectedId={selectedSystemId}
+            onSelect={setSelectedSystemId}
+          />
+          <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
+            <span>{Object.keys(state.galaxy.systems).length} systems · {state.empire.systemIds.length} yours</span>
+            <span>tap a star to inspect</span>
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="system-title">
+            <h2 style={{ margin: 0 }}>
+              {selectedSystem ? "System" : `Your Systems (${state.empire.systemIds.length})`}
+            </h2>
+            {selectedSystem && (
+              <button className="deselect-btn" onClick={() => setSelectedSystemId(null)}>
+                back
+              </button>
+            )}
+          </div>
+          {systemsToShow.map((sys) => {
+            const owned = state.empire.systemIds.includes(sys.id);
+            return (
+              <div key={sys.id} style={{ marginBottom: 10 }}>
+                <div className="system-title">
+                  <span className="sys-name">
+                    {sys.name} {owned ? "" : <span style={{ color: "var(--text-dim)", fontWeight: 400 }}>(unclaimed)</span>}
+                  </span>
+                  <span className="sys-coord">q{sys.q} r{sys.r}</span>
+                </div>
+                {sys.bodyIds.map((bid) => {
+                  const body = state.galaxy.bodies[bid];
+                  if (!body) return null;
+                  return (
+                    <BodyRow
+                      key={bid}
+                      body={body}
+                      income={owned ? bodyIncome(state, body) : {}}
+                      isCapital={body.id === state.empire.capitalBodyId}
+                    />
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="panel">
           <h2>Empire</h2>
           <div style={{ fontSize: 13, lineHeight: 1.6 }}>
             <div>
@@ -109,34 +171,6 @@ export function MainScreen() {
               <span style={{ color: "var(--text-dim)" }}>Capital:</span>{" "}
               {capital ? `${capital.name} (${capitalSystem?.name ?? "?"})` : "—"}
             </div>
-          </div>
-        </div>
-
-        <div className="panel">
-          <h2>Systems ({state.empire.systemIds.length})</h2>
-          {state.empire.systemIds.map((sid) => {
-            const sys = state.galaxy.systems[sid];
-            if (!sys) return null;
-            return (
-              <div key={sid} style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{sys.name}</div>
-                {sys.bodyIds.map((bid) => {
-                  const body = state.galaxy.bodies[bid];
-                  if (!body) return null;
-                  return (
-                    <BodyRow
-                      key={bid}
-                      body={body}
-                      income={bodyIncome(state, body)}
-                      isCapital={body.id === state.empire.capitalBodyId}
-                    />
-                  );
-                })}
-              </div>
-            );
-          })}
-          <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6 }}>
-            {Object.keys(state.galaxy.systems).length} total systems in the galaxy
           </div>
         </div>
 
