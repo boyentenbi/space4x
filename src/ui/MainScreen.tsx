@@ -4,11 +4,39 @@ import { originById, speciesById } from "../sim/content";
 import { bodyIncome, perTurnIncome, totalPops } from "../sim/reducer";
 import { RESOURCE_KEYS } from "../sim/events";
 import type { Body, ResourceKey } from "../sim/types";
-import { ResourceBar } from "./ResourceBar";
 import { EventModal } from "./EventModal";
 import { GalaxyMap } from "./GalaxyMap";
 import { SystemScene } from "./SystemScene";
+import { ChronicleModal } from "./ChronicleModal";
 import { COMPUTE_ICON, HAMMERS_ICON, RESOURCE_ICON } from "./icons";
+
+const RESOURCE_ORDER: ResourceKey[] = ["food", "energy", "alloys", "political"];
+
+function fmtDelta(n: number): string {
+  const r = Math.round(n * 10) / 10;
+  if (r > 0) return `+${r}`;
+  return `${r}`;
+}
+
+function FlowPill({
+  icon,
+  value,
+  delta,
+}: {
+  icon: string;
+  value: string | number;
+  delta?: number;
+}) {
+  const d = delta ?? 0;
+  const cls = d > 0 ? "pos" : d < 0 ? "neg" : "";
+  return (
+    <span className="flow-pill">
+      <img className="pill-icon" src={icon} alt="" />
+      <span>{value}</span>
+      {delta !== undefined && <span className={`pill-delta ${cls}`}>{fmtDelta(d)}</span>}
+    </span>
+  );
+}
 
 function BodyRow({
   body,
@@ -54,9 +82,9 @@ function BodyRow({
 export function MainScreen() {
   const state = useGame((s) => s.state);
   const dispatch = useGame((s) => s.dispatch);
-  const reset = useGame((s) => s.reset);
 
   const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
+  const [chronicleOpen, setChronicleOpen] = useState(false);
 
   const origin = originById(state.empire.originId);
   const species = speciesById(state.empire.speciesId);
@@ -75,145 +103,148 @@ export function MainScreen() {
   }, 0);
 
   const selectedSystem = selectedSystemId ? state.galaxy.systems[selectedSystemId] : null;
-  // When nothing is selected, default panel view = all owned systems.
-  const systemsToShow = selectedSystem ? [selectedSystem] : state.empire.systemIds
-    .map((sid) => state.galaxy.systems[sid])
-    .filter(Boolean);
+  const selectedBodies = selectedSystem
+    ? selectedSystem.bodyIds.map((bid) => state.galaxy.bodies[bid]).filter((b): b is Body => !!b)
+    : [];
+  const selectedOwned = selectedSystem
+    ? state.empire.systemIds.includes(selectedSystem.id)
+    : false;
+
+  const lastChronicle = state.eventLog.length > 0 ? state.eventLog[state.eventLog.length - 1] : null;
 
   return (
     <>
-      <div className="header">
-        <h1>{state.empire.name}</h1>
-        <span className="turn">Turn {state.turn}</span>
-      </div>
-
-      <div className="top-strip">
+      {/* ====== HUD top bar ====== */}
+      <div className="topbar">
         {species?.art && (
           <div
             className="portrait-card"
             style={{ borderColor: state.empire.color }}
-            title={species.name}
+            title={`${species.name} · ${state.empire.name}`}
           >
             <img src={species.art} alt={species.name} />
           </div>
         )}
-        <ResourceBar resources={state.empire.resources} deltas={deltas} />
-      </div>
 
-      <div className="compute-strip">
-        <span className="flow-item">
-          <img className="flow-icon" src={COMPUTE_ICON} alt="" />
-          <span className="flow-label">Compute</span>
-          <span className="value">{state.empire.compute.used}/{state.empire.compute.cap}</span>
-        </span>
-        <span className="flow-item">
-          <img className="flow-icon" src={HAMMERS_ICON} alt="" />
-          <span className="flow-label">Hammers</span>
-          <span className="value">{totalHammers}/turn</span>
-        </span>
-      </div>
-
-      <div className="main">
-        <div className="panel">
-          <h2>Galaxy</h2>
-          <GalaxyMap
-            galaxy={state.galaxy}
-            ownedSystemIds={state.empire.systemIds}
-            ownerColor={state.empire.color}
-            selectedId={selectedSystemId}
-            onSelect={setSelectedSystemId}
+        <div className="flows-inline">
+          {RESOURCE_ORDER.map((k) => (
+            <FlowPill
+              key={k}
+              icon={RESOURCE_ICON[k]}
+              value={Math.round(state.empire.resources[k])}
+              delta={deltas[k]}
+            />
+          ))}
+          <span className="flow-divider" />
+          <FlowPill
+            icon={COMPUTE_ICON}
+            value={`${state.empire.compute.used}/${state.empire.compute.cap}`}
           />
-          <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
-            <span>{Object.keys(state.galaxy.systems).length} systems · {state.empire.systemIds.length} yours</span>
-            <span>tap a star to inspect</span>
+          <FlowPill icon={HAMMERS_ICON} value={`${totalHammers}/t`} />
+        </div>
+
+        <button
+          className="endturn-card"
+          onClick={() => dispatch({ type: "endTurn" })}
+          disabled={!!pendingEvent}
+          title="End turn"
+        >
+          <span className="turn-num">T{state.turn}</span>
+          <span>End Turn</span>
+        </button>
+      </div>
+
+      {/* ====== Main workspace ====== */}
+      <div className="workspace">
+        <div className="scene-area">
+          {selectedSystem ? (
+            <>
+              <SystemScene
+                system={selectedSystem}
+                bodies={selectedBodies}
+                ownerColor={selectedOwned ? state.empire.color : null}
+                capitalBodyId={state.empire.capitalBodyId}
+                turn={state.turn}
+              />
+              <div className="selected-label">
+                <span>{selectedSystem.name}</span>
+                <button className="deselect-btn" onClick={() => setSelectedSystemId(null)}>
+                  back
+                </button>
+              </div>
+            </>
+          ) : capitalSystem ? (
+            <>
+              <SystemScene
+                system={capitalSystem}
+                bodies={capitalSystem.bodyIds.map((bid) => state.galaxy.bodies[bid]).filter((b): b is Body => !!b)}
+                ownerColor={state.empire.color}
+                capitalBodyId={state.empire.capitalBodyId}
+                turn={state.turn}
+              />
+              <div className="selected-label">
+                <span>{capitalSystem.name} · home</span>
+              </div>
+            </>
+          ) : (
+            <div className="scene-empty">Tap a star to inspect.</div>
+          )}
+
+          <div className="minimap-card">
+            <GalaxyMap
+              galaxy={state.galaxy}
+              ownedSystemIds={state.empire.systemIds}
+              ownerColor={state.empire.color}
+              selectedId={selectedSystemId}
+              onSelect={setSelectedSystemId}
+            />
           </div>
         </div>
 
-        <div className="panel">
-          <div className="system-title">
-            <h2 style={{ margin: 0 }}>
-              {selectedSystem ? "System" : `Your Systems (${state.empire.systemIds.length})`}
-            </h2>
-            {selectedSystem && (
-              <button className="deselect-btn" onClick={() => setSelectedSystemId(null)}>
-                back
-              </button>
-            )}
-          </div>
-          {systemsToShow.map((sys) => {
-            const owned = state.empire.systemIds.includes(sys.id);
-            const bodies = sys.bodyIds
-              .map((bid) => state.galaxy.bodies[bid])
-              .filter((b): b is Body => !!b);
-            return (
-              <div key={sys.id} style={{ marginBottom: 10 }}>
-                <SystemScene
-                  system={sys}
-                  bodies={bodies}
-                  ownerColor={owned ? state.empire.color : null}
-                  capitalBodyId={state.empire.capitalBodyId}
-                  turn={state.turn}
+        <div className="detail-area">
+          {selectedSystem ? (
+            <>
+              {selectedBodies.map((body) => (
+                <BodyRow
+                  key={body.id}
+                  body={body}
+                  income={selectedOwned ? bodyIncome(state, body) : {}}
+                  isCapital={body.id === state.empire.capitalBodyId}
                 />
-                {bodies.map((body) => (
-                  <BodyRow
-                    key={body.id}
-                    body={body}
-                    income={owned ? bodyIncome(state, body) : {}}
-                    isCapital={body.id === state.empire.capitalBodyId}
-                  />
-                ))}
+              ))}
+            </>
+          ) : (
+            <div className="empire-card">
+              <h2>{state.empire.name}</h2>
+              <div><span className="stat-label">Species:</span> {species?.name ?? "?"}</div>
+              <div><span className="stat-label">Origin:</span> {origin?.name ?? "?"}</div>
+              <div><span className="stat-label">Population:</span> {totalPops(state)}</div>
+              <div>
+                <span className="stat-label">Systems:</span> {state.empire.systemIds.length} owned ·{" "}
+                {Object.keys(state.galaxy.systems).length} total
               </div>
-            );
-          })}
-        </div>
+              {capitalSystem && capital && (
+                <div>
+                  <span className="stat-label">Capital:</span> {capital.name} ({capitalSystem.name})
+                </div>
+              )}
+            </div>
+          )}
 
-        <div className="panel">
-          <h2>Empire</h2>
-          <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-            <div>
-              <span style={{ color: "var(--text-dim)" }}>Species:</span> {species?.name ?? "?"}
-            </div>
-            <div>
-              <span style={{ color: "var(--text-dim)" }}>Origin:</span> {origin?.name ?? "?"}
-            </div>
-            <div>
-              <span style={{ color: "var(--text-dim)" }}>Population:</span> {totalPops(state)}
-            </div>
-            <div>
-              <span style={{ color: "var(--text-dim)" }}>Capital:</span>{" "}
-              {capital ? `${capital.name} (${capitalSystem?.name ?? "?"})` : "—"}
-            </div>
+          <div className="chronicle-ticker" onClick={() => setChronicleOpen(true)}>
+            <span className="ticker-label">Log</span>
+            <span className="ticker-text">
+              {lastChronicle ? lastChronicle.text : "Nothing recorded yet. End a turn to see what happens."}
+            </span>
+            <span className="ticker-count">{state.eventLog.length}</span>
           </div>
-        </div>
-
-        <div className="panel" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-          <h2>Chronicle</h2>
-          <div className="log">
-            {state.eventLog.length === 0 && (
-              <div style={{ color: "var(--text-dim)", fontSize: 13 }}>
-                Nothing worth recording yet. End a turn to see what happens.
-              </div>
-            )}
-            {[...state.eventLog].reverse().map((entry, i) => (
-              <div className="log-item" key={`${entry.turn}-${i}`}>
-                <span className="turn-tag">T{entry.turn}</span>
-                {entry.text}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="actions footer-btn">
-          <button onClick={() => dispatch({ type: "endTurn" })} disabled={!!pendingEvent}>
-            End Turn
-          </button>
-          <button onClick={reset} style={{ flex: 0, padding: "10px 14px" }}>
-            Reset
-          </button>
         </div>
       </div>
 
       {pendingEvent && <EventModal eventId={pendingEvent.eventId} />}
+      {chronicleOpen && (
+        <ChronicleModal log={state.eventLog} onClose={() => setChronicleOpen(false)} />
+      )}
     </>
   );
 }
