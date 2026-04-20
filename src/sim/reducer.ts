@@ -14,7 +14,20 @@ import type {
 export type Action =
   | { type: "newGame"; empireName: string; originId: string; speciesId: string; seed: number }
   | { type: "endTurn" }
-  | { type: "resolveEvent"; eventId: string; choiceId: string };
+  | { type: "resolveEvent"; eventId: string; choiceId: string }
+  | { type: "queueColonize"; bodyId: string; targetBodyId: string }
+  | { type: "cancelOrder"; bodyId: string; orderId: string };
+
+// Colonization tunables.
+export const COLONIZE_HAMMERS = 20;
+export const COLONIZE_POLITICAL = 5;
+export const COLONIZE_STARTER_POPS = 1;
+
+let orderCounter = 0;
+function nextOrderId(): string {
+  orderCounter += 1;
+  return `order_${orderCounter}_${Math.floor(Math.random() * 1e6)}`;
+}
 
 const EMPTY_RESOURCES: Resources = {
   food: 0,
@@ -66,6 +79,39 @@ export function initialState(): GameState {
     eventLog: [],
     gameOver: false,
   };
+}
+
+// True if `systemId` shares a hyperlane with any system the empire owns.
+// Used to gate colonization targets to the "frontier".
+export function isSystemAdjacentToEmpire(state: GameState, systemId: string): boolean {
+  const owned = new Set(state.empire.systemIds);
+  if (owned.has(systemId)) return false;
+  for (const [a, b] of state.galaxy.hyperlanes) {
+    if (a === systemId && owned.has(b)) return true;
+    if (b === systemId && owned.has(a)) return true;
+  }
+  return false;
+}
+
+// Can `target` body be colonized by the player right now?
+// - Target's system must not already be owned.
+// - Target's system must be hyperlane-adjacent to an owned system.
+// - No other queued colonize order currently targets this body.
+export function canColonize(state: GameState, targetBodyId: string): boolean {
+  const target = state.galaxy.bodies[targetBodyId];
+  if (!target) return false;
+  const targetSys = state.galaxy.systems[target.systemId];
+  if (!targetSys) return false;
+  if (targetSys.ownerId) return false;
+  if (!isSystemAdjacentToEmpire(state, targetSys.id)) return false;
+  for (const body of Object.values(state.galaxy.bodies)) {
+    for (const order of body.queue) {
+      if (order.kind === "colonize" && order.targetBodyId === targetBodyId) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 export function ownedBodies(state: GameState): Body[] {
@@ -125,6 +171,31 @@ export function perTurnIncome(state: GameState): Resources {
 
 export function computeCap(state: GameState): number {
   return ownedBodies(state).length * COMPUTE_PER_BODY;
+}
+
+// Applied inside an immer draft when a BuildOrder finishes. Order-specific
+// side effects (ownership flip, resource deduction, chronicle entry) live here.
+function completeOrder(draft: GameState, order: import("./types").BuildOrder): void {
+  if (order.kind === "colonize") {
+    const target = draft.galaxy.bodies[order.targetBodyId];
+    if (!target) return;
+    const targetSys = draft.galaxy.systems[target.systemId];
+    if (!targetSys) return;
+    // Pre-empt check: if someone else grabbed it while we were building, bail.
+    if (targetSys.ownerId && targetSys.ownerId !== draft.empire.id) return;
+    draft.empire.resources.political -= order.politicalCost;
+    targetSys.ownerId = draft.empire.id;
+    if (!draft.empire.systemIds.includes(targetSys.id)) {
+      draft.empire.systemIds.push(targetSys.id);
+    }
+    target.pops = Math.max(target.pops, COLONIZE_STARTER_POPS);
+    draft.eventLog.push({
+      turn: draft.turn,
+      eventId: "colonize",
+      choiceId: null,
+      text: `Colonized ${target.name} in ${targetSys.name}.`,
+    });
+  }
 }
 
 // Simple logistic-ish growth: more headroom => more likely to grow this turn.
@@ -196,6 +267,33 @@ export function reduce(state: GameState, action: Action): GameState {
     case "resolveEvent":
       return resolveEventChoice(state, action.eventId, action.choiceId);
 
+    case "queueColonize": {
+      if (!canColonize(state, action.targetBodyId)) return state;
+      const sourceBody = state.galaxy.bodies[action.bodyId];
+      if (!sourceBody) return state;
+      const sourceSys = state.galaxy.systems[sourceBody.systemId];
+      if (!sourceSys || sourceSys.ownerId !== state.empire.id) return state;
+      return produce(state, (draft) => {
+        const body = draft.galaxy.bodies[action.bodyId];
+        body.queue.push({
+          kind: "colonize",
+          id: nextOrderId(),
+          targetBodyId: action.targetBodyId,
+          hammersRequired: COLONIZE_HAMMERS,
+          hammersPaid: 0,
+          politicalCost: COLONIZE_POLITICAL,
+        });
+      });
+    }
+
+    case "cancelOrder": {
+      return produce(state, (draft) => {
+        const body = draft.galaxy.bodies[action.bodyId];
+        if (!body) return;
+        body.queue = body.queue.filter((o) => o.id !== action.orderId);
+      });
+    }
+
     case "endTurn": {
       if (state.eventQueue.length > 0) return state;
 
@@ -213,10 +311,28 @@ export function reduce(state: GameState, action: Action): GameState {
           const live = draft.galaxy.bodies[body.id];
           if (live) live.hammers = live.pops * HAMMERS_PER_POP;
         }
+        // 3. Drain hammers into each body's active project.
+        for (const sid of draft.empire.systemIds) {
+          const sys = draft.galaxy.systems[sid];
+          if (!sys) continue;
+          for (const bid of sys.bodyIds) {
+            const body = draft.galaxy.bodies[bid];
+            if (!body || body.queue.length === 0 || body.hammers <= 0) continue;
+            const order = body.queue[0];
+            const need = order.hammersRequired - order.hammersPaid;
+            const spent = Math.min(body.hammers, need);
+            order.hammersPaid += spent;
+            body.hammers -= spent;
+            if (order.hammersPaid >= order.hammersRequired) {
+              completeOrder(draft, order);
+              body.queue.shift();
+            }
+          }
+        }
         draft.rngSeed = nextSeed(draft.rngSeed);
       });
 
-      // 3. Pop growth (uses seeded RNG — deterministic per turn).
+      // 4. Pop growth (uses seeded RNG — deterministic per turn).
       const growthRand = mulberry32(next.rngSeed ^ 0xa5a5a5a5);
       next = tryGrowPops(next, growthRand);
 

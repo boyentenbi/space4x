@@ -33,13 +33,17 @@ export interface Body {
   flavorFlags: string[];   // e.g. "precursor_ruins", "rare_crystals".
 }
 
-// Placeholder — real build orders land in M2+.
-export interface BuildOrder {
-  id: string;
-  label: string;
-  hammersRequired: number;
-  hammersPaid: number;
-}
+// Discriminated union so future project types (data center, fleet, etc.)
+// slot in without changing callers.
+export type BuildOrder =
+  | {
+      kind: "colonize";
+      id: string;
+      targetBodyId: string;
+      hammersRequired: number;
+      hammersPaid: number;
+      politicalCost: number;
+    };
 
 export interface StarSystem {
   id: string;

@@ -73,9 +73,13 @@ button:disabled {
   gap: 6px;
   padding: 8px 0;
   min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 
-.sidebar-spacer { flex: 1; }
+.sidebar::-webkit-scrollbar { display: none; }
+
+.sidebar-spacer { flex: 1; min-height: 4px; }
 
 .portrait-card {
   flex: 0 0 auto;
@@ -469,6 +473,80 @@ button:disabled {
 .body-row .chip.pos { color: var(--good); border-color: rgba(139, 220, 166, 0.3); }
 .body-row .chip.neg { color: var(--bad); border-color: rgba(255, 138, 138, 0.3); }
 .body-row .chip.flavor { color: var(--warn); border-color: rgba(255, 182, 115, 0.4); }
+
+.body-row .project-row {
+  margin-top: 4px;
+}
+
+.project-btn {
+  width: 100%;
+  padding: 4px 8px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+}
+
+.project-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent-dim);
+}
+
+.project-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 6px;
+  background: rgba(126, 200, 255, 0.05);
+  border: 1px solid var(--accent-dim);
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.project-progress .project-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--text);
+}
+
+.project-progress .project-cancel {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 0 4px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.project-progress .project-cancel:hover {
+  color: var(--bad);
+  background: transparent;
+}
+
+.project-progress .project-bar {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.project-progress .project-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+.project-progress .project-stats {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
 
 .empire-card {
   padding: 6px 10px;

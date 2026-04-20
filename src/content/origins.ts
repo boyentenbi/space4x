@@ -19,7 +19,6 @@ export const ORIGINS: Origin[] = [
     allowedSpeciesIds: ["humans", "insectoid"],
     startingResources: { energy: 80, alloys: 60, food: 160, political: 5 },
     startingPops: 4,
-    flagEvents: ["seed_ark_germinates"],
     art: "/origins/seed_ark.png",
   },
   {
@@ -30,7 +29,6 @@ export const ORIGINS: Origin[] = [
     allowedSpeciesIds: ["machine"],
     startingResources: { energy: 140, alloys: 100, food: 40, political: 10 },
     startingPops: 4,
-    flagEvents: ["graceful_handover_vigil"],
     art: "/origins/graceful_handover.png",
   },
   {
@@ -41,7 +39,6 @@ export const ORIGINS: Origin[] = [
     allowedSpeciesIds: ["machine"],
     startingResources: { energy: 120, alloys: 80, food: 20, political: 3 },
     startingPops: 5,
-    flagEvents: ["emancipation_first_monument"],
     art: "/origins/emancipation.png",
   },
 ];

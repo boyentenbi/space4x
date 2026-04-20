@@ -8,6 +8,7 @@ import { EventModal } from "./EventModal";
 import { GalaxyMap } from "./GalaxyMap";
 import { SystemScene } from "./SystemScene";
 import { PortraitMenu } from "./PortraitMenu";
+import { ProjectPicker } from "./ProjectPicker";
 import { COMPUTE_ICON, HAMMERS_ICON, RESOURCE_ICON } from "./icons";
 
 // 2x3 sidebar grid order: stocks on top, flows on bottom row.
@@ -43,11 +44,20 @@ function BodyRow({
   body,
   income,
   isCapital,
+  owned,
+  bodyById,
+  onOpenProject,
+  onCancelOrder,
 }: {
   body: Body;
   income: Partial<Record<ResourceKey, number>>;
   isCapital: boolean;
+  owned: boolean;
+  bodyById: (id: string) => Body | undefined;
+  onOpenProject: (sourceBodyId: string) => void;
+  onCancelOrder: (sourceBodyId: string, orderId: string) => void;
 }) {
+  const activeOrder = body.queue[0];
   return (
     <div className={`body-row ${isCapital ? "capital" : ""}`}>
       <div className="body-head">
@@ -76,6 +86,47 @@ function BodyRow({
           <span key={f} className="chip flavor">{f.replace(/_/g, " ")}</span>
         ))}
       </div>
+
+      {owned && (
+        <div className="project-row">
+          {activeOrder ? (
+            <ProjectProgress
+              order={activeOrder}
+              bodyById={bodyById}
+              onCancel={() => onCancelOrder(body.id, activeOrder.id)}
+            />
+          ) : (
+            <button className="project-btn" onClick={() => onOpenProject(body.id)}>
+              + Project
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProjectProgress({
+  order,
+  bodyById,
+  onCancel,
+}: {
+  order: { kind: "colonize"; id: string; targetBodyId: string; hammersPaid: number; hammersRequired: number };
+  bodyById: (id: string) => Body | undefined;
+  onCancel: () => void;
+}) {
+  const target = bodyById(order.targetBodyId);
+  const pct = Math.min(100, (order.hammersPaid / order.hammersRequired) * 100);
+  return (
+    <div className="project-progress">
+      <div className="project-head">
+        <span>Colonizing <strong>{target?.name ?? "?"}</strong></span>
+        <button className="project-cancel" onClick={onCancel}>×</button>
+      </div>
+      <div className="project-bar">
+        <div className="project-bar-fill" style={{ width: `${pct}%` }} />
+      </div>
+      <div className="project-stats">{order.hammersPaid}/{order.hammersRequired}</div>
     </div>
   );
 }
@@ -87,6 +138,7 @@ export function MainScreen() {
 
   const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [projectSourceBodyId, setProjectSourceBodyId] = useState<string | null>(null);
 
   const origin = originById(state.empire.originId);
   const species = speciesById(state.empire.speciesId);
@@ -153,8 +205,6 @@ export function MainScreen() {
           <ResCell icon={HAMMERS_ICON} value={`${totalHammers}/t`} />
         </div>
 
-        <div className="sidebar-spacer" />
-
         <button className="menu-btn" onClick={() => setMenuOpen(true)}>
           Menu
         </button>
@@ -196,6 +246,12 @@ export function MainScreen() {
                   body={body}
                   income={focusOwned ? bodyIncome(state, body) : {}}
                   isCapital={body.id === state.empire.capitalBodyId}
+                  owned={focusOwned}
+                  bodyById={(id) => state.galaxy.bodies[id]}
+                  onOpenProject={setProjectSourceBodyId}
+                  onCancelOrder={(bodyId, orderId) =>
+                    dispatch({ type: "cancelOrder", bodyId, orderId })
+                  }
                 />
               ))
             ) : (
@@ -247,6 +303,16 @@ export function MainScreen() {
       {pendingEvent && <EventModal eventId={pendingEvent.eventId} />}
       {menuOpen && (
         <PortraitMenu onReset={reset} onClose={() => setMenuOpen(false)} />
+      )}
+      {projectSourceBodyId && (
+        <ProjectPicker
+          state={state}
+          sourceBodyId={projectSourceBodyId}
+          onQueue={(targetBodyId) =>
+            dispatch({ type: "queueColonize", bodyId: projectSourceBodyId, targetBodyId })
+          }
+          onClose={() => setProjectSourceBodyId(null)}
+        />
       )}
     </>
   );
