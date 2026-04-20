@@ -100,6 +100,7 @@ export type Modifier =
   | { kind: "popGrowthMult"; value: number }
   | { kind: "spaceMult"; value: number }
   | { kind: "colonizeHammerMult"; value: number }
+  | { kind: "colonizePoliticalMult"; value: number }
   // Additive deltas on per-pop costs/yields that don't fit the resource model.
   | { kind: "foodUpkeepDelta"; value: number }        // default upkeep is 1
   | { kind: "hammersPerPopDelta"; value: number }     // default hammer yield is 1

@@ -237,28 +237,35 @@ export function totalPopsOf(state: GameState, empire: Empire): number {
 
 // ===== Modifier plumbing =====
 
-// Modifier lean attached to an expansionism tier. Conqueror leans into
-// offence and lower colonize cost; isolationist leans into tall
-// production + more pop room; pragmatist is the baseline with no lean.
+// Expansionism lean:
+//  - Conqueror:    -40% political-capital cost to colonize (cheaper land
+//                  grabs; fleets will also be cheaper once they exist).
+//  - Pragmatist:   baseline.
+//  - Isolationist: +50% PC cost to colonize (reluctant to expand), but
+//                  +15% max pops and +15% pop growth on the worlds
+//                  they do hold.
 function expansionismModifiers(ex: Expansionism): Modifier[] {
   switch (ex) {
     case "conqueror":
       return [
-        { kind: "colonizeHammerMult", value: 0.85 },
-        { kind: "hammersPerPopDelta", value: 0.25 },
+        { kind: "colonizePoliticalMult", value: 0.6 },
       ];
     case "pragmatist":
       return [];
     case "isolationist":
       return [
-        { kind: "hammersPerPopDelta", value: 0.25 },
-        { kind: "spaceMult", value: 1.1 },
+        { kind: "colonizePoliticalMult", value: 1.5 },
+        { kind: "spaceMult", value: 1.15 },
+        { kind: "popGrowthMult", value: 1.15 },
       ];
   }
 }
 
-// Politic lean — collectivist pools consensus into political capital;
-// individualist runs leaner households; centrist is the baseline.
+// Politic lean:
+//  - Collectivist:  +0.5 political/turn from consensus.
+//  - Centrist:      baseline.
+//  - Individualist: reserved — will gain a compute/research-style bonus
+//                   once we build that sink.
 function politicModifiers(p: Politic): Modifier[] {
   switch (p) {
     case "collectivist":
@@ -266,7 +273,7 @@ function politicModifiers(p: Politic): Modifier[] {
     case "centrist":
       return [];
     case "individualist":
-      return [{ kind: "foodUpkeepDelta", value: -0.1 }];
+      return [];
   }
 }
 
@@ -291,10 +298,28 @@ export function empireModifiers(empire: Empire): Modifier[] {
 }
 
 // Multiplicative modifiers multiply together; returns 1.0 if none.
-function productMult(mods: Modifier[], kind: "popGrowthMult" | "spaceMult" | "colonizeHammerMult"): number {
+function productMult(
+  mods: Modifier[],
+  kind: "popGrowthMult" | "spaceMult" | "colonizeHammerMult" | "colonizePoliticalMult",
+): number {
   let m = 1;
   for (const mod of mods) if (mod.kind === kind) m *= mod.value;
   return m;
+}
+
+// Effective per-colonize costs after applying empire modifiers. Rounded
+// so the queued order stores a clean integer.
+export function effectiveColonizeHammers(empire: Empire): number {
+  return Math.max(
+    1,
+    Math.round(COLONIZE_HAMMERS * productMult(empireModifiers(empire), "colonizeHammerMult")),
+  );
+}
+export function effectiveColonizePolitical(empire: Empire): number {
+  return Math.max(
+    0,
+    Math.round(COLONIZE_POLITICAL * productMult(empireModifiers(empire), "colonizePoliticalMult")),
+  );
 }
 
 function sumDelta(mods: Modifier[], kind: "foodUpkeepDelta" | "hammersPerPopDelta"): number {
@@ -908,14 +933,18 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
 function aiPlan(state: GameState, empire: Empire): BuildOrder | null {
   if (empire.projects.length > 0) return null;
 
-  const politicalThreshold = (() => {
+  const effPolitical = effectiveColonizePolitical(empire);
+  const effHammers = effectiveColonizeHammers(empire);
+  // Buffer on top of the colonize PC cost, so more-isolationist empires
+  // also demand a larger stockpile before committing.
+  const buffer = (() => {
     switch (empire.expansionism) {
-      case "conqueror":    return COLONIZE_POLITICAL;
-      case "pragmatist":   return COLONIZE_POLITICAL + 5;
-      case "isolationist": return COLONIZE_POLITICAL + 15;
+      case "conqueror":    return 0;
+      case "pragmatist":   return 5;
+      case "isolationist": return 15;
     }
   })();
-  if (empire.resources.political < politicalThreshold) return null;
+  if (empire.resources.political < effPolitical + buffer) return null;
 
   let bestId: string | null = null;
   let bestScore = -1;
@@ -938,9 +967,9 @@ function aiPlan(state: GameState, empire: Empire): BuildOrder | null {
     kind: "colonize",
     id: nextOrderId(),
     targetBodyId: bestId,
-    hammersRequired: COLONIZE_HAMMERS,
+    hammersRequired: effHammers,
     hammersPaid: 0,
-    politicalCost: COLONIZE_POLITICAL,
+    politicalCost: effPolitical,
   };
 }
 
@@ -1157,14 +1186,16 @@ export function reduce(state: GameState, action: Action): GameState {
 
     case "queueColonize": {
       if (!canColonize(state, action.targetBodyId)) return state;
+      const hammers = effectiveColonizeHammers(state.empire);
+      const political = effectiveColonizePolitical(state.empire);
       return produce(state, (draft) => {
         draft.empire.projects.push({
           kind: "colonize",
           id: nextOrderId(),
           targetBodyId: action.targetBodyId,
-          hammersRequired: COLONIZE_HAMMERS,
+          hammersRequired: hammers,
           hammersPaid: 0,
-          politicalCost: COLONIZE_POLITICAL,
+          politicalCost: political,
         });
       });
     }

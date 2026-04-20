@@ -10,9 +10,11 @@ export const SPRITE_SIZE = 256;
 export const PORTRAIT_SIZE = 256;
 export const SCENE_SIZE = 256;
 
-// Enforces: three-quarter right pose, consistent head/shoulder framing, dark vignette.
+// Portraits are now overlaid on a game-side background. Frame the
+// subject tightly, and render on flat pure black so the alpha post-
+// process can knock the background out for transparent compositing.
 export const PORTRAIT_TEMPLATE =
-  "high-detail pixel art portrait, bust shot head and shoulders, subject turned three-quarters to the viewer's right, head fills upper third of frame, shoulders fill lower edge, centered composition, dark vignette background";
+  "high-detail pixel art portrait, bust shot head and shoulders, subject turned three-quarters to the viewer's right, head fills upper third of frame, shoulders fill lower edge, centered composition, isolated on flat pure black background for transparent compositing, no environmental scenery, no bridge, no interior, no props";
 
 export const SCENE_TEMPLATE =
   "high-detail pixel art scene, wide shot, cinematic composition, painterly sci-fi landscape";
@@ -301,7 +303,9 @@ export function allJobs() {
       prompt: buildPrompt(PORTRAIT_TEMPLATE, p.subject),
       style: STYLE,
       size: PORTRAIT_SIZE,
-      transparent: false,
+      // Transparent bg so portraits composite cleanly on the consistent
+      // dark panel used across the UI.
+      transparent: true,
     })),
     ...SCENES.map((s) => ({
       path: s.path,

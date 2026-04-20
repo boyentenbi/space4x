@@ -9,9 +9,9 @@ import {
   bodyProjectOrderFor,
   canColonize,
   colonizeOrderForTarget,
-  COLONIZE_HAMMERS,
-  COLONIZE_POLITICAL,
   computeBreakdownFor,
+  effectiveColonizeHammers,
+  effectiveColonizePolitical,
   effectiveSpace,
   empireById,
   expectedPopGrowth,
@@ -153,6 +153,8 @@ function BodyRow({
   colonizable,
   activeOrder,
   colonizeTurns,
+  colonizeHammers,
+  colonizePolitical,
   growth,
   bodyProjects,
   bodyProjectOrder,
@@ -168,6 +170,8 @@ function BodyRow({
   colonizable: boolean;
   activeOrder: { id: string; hammersPaid: number; hammersRequired: number } | null;
   colonizeTurns: number;
+  colonizeHammers: number;
+  colonizePolitical: number;
   growth: ReturnType<typeof growthEstimate> | null;
   bodyProjects: ReturnType<typeof availableBodyProjectsFor>;
   bodyProjectOrder: ReturnType<typeof bodyProjectOrderFor>;
@@ -281,9 +285,9 @@ function BodyRow({
           <span>+ Colonize</span>
           <span className="colonize-cost">
             <img className="stat-icon" src={HAMMERS_ICON} alt="" />
-            {COLONIZE_HAMMERS}
+            {colonizeHammers}
             <img className="stat-icon" src={RESOURCE_ICON.political} alt="" />
-            {COLONIZE_POLITICAL}
+            {colonizePolitical}
             <span className="colonize-turns">· {colonizeTurns}T</span>
           </span>
         </button>
@@ -398,6 +402,8 @@ export function MainScreen() {
       }, 0)
     );
   }, 0);
+  const colonizeHammerCost = effectiveColonizeHammers(state.empire);
+  const colonizePoliticalCost = effectiveColonizePolitical(state.empire);
   // Turns to finish a new colonize project, given current hammer rate and
   // any existing FIFO queue already consuming from the pool.
   function turnsToColonize(): number {
@@ -406,7 +412,7 @@ export function MainScreen() {
       (s, o) => s + (o.hammersRequired - o.hammersPaid),
       0,
     );
-    const totalNeed = backlogHammers + COLONIZE_HAMMERS;
+    const totalNeed = backlogHammers + colonizeHammerCost;
     return Math.ceil(totalNeed / totalHammers);
   }
   const colonizeTurnEstimate = turnsToColonize();
@@ -555,6 +561,8 @@ export function MainScreen() {
                       colonizable={canColonize(state, body.id)}
                       activeOrder={order}
                       colonizeTurns={colonizeTurnEstimate}
+                      colonizeHammers={colonizeHammerCost}
+                      colonizePolitical={colonizePoliticalCost}
                       growth={focusIsOurs ? growthEstimate(state, state.empire, body) : null}
                       bodyProjects={focusIsOurs ? availableBodyProjectsFor(state.empire, body.id) : []}
                       bodyProjectOrder={focusIsOurs ? bodyProjectOrderFor(state.empire, body.id) : null}

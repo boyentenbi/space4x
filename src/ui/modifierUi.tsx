@@ -17,6 +17,7 @@ export function isNegativeModifier(mod: Modifier): boolean {
     case "spaceMult":
       return mod.value < 1;
     case "colonizeHammerMult":
+    case "colonizePoliticalMult":
       return mod.value > 1;
     case "foodUpkeepDelta":
       return mod.value > 0;
@@ -58,7 +59,15 @@ export function renderModifier(mod: Modifier): ReactNode {
       const pct = Math.round((mod.value - 1) * 100);
       return (
         <>
-          {pct > 0 ? "+" : ""}{pct}% colonize cost
+          {pct > 0 ? "+" : ""}{pct}% colonize <img className="bonus-icon" src={HAMMERS_ICON} alt="" />
+        </>
+      );
+    }
+    case "colonizePoliticalMult": {
+      const pct = Math.round((mod.value - 1) * 100);
+      return (
+        <>
+          {pct > 0 ? "+" : ""}{pct}% colonize <img className="bonus-icon" src={RESOURCE_ICON.political} alt="" />
         </>
       );
     }
