@@ -7,6 +7,7 @@ import type { Body, ResourceKey } from "../sim/types";
 import { ResourceBar } from "./ResourceBar";
 import { EventModal } from "./EventModal";
 import { GalaxyMap } from "./GalaxyMap";
+import { SystemScene } from "./SystemScene";
 
 const RES_LABEL: Record<ResourceKey, string> = {
   food: "food",
@@ -91,7 +92,18 @@ export function MainScreen() {
         <span className="turn">Turn {state.turn}</span>
       </div>
 
-      <ResourceBar resources={state.empire.resources} deltas={deltas} />
+      <div className="top-strip">
+        {species?.art && (
+          <div
+            className="portrait-card"
+            style={{ borderColor: state.empire.color }}
+            title={species.name}
+          >
+            <img src={species.art} alt={species.name} />
+          </div>
+        )}
+        <ResourceBar resources={state.empire.resources} deltas={deltas} />
+      </div>
 
       <div className="compute-strip">
         <span>Compute · Hammers</span>
@@ -108,6 +120,7 @@ export function MainScreen() {
           <GalaxyMap
             galaxy={state.galaxy}
             ownedSystemIds={state.empire.systemIds}
+            ownerColor={state.empire.color}
             selectedId={selectedSystemId}
             onSelect={setSelectedSystemId}
           />
@@ -130,26 +143,25 @@ export function MainScreen() {
           </div>
           {systemsToShow.map((sys) => {
             const owned = state.empire.systemIds.includes(sys.id);
+            const bodies = sys.bodyIds
+              .map((bid) => state.galaxy.bodies[bid])
+              .filter((b): b is Body => !!b);
             return (
               <div key={sys.id} style={{ marginBottom: 10 }}>
-                <div className="system-title">
-                  <span className="sys-name">
-                    {sys.name} {owned ? "" : <span style={{ color: "var(--text-dim)", fontWeight: 400 }}>(unclaimed)</span>}
-                  </span>
-                  <span className="sys-coord">q{sys.q} r{sys.r}</span>
-                </div>
-                {sys.bodyIds.map((bid) => {
-                  const body = state.galaxy.bodies[bid];
-                  if (!body) return null;
-                  return (
-                    <BodyRow
-                      key={bid}
-                      body={body}
-                      income={owned ? bodyIncome(state, body) : {}}
-                      isCapital={body.id === state.empire.capitalBodyId}
-                    />
-                  );
-                })}
+                <SystemScene
+                  system={sys}
+                  bodies={bodies}
+                  ownerColor={owned ? state.empire.color : null}
+                  capitalBodyId={state.empire.capitalBodyId}
+                />
+                {bodies.map((body) => (
+                  <BodyRow
+                    key={body.id}
+                    body={body}
+                    income={owned ? bodyIncome(state, body) : {}}
+                    isCapital={body.id === state.empire.capitalBodyId}
+                  />
+                ))}
               </div>
             );
           })}

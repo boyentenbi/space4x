@@ -48,9 +48,13 @@ export interface StarSystem {
   ownerId: string | null;  // Empire id, null = unclaimed.
 }
 
+// Hyperlanes connect systems. Undirected; stored as unordered pairs of system ids.
+export type Hyperlane = [string, string];
+
 export interface Galaxy {
   systems: Record<string, StarSystem>;
   bodies: Record<string, Body>;
+  hyperlanes: Hyperlane[];
   width: number;           // Hex grid bounds (inclusive).
   height: number;
 }
@@ -71,6 +75,7 @@ export interface Species {
   description: string;
   traitIds: string[];
   art?: string;
+  color: string;           // Hex color used for empire territory/UI.
 }
 
 export interface Origin {
@@ -92,6 +97,7 @@ export interface Empire {
   name: string;
   speciesId: string;
   originId: string;
+  color: string;             // Territory/UI color. Derived from species at new game.
   resources: Resources;
   compute: Compute;
   capitalBodyId: string | null;

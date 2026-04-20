@@ -4,6 +4,7 @@ import type {
   BodyKind,
   Galaxy,
   HabitabilityTier,
+  Hyperlane,
   StarSystem,
 } from "./types";
 
@@ -85,6 +86,70 @@ export interface GenOptions {
   seed: number;
 }
 
+// Pixel-ish distance between two axial-coord hex cells (monotonic in Euclidean).
+function hexDist(a: StarSystem, b: StarSystem): number {
+  const ax = a.q + a.r / 2;
+  const bx = b.q + b.r / 2;
+  const ay = a.r;
+  const by = b.r;
+  return Math.hypot(ax - bx, ay - by);
+}
+
+// MST + extra short edges: guarantees connectivity, produces chokepoints
+// at natural bottlenecks, and sprinkles some alternative routes so the map
+// doesn't feel linear.
+function generateHyperlanes(systems: StarSystem[], rand: () => number): Hyperlane[] {
+  if (systems.length < 2) return [];
+  type Edge = { a: string; b: string; d: number };
+  const pairs: Edge[] = [];
+  for (let i = 0; i < systems.length; i++) {
+    for (let j = i + 1; j < systems.length; j++) {
+      pairs.push({ a: systems[i].id, b: systems[j].id, d: hexDist(systems[i], systems[j]) });
+    }
+  }
+  pairs.sort((x, y) => x.d - y.d);
+
+  // Union-find for MST.
+  const parent: Record<string, string> = {};
+  for (const s of systems) parent[s.id] = s.id;
+  const find = (x: string): string => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    return x;
+  };
+  const union = (a: string, b: string): boolean => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra === rb) return false;
+    parent[ra] = rb;
+    return true;
+  };
+
+  const edges: Hyperlane[] = [];
+  const inMst = new Set<number>();
+  for (let i = 0; i < pairs.length; i++) {
+    if (union(pairs[i].a, pairs[i].b)) {
+      edges.push([pairs[i].a, pairs[i].b]);
+      inMst.add(i);
+    }
+  }
+
+  // Add extra short edges with some probability for variety.
+  // Only consider edges roughly adjacent (~2 hex radii) so the map stays legible.
+  const SHORT_THRESHOLD = 2.2;
+  const EXTRA_CHANCE = 0.35;
+  for (let i = 0; i < pairs.length; i++) {
+    if (inMst.has(i)) continue;
+    if (pairs[i].d > SHORT_THRESHOLD) break;
+    if (rand() < EXTRA_CHANCE) {
+      edges.push([pairs[i].a, pairs[i].b]);
+    }
+  }
+  return edges;
+}
+
 export function generateGalaxy(opts: GenOptions): Galaxy {
   const rand = mulberry32(opts.seed);
   const systems: Record<string, StarSystem> = {};
@@ -130,9 +195,12 @@ export function generateGalaxy(opts: GenOptions): Galaxy {
     }
   }
 
+  const hyperlanes = generateHyperlanes(Object.values(systems), rand);
+
   return {
     systems,
     bodies,
+    hyperlanes,
     width: opts.width,
     height: opts.height,
   };

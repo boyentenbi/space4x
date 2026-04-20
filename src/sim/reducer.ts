@@ -48,12 +48,13 @@ export function initialState(): GameState {
     schemaVersion: 3,
     turn: 0,
     rngSeed: 0,
-    galaxy: { systems: {}, bodies: {}, width: 0, height: 0 },
+    galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
     empire: {
       id: "empire_player",
       name: "",
       originId: "",
       speciesId: "",
+      color: "#7ec8ff",
       resources: { ...EMPTY_RESOURCES },
       compute: { cap: 0, used: 0 },
       capitalBodyId: null,
@@ -169,6 +170,8 @@ export function reduce(state: GameState, action: Action): GameState {
         draft.empire.name = action.empireName || "Unnamed Empire";
         draft.empire.originId = action.originId;
         draft.empire.speciesId = action.speciesId;
+        const species = speciesById(action.speciesId);
+        if (species) draft.empire.color = species.color;
         draft.empire.capitalBodyId = starter.capitalBodyId;
         draft.empire.systemIds = [starter.systemId];
         for (const key of RESOURCE_KEYS) {

@@ -8,6 +8,7 @@ export const SPECIES: Species[] = [
       "Adaptable descendants of Old Earth. Curious, argumentative, disproportionately fond of flags.",
     traitIds: ["charismatic"],
     art: "/portraits/humans.png",
+    color: "#d49a4a", // Gold trim from the uniform.
   },
   {
     id: "insectoid",
@@ -16,6 +17,7 @@ export const SPECIES: Species[] = [
       "A chitinous hive-species with synchronized shifts and an unsettling talent for agriculture.",
     traitIds: ["agrarian", "industrious"],
     art: "/portraits/insectoid.png",
+    color: "#8b5bc8", // Royal purple of the ceremonial robes.
   },
   {
     id: "machine",
@@ -24,5 +26,6 @@ export const SPECIES: Species[] = [
       "Networked synthetic minds. No food needed; no sleep either. Patient, precise, and legally complicated.",
     traitIds: ["solar_attuned", "efficient_cores"],
     art: "/portraits/machine.png",
+    color: "#62d4e6", // Cyan of the ocular slit.
   },
 ];
