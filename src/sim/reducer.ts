@@ -41,9 +41,10 @@ const EMPTY_RESOURCES: Resources = {
   political: 0,
 };
 
-// Disc shape carved from this grid by the generator. At width 13 x
-// height 11 we get ~80 systems (about 2x the previous galaxy).
-export const GALAXY_SIZE = { width: 13, height: 11, density: 0.85 };
+// Disc shape carved from this grid by the generator. 15 x 13 yields
+// ~110 systems at 0.85 density — large enough to give multiple
+// empires room to maneuver without the map becoming unreadable.
+export const GALAXY_SIZE = { width: 15, height: 13, density: 0.85 };
 
 const PER_POP_BY_HAB: Record<HabitabilityTier, Partial<Record<ResourceKey, number>>> = {
   garden:    { food: 2, energy: 1, alloys: 0 },
@@ -271,6 +272,74 @@ export function bodyIncomeFor(empire: Empire, body: Body): Resources {
   // Food upkeep (modifier-aware).
   out.food -= foodUpkeepPerPop(empire) * body.pops;
   return out;
+}
+
+// Itemized per-turn contribution for a single resource — used by the UI
+// "where is this coming from?" breakdown panel.
+export interface ResourceContribution {
+  label: string;
+  value: number;
+}
+export interface ResourceBreakdown {
+  resource: ResourceKey;
+  perBody: Array<{ bodyId: string; bodyName: string; contribution: number; perPop: number; upkeep: number; pops: number; habitability: HabitabilityTier }>;
+  flat: Array<ResourceContribution>;
+  total: number;
+}
+
+export function resourceBreakdownFor(
+  state: GameState,
+  empire: Empire,
+  resource: ResourceKey,
+): ResourceBreakdown {
+  const mods = empireModifiers(empire);
+  const upkeepPerPop = resource === "food" ? foodUpkeepPerPop(empire) : 0;
+  const perBody: ResourceBreakdown["perBody"] = [];
+  for (const body of ownedBodiesOf(state, empire)) {
+    const base = (PER_POP_BY_HAB[body.habitability][resource] ?? 0);
+    const perPop = base + perPopYield(mods, body.habitability, resource);
+    const contribution = (perPop - upkeepPerPop) * body.pops;
+    perBody.push({
+      bodyId: body.id,
+      bodyName: body.name,
+      contribution,
+      perPop,
+      upkeep: upkeepPerPop,
+      pops: body.pops,
+      habitability: body.habitability,
+    });
+  }
+  const flat: ResourceContribution[] = [];
+  // Baseline +1 political/turn applies to every empire.
+  if (resource === "political") flat.push({ label: "Baseline", value: 1 });
+  // Flat modifier contributions broken out individually so the player can
+  // see which species/trait/story bundle is responsible.
+  const species = speciesById(empire.speciesId);
+  if (species) {
+    for (const m of species.modifiers) {
+      if (m.kind === "flat" && m.resource === resource) {
+        flat.push({ label: species.name, value: m.value });
+      }
+    }
+    for (const tid of species.traitIds) {
+      const t = traitById(tid);
+      if (!t) continue;
+      for (const m of t.modifiers) {
+        if (m.kind === "flat" && m.resource === resource) {
+          flat.push({ label: t.name, value: m.value });
+        }
+      }
+    }
+  }
+  for (const [key, bundle] of Object.entries(empire.storyModifiers)) {
+    for (const m of bundle) {
+      if (m.kind === "flat" && m.resource === resource) {
+        flat.push({ label: key.replace(/_/g, " "), value: m.value });
+      }
+    }
+  }
+  const total = perBody.reduce((s, row) => s + row.contribution, 0) + flat.reduce((s, row) => s + row.value, 0);
+  return { resource, perBody, flat, total };
 }
 
 export function perTurnIncomeOf(state: GameState, empire: Empire): Resources {

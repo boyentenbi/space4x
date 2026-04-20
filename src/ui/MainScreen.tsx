@@ -26,6 +26,7 @@ import { GalaxyMap } from "./GalaxyMap";
 import { SystemScene } from "./SystemScene";
 import { PortraitMenu } from "./PortraitMenu";
 import { ProjectCompletionModal } from "./ProjectCompletionModal";
+import { ResourceBreakdownModal } from "./ResourceBreakdownModal";
 import { COMPUTE_ICON, HAMMERS_ICON, POPS_ICON, RESOURCE_ICON, planetSpriteFor } from "./icons";
 
 const RESOURCE_ORDER: ResourceKey[] = ["food", "energy", "alloys", "political"];
@@ -45,19 +46,22 @@ function ResCell({
   icon,
   value,
   delta,
+  onClick,
 }: {
   icon: string;
   value: string | number;
   delta?: number;
+  onClick?: () => void;
 }) {
   const d = delta ?? 0;
   const cls = d > 0 ? "pos" : d < 0 ? "neg" : "";
+  const Tag: "button" | "div" = onClick ? "button" : "div";
   return (
-    <div className="res-cell">
+    <Tag className="res-cell" onClick={onClick} type={onClick ? "button" : undefined}>
       <img className="cell-icon" src={icon} alt="" />
       <span className="cell-value">{value}</span>
       {delta !== undefined && <span className={`cell-delta ${cls}`}>{fmtDelta(d)}</span>}
-    </div>
+    </Tag>
   );
 }
 
@@ -353,6 +357,7 @@ export function MainScreen() {
 
   const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [breakdownResource, setBreakdownResource] = useState<ResourceKey | null>(null);
 
   const origin = originById(state.empire.originId);
   const species = speciesById(state.empire.speciesId);
@@ -440,6 +445,7 @@ export function MainScreen() {
               icon={RESOURCE_ICON[k]}
               value={Math.round(state.empire.resources[k])}
               delta={deltas[k]}
+              onClick={() => setBreakdownResource(k)}
             />
           ))}
           <ResCell icon={COMPUTE_ICON} value={state.empire.compute.cap} />
@@ -594,6 +600,12 @@ export function MainScreen() {
         />
       )}
       {state.projectCompletions.length === 0 && pendingEvent && <EventModal eventId={pendingEvent.eventId} />}
+      {breakdownResource && (
+        <ResourceBreakdownModal
+          resource={breakdownResource}
+          onClose={() => setBreakdownResource(null)}
+        />
+      )}
       {menuOpen && (
         <PortraitMenu onReset={reset} onClose={() => setMenuOpen(false)} />
       )}

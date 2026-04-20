@@ -152,6 +152,12 @@ button:disabled {
   border: 1px solid var(--border);
   border-radius: 6px;
   font-variant-numeric: tabular-nums;
+  color: var(--text);
+  cursor: pointer;
+}
+
+button.res-cell:hover:not(:disabled) {
+  border-color: var(--accent-dim);
 }
 
 .res-cell .cell-icon {
@@ -890,9 +896,14 @@ button:disabled {
   margin-top: 6px;
 }
 
-.chooser .bonus-chip {
+/* =======================================================
+   Shared bonus chip + modifier icons — reused by the
+   species picker, ProjectCompletionModal, and the resource
+   breakdown modal.
+   ======================================================= */
+.bonus-chip {
   font-size: 10px;
-  padding: 2px 6px;
+  padding: 1px 5px;
   border: 1px solid var(--border);
   border-radius: 4px;
   font-variant-numeric: tabular-nums;
@@ -900,16 +911,35 @@ button:disabled {
   align-items: center;
   gap: 2px;
   white-space: nowrap;
+  line-height: 1.3;
 }
 
-.chooser .bonus-chip.pos {
+.bonus-chip.pos {
   color: var(--good);
   border-color: rgba(139, 220, 166, 0.35);
 }
 
-.chooser .bonus-chip.neg {
+.bonus-chip.neg {
   color: var(--bad);
   border-color: rgba(255, 138, 138, 0.45);
+}
+
+.bonus-icon {
+  width: 11px;
+  height: 11px;
+  image-rendering: pixelated;
+  object-fit: contain;
+  vertical-align: middle;
+}
+
+.chooser .bonus-chip {
+  font-size: 10px;
+  padding: 2px 6px;
+}
+
+.chooser .bonus-icon {
+  width: 12px;
+  height: 12px;
 }
 
 .chooser .traits {
@@ -934,14 +964,6 @@ button:disabled {
   letter-spacing: 0.05em;
   color: var(--text);
   margin-right: 2px;
-}
-
-.chooser .bonus-icon {
-  width: 12px;
-  height: 12px;
-  image-rendering: pixelated;
-  object-fit: contain;
-  vertical-align: middle;
 }
 
 /* ==================================================================
@@ -1018,22 +1040,32 @@ button:disabled {
   flex: 0 0 auto;
 }
 
+.project-completion h2 {
+  font-size: 15px;
+  margin: 0;
+}
+
+.project-completion .event-text {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .project-completion .completion-label {
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--good);
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 
 .project-completion .completion-section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .project-completion .completion-section-label {
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-dim);
@@ -1042,7 +1074,104 @@ button:disabled {
 .project-completion .bonuses {
   display: flex;
   flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* =======================================================
+   Resource breakdown modal.
+   ======================================================= */
+.breakdown-modal h2 {
+  font-size: 15px;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.breakdown-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.breakdown-head .breakdown-icon {
+  width: 36px;
+  height: 36px;
+  image-rendering: pixelated;
+  object-fit: contain;
+}
+
+.breakdown-label {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+
+.breakdown-total {
+  font-size: 13px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.breakdown-total.pos { color: var(--good); }
+.breakdown-total.neg { color: var(--bad); }
+
+.breakdown-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.breakdown-section-label {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+
+.breakdown-row {
+  display: flex;
+  align-items: baseline;
   gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 12px;
+}
+
+.breakdown-row-name {
+  flex: 0 0 auto;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.breakdown-row-detail {
+  flex: 1;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.breakdown-row-value {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.breakdown-row-value.pos { color: var(--good); }
+.breakdown-row-value.neg { color: var(--bad); }
+
+.breakdown-hab {
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.08em;
 }
 
 .menu-modal .menu-list {
