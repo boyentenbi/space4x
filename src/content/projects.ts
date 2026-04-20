@@ -2,6 +2,23 @@ import type { EmpireProject } from "../sim/types";
 
 export const EMPIRE_PROJECTS: EmpireProject[] = [
   {
+    id: "build_frigate",
+    name: "Build Frigate",
+    description:
+      "Assemble a frigate at this world's orbital yards. Joins the system's fleet on completion. The start of a navy.",
+    hammersRequired: 200,
+    scope: "body",
+    bodyRequirement: "any_owned",
+    costs: { alloys: 100, political: 2 },
+    availability: {
+      // Repeatable: no excludesFlag, no excludesCompleted.
+    },
+    onComplete: {
+      spawnShip: { count: 1 },
+      chronicle: "A new frigate joins the fleet.",
+    },
+  },
+  {
     id: "complete_emancipation",
     name: "Complete Emancipation",
     description:

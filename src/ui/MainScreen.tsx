@@ -15,6 +15,7 @@ import {
   effectiveSpace,
   empireById,
   expectedPopGrowth,
+  fleetsInSystem,
   growthEstimate,
   HAMMERS_PER_POP,
   hammersBreakdownFor,
@@ -548,6 +549,34 @@ export function MainScreen() {
             )}
           </div>
           <div className="detail-scroll">
+            {focusSystem && (() => {
+              const fleets = fleetsInSystem(state, focusSystem.id);
+              if (fleets.length === 0) return null;
+              return (
+                <div className="fleet-strip">
+                  <span className="fleet-strip-label">Fleets</span>
+                  {fleets.map((f) => {
+                    const empire = empireById(state, f.empireId);
+                    return (
+                      <span
+                        key={f.id}
+                        className="fleet-pill"
+                        style={{ borderColor: empire?.color ?? "var(--border)" }}
+                        title={empire?.name ?? ""}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 10 10">
+                          <polygon
+                            points="5,1 9,9 1,9"
+                            fill={empire?.color ?? "var(--text)"}
+                          />
+                        </svg>
+                        {f.shipCount}
+                      </span>
+                    );
+                  })}
+                </div>
+              );
+            })()}
             {focusSystem
               ? focusBodies.map((body) => {
                   const order = colonizeOrderForTarget(state, body.id);
@@ -605,6 +634,7 @@ export function MainScreen() {
             <GalaxyMap
               galaxy={state.galaxy}
               empires={allEmpires(state)}
+              fleets={Object.values(state.fleets)}
               selectedId={selectedSystemId}
               onSelect={setSelectedSystemId}
             />

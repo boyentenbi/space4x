@@ -8,6 +8,7 @@ import type {
   BuildOrder,
   Empire,
   Expansionism,
+  Fleet,
   GameState,
   HabitabilityTier,
   Leader,
@@ -182,7 +183,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 11,
+    schemaVersion: 12,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -204,11 +205,39 @@ export function initialState(): GameState {
       flags: [],
     },
     aiEmpires: [],
+    fleets: {},
     eventQueue: [],
     eventLog: [],
     projectCompletions: [],
     gameOver: false,
   };
+}
+
+let fleetCounter = 0;
+function nextFleetId(): string {
+  fleetCounter += 1;
+  return `fleet_${fleetCounter}_${Math.floor(Math.random() * 1e6)}`;
+}
+
+// Spawn `count` ships for `empireId` at `systemId`. Merges into the
+// empire's existing fleet at that system if one exists; otherwise
+// creates a new fleet. Operates on an immer draft.
+function spawnShipsInSystem(
+  draft: GameState,
+  empireId: string,
+  systemId: string,
+  count: number,
+): void {
+  if (count <= 0) return;
+  // Look for an existing fleet for this empire at this system.
+  for (const f of Object.values(draft.fleets)) {
+    if (f.empireId === empireId && f.systemId === systemId) {
+      f.shipCount += count;
+      return;
+    }
+  }
+  const id = nextFleetId();
+  draft.fleets[id] = { id, empireId, systemId, shipCount: count };
 }
 
 // ===== Cross-empire helpers =====
@@ -725,10 +754,18 @@ export function canQueueProjectFor(
     if (proj.bodyRequirement === "capital" && targetBodyId !== empire.capitalBodyId) return false;
     // "any_owned" — caller is expected to only call with an owned body.
   }
-  // Not already in flight (dedupe by projectId; body-scope dedupes by
-  // projectId too, not per target, since our projects are one-shot).
+  // Dedupe rules:
+  //  - Empire-scope projects: at most one of a given projectId queued.
+  //  - Body-scope projects: at most one (projectId, targetBodyId) pair.
+  //    Different bodies can queue the same project concurrently so
+  //    repeatable things like frigates can be built in parallel.
   for (const order of empire.projects) {
-    if (order.kind === "empire_project" && order.projectId === projectId) return false;
+    if (order.kind !== "empire_project" || order.projectId !== projectId) continue;
+    if (proj.scope === "body") {
+      if (order.targetBodyId === targetBodyId) return false;
+    } else {
+      return false;
+    }
   }
   return true;
 }
@@ -753,6 +790,18 @@ export function bodyProjectOrderFor(empire: Empire, bodyId: string) {
     if (order.kind === "empire_project" && order.targetBodyId === bodyId) return order;
   }
   return null;
+}
+
+export function fleetsInSystem(state: GameState, systemId: string): Fleet[] {
+  return Object.values(state.fleets).filter((f) => f.systemId === systemId);
+}
+
+export function totalFleetShipsFor(state: GameState, empire: Empire): number {
+  let total = 0;
+  for (const f of Object.values(state.fleets)) {
+    if (f.empireId === empire.id) total += f.shipCount;
+  }
+  return total;
 }
 
 export function canColonizeFor(state: GameState, empire: Empire, targetBodyId: string): boolean {
@@ -835,6 +884,20 @@ function completeOrder(draft: GameState, empire: Empire, order: BuildOrder): voi
     }
     if (proj.onComplete.addFlag && !empire.flags.includes(proj.onComplete.addFlag)) {
       empire.flags.push(proj.onComplete.addFlag);
+    }
+    // Ship-spawning projects land their ships in the target body's
+    // system. Only meaningful for body-scope projects; empire-scope
+    // projects without a targetBodyId silently skip.
+    if (proj.onComplete.spawnShip && order.targetBodyId) {
+      const targetBody = draft.galaxy.bodies[order.targetBodyId];
+      if (targetBody) {
+        spawnShipsInSystem(
+          draft,
+          empire.id,
+          targetBody.systemId,
+          proj.onComplete.spawnShip.count,
+        );
+      }
     }
     empire.completedProjects.push(proj.id);
     if (empire.id === draft.empire.id) {
@@ -1203,6 +1266,12 @@ export function reduce(state: GameState, action: Action): GameState {
             const body = draft.galaxy.bodies[bid];
             if (body) body.hammers = Math.floor(body.pops * rate);
           }
+        }
+
+        // Every empire starts with one frigate at its capital system.
+        spawnShipsInSystem(draft, draft.empire.id, playerStarter.systemId, 1);
+        for (let i = 0; i < aiStarters.length; i++) {
+          spawnShipsInSystem(draft, `empire_ai_${i}`, aiStarters[i].starter.systemId, 1);
         }
       });
     }

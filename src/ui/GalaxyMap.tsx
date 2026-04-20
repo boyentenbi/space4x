@@ -1,4 +1,4 @@
-import type { Empire, Galaxy, StarSystem } from "../sim/types";
+import type { Empire, Fleet, Galaxy, StarSystem } from "../sim/types";
 import { HAB_COLOR } from "./icons";
 
 const HEX_SIZE = 16;       // radius of each hex
@@ -133,11 +133,13 @@ function polylineD(points: Array<[number, number]>): string {
 export function GalaxyMap({
   galaxy,
   empires,
+  fleets,
   selectedId,
   onSelect,
 }: {
   galaxy: Galaxy;
   empires: Empire[];
+  fleets: Fleet[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
 }) {
@@ -146,6 +148,14 @@ export function GalaxyMap({
   // id -> empire, for ownerId -> color lookup.
   const empireById = new Map<string, Empire>();
   for (const e of empires) empireById.set(e.id, e);
+
+  // Fleets by system: { [sysId]: Array<{empire, count}> }.
+  const fleetsBySystem = new Map<string, Fleet[]>();
+  for (const f of fleets) {
+    const arr = fleetsBySystem.get(f.systemId) ?? [];
+    arr.push(f);
+    fleetsBySystem.set(f.systemId, arr);
+  }
 
   // Lookup: "q,r" -> system (for neighbor ownership check).
   const byCoord = new Map<string, StarSystem>();
@@ -321,6 +331,39 @@ export function GalaxyMap({
             )}
             {/* Star dot (centered on the hex). */}
             <circle cx={x} cy={y} r={2.2} fill={isOwned ? "#fff" : "#8a96ab"} opacity={isOwned ? 0.95 : 0.7} />
+            {/* Fleet indicators — small triangles in the upper-left
+                corner of the hex, one per empire with a fleet here,
+                coloured by empire. Tiny text for ship count >= 2. */}
+            {(() => {
+              const sysFleets = fleetsBySystem.get(sys.id);
+              if (!sysFleets || sysFleets.length === 0) return null;
+              return sysFleets.map((f, idx) => {
+                const empire = empireById.get(f.empireId);
+                if (!empire) return null;
+                const baseX = x - HEX_SIZE * 0.6;
+                const baseY = y - HEX_SIZE * 0.35 + idx * 4.5;
+                return (
+                  <g key={f.id}>
+                    <polygon
+                      points={`${baseX},${baseY - 1.8} ${baseX + 3.2},${baseY + 1.6} ${baseX - 3.2},${baseY + 1.6}`}
+                      fill={empire.color}
+                      opacity={0.95}
+                    />
+                    {f.shipCount > 1 && (
+                      <text
+                        x={baseX + 4.5}
+                        y={baseY + 1.4}
+                        fontSize={3.5}
+                        fill={empire.color}
+                      >
+                        {f.shipCount}
+                      </text>
+                    )}
+                  </g>
+                );
+              });
+            })()}
+
             {/* Body dots — habitability-colored row under the star.
                 Only temperate for now (habitable planets are the only
                 thing worth previewing). */}

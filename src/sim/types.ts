@@ -20,6 +20,18 @@ export type BodyKind = "planet" | "moon";
 
 export type StarKind = "yellow_main" | "blue_giant" | "red_dwarf";
 
+// =====================================================================
+// Fleets — the first military layer. Each fleet is positioned at a
+// single system, owned by a single empire, and for MVP just carries a
+// ship count. Combat, movement, and composition come later.
+// =====================================================================
+export interface Fleet {
+  id: string;
+  empireId: string;
+  systemId: string;
+  shipCount: number;
+}
+
 export interface Body {
   id: string;
   systemId: string;
@@ -190,6 +202,9 @@ export interface EmpireProject {
     addFlag?: string;
     grantStoryModifiers?: Record<string, Modifier[]>;
     removeStoryModifierKeys?: string[];
+    // Spawn N ships at the target body's system (body-scope projects
+    // only). Absent for non-ship projects.
+    spawnShip?: { count: number };
     chronicle: string;
   };
 }
@@ -230,12 +245,13 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 11;
+  schemaVersion: 12;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;
   empire: Empire;           // The player's empire.
   aiEmpires: Empire[];      // AI-controlled rivals.
+  fleets: Record<string, Fleet>;
   eventQueue: PendingEvent[];
   eventLog: Array<{ turn: number; eventId: string; choiceId: string | null; text: string }>;
   // Modal queue: a project just finished for the player and we want to

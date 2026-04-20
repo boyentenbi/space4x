@@ -3,14 +3,14 @@ import { initialState, reduce, type Action } from "./sim/reducer";
 import { speciesById } from "./sim/content";
 import type { GameState } from "./sim/types";
 
-const STORAGE_KEY = "space4x:save:v11";
+const STORAGE_KEY = "space4x:save:v12";
 
 function loadSaved(): GameState | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as GameState;
-    if (parsed.schemaVersion !== 11) return null;
+    if (parsed.schemaVersion !== 12) return null;
     // Refresh species-derived fields so content tweaks (colors, portrait
     // art, etc.) propagate to existing saves without a schema bump.
     const species = speciesById(parsed.empire.speciesId);
