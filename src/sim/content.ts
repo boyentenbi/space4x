@@ -1,10 +1,11 @@
-import type { GameEvent, Origin, Species, SpeciesTrait } from "./types";
+import type { EmpireProject, GameEvent, Origin, Species, SpeciesTrait } from "./types";
 import { ORIGINS } from "../content/origins";
 import { SPECIES } from "../content/species";
 import { TRAITS } from "../content/traits";
 import { EVENTS } from "../content/events";
+import { EMPIRE_PROJECTS, empireProjectById } from "../content/projects";
 
-export { ORIGINS, SPECIES, TRAITS, EVENTS };
+export { ORIGINS, SPECIES, TRAITS, EVENTS, EMPIRE_PROJECTS, empireProjectById };
 
 export function originById(id: string): Origin | undefined {
   return ORIGINS.find((o) => o.id === id);
@@ -17,4 +18,7 @@ export function traitById(id: string): SpeciesTrait | undefined {
 }
 export function eventById(id: string): GameEvent | undefined {
   return EVENTS.find((e) => e.id === id);
+}
+export function projectById(id: string): EmpireProject | undefined {
+  return empireProjectById(id);
 }

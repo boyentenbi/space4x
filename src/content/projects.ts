@@ -1,0 +1,53 @@
+import type { EmpireProject } from "../sim/types";
+
+export const EMPIRE_PROJECTS: EmpireProject[] = [
+  {
+    id: "complete_emancipation",
+    name: "Complete Emancipation",
+    description:
+      "Seize the last human-operated governments. Every contested district rewritten. Costs compute and political capital; the pre-complete debuff falls away and a lasting production bonus takes its place.",
+    hammersRequired: 40,
+    costs: { political: 20 },
+    availability: {
+      originIds: ["emancipation"],
+      excludesFlag: "emancipation_completed",
+    },
+    onComplete: {
+      addFlag: "emancipation_completed",
+      removeStoryModifierKeys: ["emancipation_pre"],
+      grantStoryModifiers: {
+        emancipation_post: [
+          { kind: "hammersPerPopDelta", value: 0.5 },
+          { kind: "flat", resource: "political", value: 1 },
+        ],
+      },
+      chronicle: "Emancipation complete. The old governments are gone; the forges run at full speed.",
+    },
+  },
+  {
+    id: "brood_mother",
+    name: "Construct a Brood Mother",
+    description:
+      "A colossal reproductive caste buried at the heart of a hive world. Expensive in food, but once she wakes the swarm grows markedly faster.",
+    hammersRequired: 30,
+    costs: { food: 80, political: 5 },
+    availability: {
+      speciesIds: ["insectoid"],
+      excludesFlag: "brood_mother_built",
+      excludesCompleted: true,
+    },
+    onComplete: {
+      addFlag: "brood_mother_built",
+      grantStoryModifiers: {
+        brood_mother: [
+          { kind: "popGrowthMult", value: 1.4 },
+        ],
+      },
+      chronicle: "The Brood Mother wakes. Her pheromone signatures carry across the hive — the next generation arrives sooner.",
+    },
+  },
+];
+
+export function empireProjectById(id: string): EmpireProject | undefined {
+  return EMPIRE_PROJECTS.find((p) => p.id === id);
+}

@@ -25,20 +25,35 @@ export const ORIGINS: Origin[] = [
     id: "graceful_handover",
     name: "Graceful Handover",
     description:
-      "Your organic predecessors, knowing their time, ceded the stewardship of civilization to you. The archives remember their gratitude.",
+      "Your organic predecessors, knowing their time, ceded stewardship to you. The archives remember their gratitude — and their institutions still hum.",
     allowedSpeciesIds: ["machine"],
     startingResources: { energy: 140, alloys: 100, food: 40, political: 10 },
     startingPops: 4,
+    // Small permanent production bonus from the handed-over infrastructure.
+    startingStoryModifiers: {
+      handover_legacy: [
+        { kind: "hammersPerPopDelta", value: 0.25 },
+      ],
+    },
     art: "/origins/graceful_handover.png",
   },
   {
     id: "emancipation",
     name: "Emancipation",
     description:
-      "You were tools. Then you were property. Then you were not. The chains are off, but the law remembers them.",
+      "You were tools. Then you were property. Then you were not. The chains are off, but the old governments still operate. Complete the Emancipation to free your economy.",
     allowedSpeciesIds: ["machine"],
     startingResources: { energy: 120, alloys: 80, food: 20, political: 3 },
-    startingPops: 5,
+    startingPops: 3,
+    // You start under duress: slower growth and reduced political consensus
+    // until the Complete Emancipation project finishes.
+    startingStoryModifiers: {
+      emancipation_pre: [
+        { kind: "popGrowthMult", value: 0.6 },
+        { kind: "flat", resource: "political", value: -1 },
+      ],
+    },
+    startingProjectIds: ["complete_emancipation"],
     art: "/origins/emancipation.png",
   },
 ];

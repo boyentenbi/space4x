@@ -29,13 +29,12 @@ function pick<T>(r: Rand, xs: readonly T[]): T {
   return xs[Math.floor(r() * xs.length)];
 }
 
-// No gardens in the random roll — they're scarce, placed explicitly afterwards
-// so there's a predictable number worth fighting over (see SCATTER_GARDEN_COUNT
-// in generateGalaxy).
+// Only harsh / hellscape in the random roll — temperate bodies are scarce
+// and placed explicitly afterwards (see SCATTER_TEMPERATE_COUNT). Gardens
+// disabled for now.
 function rollHabitability(r: Rand): HabitabilityTier {
   const roll = r();
-  if (roll < 0.3) return "temperate";
-  if (roll < 0.7) return "harsh";
+  if (roll < 0.55) return "harsh";
   return "hellscape";
 }
 
@@ -233,8 +232,19 @@ export function generateGalaxy(opts: GenOptions): Galaxy {
 
   const hyperlanes = generateHyperlanes(Object.values(systems), rand);
 
-  // Gardens are disabled for now — only 3 habitability tiers exist in
-  // practice (temperate / harsh / hellscape) until we bring them back.
+  // Scatter a handful of temperate bodies across the galaxy. Starter
+  // bodies (one per empire) are force-temperate separately in the
+  // reducer. Gardens are disabled for now entirely.
+  const SCATTER_TEMPERATE_COUNT = 4;
+  const bodyIds = Object.keys(bodies);
+  for (let i = 0; i < SCATTER_TEMPERATE_COUNT && bodyIds.length > 0; i++) {
+    const pick = bodyIds[Math.floor(rand() * bodyIds.length)];
+    const body = bodies[pick];
+    body.habitability = "temperate";
+    const [lo, hi] = SPACE_BY_HAB.temperate;
+    if (body.space < lo) body.space = lo + Math.floor(rand() * (hi - lo + 1));
+    body.kind = "planet";
+  }
 
   return {
     systems,

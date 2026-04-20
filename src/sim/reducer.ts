@@ -1,5 +1,5 @@
 import { produce } from "immer";
-import { originById, speciesById, traitById } from "./content";
+import { originById, projectById, speciesById, traitById, EMPIRE_PROJECTS } from "./content";
 import { pickRandomEvent, resolveEventChoice, RESOURCE_KEYS } from "./events";
 import { generateGalaxy } from "./galaxy";
 import { mulberry32, nextSeed } from "./rng";
@@ -19,6 +19,7 @@ export type Action =
   | { type: "endTurn" }
   | { type: "resolveEvent"; eventId: string; choiceId: string }
   | { type: "queueColonize"; targetBodyId: string }
+  | { type: "queueEmpireProject"; projectId: string }
   | { type: "cancelOrder"; orderId: string };
 
 // Colonization tunables.
@@ -114,13 +115,15 @@ function makeEmpire(spec: { id: string; name: string; color: string; speciesId: 
     capitalBodyId: null,
     systemIds: [],
     projects: [],
+    storyModifiers: {},
+    completedProjects: [],
     flags: [],
   };
 }
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 7,
+    schemaVersion: 8,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -135,6 +138,8 @@ export function initialState(): GameState {
       capitalBodyId: null,
       systemIds: [],
       projects: [],
+      storyModifiers: {},
+      completedProjects: [],
       flags: [],
     },
     aiEmpires: [],
@@ -176,14 +181,20 @@ export function totalPopsOf(state: GameState, empire: Empire): number {
 
 // ===== Modifier plumbing =====
 
-// All modifiers that apply to an empire: species-level innates + trait mods.
+// All modifiers that apply to an empire: species innates + trait mods +
+// story bundles granted by origin/projects.
 export function empireModifiers(empire: Empire): Modifier[] {
   const species = speciesById(empire.speciesId);
-  if (!species) return [];
-  const out: Modifier[] = [...species.modifiers];
-  for (const tid of species.traitIds) {
-    const t = traitById(tid);
-    if (t) out.push(...t.modifiers);
+  const out: Modifier[] = [];
+  if (species) {
+    out.push(...species.modifiers);
+    for (const tid of species.traitIds) {
+      const t = traitById(tid);
+      if (t) out.push(...t.modifiers);
+    }
+  }
+  for (const bundle of Object.values(empire.storyModifiers)) {
+    out.push(...bundle);
   }
   return out;
 }
@@ -319,6 +330,28 @@ export function systemClaimant(state: GameState, systemId: string): string | nul
   return null;
 }
 
+// Is this empire allowed to queue the given project right now?
+export function canQueueProjectFor(empire: Empire, projectId: string): boolean {
+  const proj = projectById(projectId);
+  if (!proj) return false;
+  const a = proj.availability;
+  if (a.speciesIds && !a.speciesIds.includes(empire.speciesId)) return false;
+  if (a.originIds && !a.originIds.includes(empire.originId)) return false;
+  if (a.requiresFlag && !empire.flags.includes(a.requiresFlag)) return false;
+  if (a.excludesFlag && empire.flags.includes(a.excludesFlag)) return false;
+  if (a.excludesCompleted && empire.completedProjects.includes(projectId)) return false;
+  // Not already in flight.
+  for (const order of empire.projects) {
+    if (order.kind === "empire_project" && order.projectId === projectId) return false;
+  }
+  return true;
+}
+
+// Projects that an empire could queue (filtered + not currently in flight).
+export function availableProjectsFor(empire: Empire) {
+  return EMPIRE_PROJECTS.filter((p) => canQueueProjectFor(empire, p.id));
+}
+
 export function canColonizeFor(state: GameState, empire: Empire, targetBodyId: string): boolean {
   const target = state.galaxy.bodies[targetBodyId];
   if (!target) return false;
@@ -368,13 +401,45 @@ function completeOrder(draft: GameState, empire: Empire, order: BuildOrder): voi
       empire.systemIds.push(targetSys.id);
     }
     target.pops = Math.max(target.pops, COLONIZE_STARTER_POPS);
-    // Only log player-visible events in the chronicle for now.
     if (empire.id === draft.empire.id) {
       draft.eventLog.push({
         turn: draft.turn,
         eventId: "colonize",
         choiceId: null,
         text: `Colonized ${target.name} in ${targetSys.name}.`,
+      });
+    }
+  } else if (order.kind === "empire_project") {
+    const proj = projectById(order.projectId);
+    if (!proj) return;
+    // One-shot stock costs.
+    if (proj.costs) {
+      for (const k of RESOURCE_KEYS) {
+        const c = proj.costs[k];
+        if (c) empire.resources[k] -= c;
+      }
+    }
+    // Apply completion effects.
+    if (proj.onComplete.removeStoryModifierKeys) {
+      for (const key of proj.onComplete.removeStoryModifierKeys) {
+        delete empire.storyModifiers[key];
+      }
+    }
+    if (proj.onComplete.grantStoryModifiers) {
+      for (const [key, mods] of Object.entries(proj.onComplete.grantStoryModifiers)) {
+        empire.storyModifiers[key] = mods;
+      }
+    }
+    if (proj.onComplete.addFlag && !empire.flags.includes(proj.onComplete.addFlag)) {
+      empire.flags.push(proj.onComplete.addFlag);
+    }
+    empire.completedProjects.push(proj.id);
+    if (empire.id === draft.empire.id) {
+      draft.eventLog.push({
+        turn: draft.turn,
+        eventId: `project:${proj.id}`,
+        choiceId: null,
+        text: proj.onComplete.chronicle,
       });
     }
   }
@@ -570,6 +635,25 @@ export function reduce(state: GameState, action: Action): GameState {
         for (const key of RESOURCE_KEYS) {
           draft.empire.resources[key] = origin.startingResources[key] ?? 0;
         }
+        // Apply origin story modifiers + auto-queued starter projects.
+        if (origin.startingStoryModifiers) {
+          for (const [key, mods] of Object.entries(origin.startingStoryModifiers)) {
+            draft.empire.storyModifiers[key] = [...mods];
+          }
+        }
+        if (origin.startingProjectIds) {
+          for (const pid of origin.startingProjectIds) {
+            const proj = projectById(pid);
+            if (!proj) continue;
+            draft.empire.projects.push({
+              kind: "empire_project",
+              id: nextOrderId(),
+              projectId: proj.id,
+              hammersRequired: proj.hammersRequired,
+              hammersPaid: 0,
+            });
+          }
+        }
         draft.empire.compute.cap = draft.galaxy.systems[playerStarter.systemId].bodyIds.length * COMPUTE_PER_BODY;
         draft.empire.compute.used = 0;
         const playerHammerRate = hammersPerPop(draft.empire);
@@ -586,6 +670,11 @@ export function reduce(state: GameState, action: Action): GameState {
           if (originObj) {
             for (const key of RESOURCE_KEYS) {
               empire.resources[key] = originObj.startingResources[key] ?? 0;
+            }
+            if (originObj.startingStoryModifiers) {
+              for (const [key, mods] of Object.entries(originObj.startingStoryModifiers)) {
+                empire.storyModifiers[key] = [...mods];
+              }
             }
           }
           empire.compute.cap = draft.galaxy.systems[starter.systemId].bodyIds.length * COMPUTE_PER_BODY;
@@ -615,6 +704,21 @@ export function reduce(state: GameState, action: Action): GameState {
           hammersRequired: COLONIZE_HAMMERS,
           hammersPaid: 0,
           politicalCost: COLONIZE_POLITICAL,
+        });
+      });
+    }
+
+    case "queueEmpireProject": {
+      if (!canQueueProjectFor(state.empire, action.projectId)) return state;
+      const proj = projectById(action.projectId);
+      if (!proj) return state;
+      return produce(state, (draft) => {
+        draft.empire.projects.push({
+          kind: "empire_project",
+          id: nextOrderId(),
+          projectId: proj.id,
+          hammersRequired: proj.hammersRequired,
+          hammersPaid: 0,
         });
       });
     }

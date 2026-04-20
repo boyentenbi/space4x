@@ -46,6 +46,17 @@ function polygonPoints(corners: Array<[number, number]>): string {
   return corners.map(([x, y]) => `${x},${y}`).join(" ");
 }
 
+// Small n-armed star glyph at (cx,cy). Used to mark flavor sites.
+function starGlyphPoints(cx: number, cy: number, outerR: number, innerR: number, arms: number): string {
+  const pts: string[] = [];
+  for (let i = 0; i < arms * 2; i++) {
+    const r = i % 2 === 0 ? outerR : innerR;
+    const angle = (i * Math.PI) / arms - Math.PI / 2;
+    pts.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
+  }
+  return pts.join(" ");
+}
+
 // Chain individual edge segments into connected polylines so strokes at
 // corners miter cleanly. Two edges are considered connected if they share
 // an endpoint (matched at 2-decimal precision to survive float drift).
@@ -280,7 +291,6 @@ export function GalaxyMap({
         const hasFlavor = sys.bodyIds.some((bid) =>
           (galaxy.bodies[bid]?.flavorFlags.length ?? 0) > 0,
         );
-        const haloRadius = 6;
 
         return (
           <g
@@ -301,9 +311,13 @@ export function GalaxyMap({
                 strokeLinejoin="round"
               />
             )}
-            {/* Flavor-site ring halo. */}
+            {/* Flavor-site star glyph — small, above the main star dot. */}
             {hasFlavor && (
-              <circle cx={x} cy={y} r={haloRadius} fill="none" stroke="var(--warn)" strokeWidth={0.6} opacity={0.7} />
+              <polygon
+                points={starGlyphPoints(x + 5, y - 4, 2, 0.9, 5)}
+                fill="var(--warn)"
+                opacity={0.95}
+              />
             )}
             {/* Star dot (centered on the hex). */}
             <circle cx={x} cy={y} r={2.2} fill={isOwned ? "#fff" : "#8a96ab"} opacity={isOwned ? 0.95 : 0.7} />

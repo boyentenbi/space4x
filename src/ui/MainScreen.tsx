@@ -3,6 +3,7 @@ import { useGame } from "../store";
 import { originById, speciesById } from "../sim/content";
 import {
   allEmpires,
+  availableProjectsFor,
   bodyIncome,
   canColonize,
   colonizeOrderForTarget,
@@ -14,6 +15,7 @@ import {
   perTurnIncome,
   totalPops,
 } from "../sim/reducer";
+import { projectById } from "../sim/content";
 import { RESOURCE_KEYS } from "../sim/events";
 import type { Body, Resources, ResourceKey } from "../sim/types";
 import { EventModal } from "./EventModal";
@@ -51,6 +53,72 @@ function ResCell({
       <img className="cell-icon" src={icon} alt="" />
       <span className="cell-value">{value}</span>
       {delta !== undefined && <span className={`cell-delta ${cls}`}>{fmtDelta(d)}</span>}
+    </div>
+  );
+}
+
+function EmpireProjectsCard({
+  projects,
+  available,
+  hammerRate,
+  onQueue,
+  onCancel,
+}: {
+  projects: import("../sim/types").BuildOrder[];
+  available: ReturnType<typeof availableProjectsFor>;
+  hammerRate: number;
+  onQueue: (projectId: string) => void;
+  onCancel: (orderId: string) => void;
+}) {
+  const inFlightEmpireOrders = projects.filter(
+    (o): o is Extract<import("../sim/types").BuildOrder, { kind: "empire_project" }> =>
+      o.kind === "empire_project",
+  );
+  if (inFlightEmpireOrders.length === 0 && available.length === 0) return null;
+
+  return (
+    <div className="empire-projects">
+      <div className="projects-label">Empire Projects</div>
+      {inFlightEmpireOrders.map((order) => {
+        const proj = projectById(order.projectId);
+        if (!proj) return null;
+        const pct = Math.min(100, (order.hammersPaid / order.hammersRequired) * 100);
+        const remaining = Math.max(0, order.hammersRequired - order.hammersPaid);
+        const turns = hammerRate > 0 ? Math.ceil(remaining / hammerRate) : "—";
+        return (
+          <div key={order.id} className="project-card in-flight">
+            <div className="project-card-head">
+              <span className="project-name">{proj.name}</span>
+              <button className="project-cancel" onClick={() => onCancel(order.id)} title="Cancel">×</button>
+            </div>
+            <div className="project-card-desc">{proj.description}</div>
+            <div className="project-bar">
+              <div className="project-bar-fill" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="project-stats">
+              {order.hammersPaid}/{order.hammersRequired} · ~{turns}T
+            </div>
+          </div>
+        );
+      })}
+      {available.map((proj) => {
+        const turns = hammerRate > 0 ? Math.ceil(proj.hammersRequired / hammerRate) : "—";
+        return (
+          <div key={proj.id} className="project-card available">
+            <div className="project-card-head">
+              <span className="project-name">{proj.name}</span>
+              <button className="project-start" onClick={() => onQueue(proj.id)}>Start</button>
+            </div>
+            <div className="project-card-desc">{proj.description}</div>
+            <div className="project-stats">
+              {proj.hammersRequired} hammers · ~{turns}T
+              {proj.costs && Object.entries(proj.costs).map(([k, v]) =>
+                v ? <span key={k}> · {v} {k}</span> : null
+              )}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -342,36 +410,46 @@ export function MainScreen() {
             )}
           </div>
           <div className="detail-scroll">
-            {focusSystem ? (
-              focusBodies.map((body) => {
-                const order = colonizeOrderForTarget(state, body.id);
-                return (
-                  <BodyRow
-                    key={body.id}
-                    body={body}
-                    income={focusIsOurs ? bodyIncome(state, body) : {}}
-                    isCapital={body.id === state.empire.capitalBodyId}
-                    owned={focusIsOurs}
-                    colonizable={canColonize(state, body.id)}
-                    activeOrder={order}
-                    colonizeTurns={colonizeTurnEstimate}
-                    growth={focusIsOurs ? growthEstimate(state, state.empire, body) : null}
-                    onColonize={() =>
-                      dispatch({ type: "queueColonize", targetBodyId: body.id })
-                    }
-                    onCancelOrder={(orderId) =>
-                      dispatch({ type: "cancelOrder", orderId })
-                    }
-                  />
-                );
-              })
-            ) : (
-              <div className="empire-card">
-                <div><span className="stat-label">Species:</span> {species?.name ?? "?"}</div>
-                <div><span className="stat-label">Origin:</span> {origin?.name ?? "?"}</div>
-                <div><span className="stat-label">Population:</span> {totalPops(state)}</div>
-              </div>
-            )}
+            {focusSystem
+              ? focusBodies.map((body) => {
+                  const order = colonizeOrderForTarget(state, body.id);
+                  return (
+                    <BodyRow
+                      key={body.id}
+                      body={body}
+                      income={focusIsOurs ? bodyIncome(state, body) : {}}
+                      isCapital={body.id === state.empire.capitalBodyId}
+                      owned={focusIsOurs}
+                      colonizable={canColonize(state, body.id)}
+                      activeOrder={order}
+                      colonizeTurns={colonizeTurnEstimate}
+                      growth={focusIsOurs ? growthEstimate(state, state.empire, body) : null}
+                      onColonize={() =>
+                        dispatch({ type: "queueColonize", targetBodyId: body.id })
+                      }
+                      onCancelOrder={(orderId) =>
+                        dispatch({ type: "cancelOrder", orderId })
+                      }
+                    />
+                  );
+                })
+              : (
+                <div className="empire-card">
+                  <div><span className="stat-label">Species:</span> {species?.name ?? "?"}</div>
+                  <div><span className="stat-label">Origin:</span> {origin?.name ?? "?"}</div>
+                  <div><span className="stat-label">Population:</span> {totalPops(state)}</div>
+                </div>
+              )}
+
+            {/* Empire-level projects are always visible, regardless of
+                which system you're inspecting. */}
+            <EmpireProjectsCard
+              projects={state.empire.projects}
+              available={availableProjectsFor(state.empire)}
+              hammerRate={totalHammers}
+              onQueue={(pid) => dispatch({ type: "queueEmpireProject", projectId: pid })}
+              onCancel={(oid) => dispatch({ type: "cancelOrder", orderId: oid })}
+            />
           </div>
         </div>
 

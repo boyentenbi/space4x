@@ -43,6 +43,13 @@ export type BuildOrder =
       hammersRequired: number;
       hammersPaid: number;
       politicalCost: number;
+    }
+  | {
+      kind: "empire_project";
+      id: string;
+      projectId: string;            // refs an EmpireProject in content.
+      hammersRequired: number;
+      hammersPaid: number;
     };
 
 export interface StarSystem {
@@ -116,6 +123,36 @@ export interface Origin {
   allowedSpeciesIds?: string[];
   flagEvents?: string[];
   art?: string;
+  // Optional story-modifier bundles applied at new game. Keyed by bundle
+  // name so projects can later remove them by key.
+  startingStoryModifiers?: Record<string, Modifier[]>;
+  // Project id(s) auto-queued on the empire at game start — e.g. an
+  // Emancipation empire begins already working toward completing it.
+  startingProjectIds?: string[];
+}
+
+// Empire-level project definition. Distinct from BuildOrder (which is
+// the in-flight queue entry) — this is the content-defined template.
+export interface EmpireProject {
+  id: string;
+  name: string;
+  description: string;
+  hammersRequired: number;
+  // Optional one-shot stock costs deducted on completion.
+  costs?: Partial<Resources>;
+  availability: {
+    speciesIds?: string[];
+    originIds?: string[];
+    requiresFlag?: string;
+    excludesFlag?: string;
+    excludesCompleted?: boolean;  // hide once already completed.
+  };
+  onComplete: {
+    addFlag?: string;
+    grantStoryModifiers?: Record<string, Modifier[]>;
+    removeStoryModifierKeys?: string[];
+    chronicle: string;
+  };
 }
 
 // =====================================================================
@@ -132,6 +169,11 @@ export interface Empire {
   capitalBodyId: string | null;
   systemIds: string[];       // Owned systems.
   projects: BuildOrder[];    // Empire-level project queue (FIFO).
+  // Named bundles of modifiers layered on top of species + traits. Used
+  // for story/project effects that can be added or removed later
+  // (origin debuffs, brood-mother boosts, etc.).
+  storyModifiers: Record<string, Modifier[]>;
+  completedProjects: string[];
   flags: string[];
 }
 
@@ -141,7 +183,7 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 7;
+  schemaVersion: 8;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;

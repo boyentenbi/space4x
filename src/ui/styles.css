@@ -646,6 +646,98 @@ button:disabled {
 
 .empire-card .stat-label { color: var(--text-dim); }
 
+.empire-projects {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.empire-projects .projects-label {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 0 2px;
+}
+
+.project-card {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.project-card.in-flight {
+  border-color: var(--accent-dim);
+  background: rgba(126, 200, 255, 0.05);
+}
+
+.project-card .project-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.project-card .project-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.project-card .project-card-desc {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+.project-card .project-start {
+  padding: 3px 10px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: transparent;
+  border-radius: 4px;
+}
+
+.project-card .project-start:hover:not(:disabled) {
+  background: rgba(126, 200, 255, 0.1);
+}
+
+.project-card .project-cancel {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 0 4px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.project-card .project-bar {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.project-card .project-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+.project-card .project-stats {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
 
 /* ==================================================================
    New Game screen.
