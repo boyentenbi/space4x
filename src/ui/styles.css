@@ -1111,12 +1111,19 @@ button.res-cell:hover:not(:disabled) {
 
 .breakdown-total {
   font-size: 13px;
-  color: var(--text-dim);
+  color: var(--text);
   font-variant-numeric: tabular-nums;
+  margin-left: 4px;
 }
 
 .breakdown-total.pos { color: var(--good); }
 .breakdown-total.neg { color: var(--bad); }
+
+.breakdown-unit {
+  margin-left: 2px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
 
 .breakdown-section {
   display: flex;

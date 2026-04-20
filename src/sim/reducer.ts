@@ -290,6 +290,21 @@ export interface ResourceBreakdown {
   total: number;
 }
 
+// Generic itemized breakdown used for non-resource stats (hammers,
+// compute, pops). Keeps the UI simple: a list of named sections, each
+// with rows that have an optional detail + a value.
+export interface StatBreakdownSection {
+  label: string;
+  rows: Array<{ id?: string; name: string; detail?: string; value: number; habitability?: HabitabilityTier }>;
+}
+export interface StatBreakdown {
+  title: string;
+  iconSrc: string;
+  unit?: string;
+  total: number;
+  sections: StatBreakdownSection[];
+}
+
 export function resourceBreakdownFor(
   state: GameState,
   empire: Empire,
@@ -343,6 +358,161 @@ export function resourceBreakdownFor(
   }
   const total = perBody.reduce((s, row) => s + row.contribution, 0) + flat.reduce((s, row) => s + row.value, 0);
   return { resource, perBody, flat, total };
+}
+
+// Collect every flat/per-pop/scalar modifier affecting a given numeric
+// quantity, labelled by source (species name / trait name / story key).
+// Used to populate "rate modifiers" sections in the breakdown modal.
+interface LabelledMod {
+  label: string;
+  mod: Modifier;
+}
+function labelledModifiers(empire: Empire): LabelledMod[] {
+  const out: LabelledMod[] = [];
+  const species = speciesById(empire.speciesId);
+  if (species) {
+    for (const m of species.modifiers) out.push({ label: species.name, mod: m });
+    for (const tid of species.traitIds) {
+      const t = traitById(tid);
+      if (!t) continue;
+      for (const m of t.modifiers) out.push({ label: t.name, mod: m });
+    }
+  }
+  for (const [key, bundle] of Object.entries(empire.storyModifiers)) {
+    const pretty = key.replace(/_/g, " ");
+    for (const m of bundle) out.push({ label: pretty, mod: m });
+  }
+  return out;
+}
+
+const RESOURCE_LABEL: Record<ResourceKey, string> = {
+  food: "Food",
+  energy: "Energy",
+  alloys: "Alloys",
+  political: "Political Capital",
+};
+const RESOURCE_ICON_PATH: Record<ResourceKey, string> = {
+  food: "/icons/food.png",
+  energy: "/icons/energy.png",
+  alloys: "/icons/alloys.png",
+  political: "/icons/political.png",
+};
+
+export function resourceBreakdownAsStat(
+  state: GameState,
+  empire: Empire,
+  resource: ResourceKey,
+): StatBreakdown {
+  const raw = resourceBreakdownFor(state, empire, resource);
+  const perBodyRows = raw.perBody
+    .filter((r) => r.contribution !== 0)
+    .map((r) => ({
+      id: r.bodyId,
+      name: r.bodyName,
+      detail:
+        r.upkeep > 0
+          ? `${r.pops} × (${r.perPop} − ${r.upkeep})`
+          : `${r.pops} × ${r.perPop}`,
+      value: r.contribution,
+      habitability: r.habitability,
+    }));
+  const flatRows = raw.flat
+    .filter((r) => r.value !== 0)
+    .map((r) => ({ name: r.label, value: r.value }));
+  return {
+    title: RESOURCE_LABEL[resource],
+    iconSrc: RESOURCE_ICON_PATH[resource],
+    unit: "/turn",
+    total: raw.total,
+    sections: [
+      ...(perBodyRows.length > 0 ? [{ label: "Per body", rows: perBodyRows }] : []),
+      ...(flatRows.length > 0 ? [{ label: "Empire-wide", rows: flatRows }] : []),
+    ],
+  };
+}
+
+export function hammersBreakdownFor(state: GameState, empire: Empire): StatBreakdown {
+  const rate = hammersPerPop(empire);
+  const bodyRows = ownedBodiesOf(state, empire)
+    .filter((b) => b.pops > 0)
+    .map((body) => ({
+      id: body.id,
+      name: body.name,
+      detail: `${body.pops} pops × ${rate}/pop`,
+      value: Math.floor(body.pops * rate),
+      habitability: body.habitability,
+    }));
+  const modRows: StatBreakdownSection["rows"] = [
+    { name: "Baseline per pop", detail: "", value: HAMMERS_PER_POP },
+  ];
+  for (const lm of labelledModifiers(empire)) {
+    if (lm.mod.kind === "hammersPerPopDelta") {
+      modRows.push({ name: lm.label, detail: "per pop", value: lm.mod.value });
+    }
+  }
+  const total = bodyRows.reduce((s, r) => s + r.value, 0);
+  return {
+    title: "Hammers",
+    iconSrc: "/icons/hammers.png",
+    unit: "/turn",
+    total,
+    sections: [
+      ...(bodyRows.length > 0 ? [{ label: "Per body", rows: bodyRows }] : []),
+      ...(modRows.length > 1 ? [{ label: "Per-pop rate", rows: modRows }] : []),
+    ],
+  };
+}
+
+export function computeBreakdownFor(state: GameState, empire: Empire): StatBreakdown {
+  const bodyRows = ownedBodiesOf(state, empire).map((body) => ({
+    id: body.id,
+    name: body.name,
+    detail: "data-center stub",
+    value: COMPUTE_PER_BODY,
+    habitability: body.habitability,
+  }));
+  const total = bodyRows.reduce((s, r) => s + r.value, 0);
+  return {
+    title: "Compute",
+    iconSrc: "/icons/compute.png",
+    unit: "/turn",
+    total,
+    sections: [{ label: "Per body", rows: bodyRows }],
+  };
+}
+
+export function popsBreakdownFor(state: GameState, empire: Empire): StatBreakdown {
+  const bodyRows = ownedBodiesOf(state, empire).map((body) => {
+    const cap = effectiveSpace(empire, body);
+    return {
+      id: body.id,
+      name: body.name,
+      detail: `${body.pops} / ${cap}`,
+      value: body.pops,
+      habitability: body.habitability,
+    };
+  });
+  const modRows: StatBreakdownSection["rows"] = [];
+  for (const lm of labelledModifiers(empire)) {
+    if (lm.mod.kind === "spaceMult") {
+      const pct = Math.round((lm.mod.value - 1) * 100);
+      modRows.push({ name: lm.label, detail: "max pops", value: pct / 100 });
+    }
+    if (lm.mod.kind === "popGrowthMult") {
+      const pct = Math.round((lm.mod.value - 1) * 100);
+      modRows.push({ name: lm.label, detail: "growth rate", value: pct / 100 });
+    }
+  }
+  const total = bodyRows.reduce((s, r) => s + r.value, 0);
+  return {
+    title: "Population",
+    iconSrc: "/icons/pops.png",
+    total,
+    sections: [
+      ...(bodyRows.length > 0 ? [{ label: "Per body", rows: bodyRows }] : []),
+      ...(modRows.length > 0 ? [{ label: "Cap + growth modifiers", rows: modRows }] : []),
+    ],
+  };
 }
 
 export function perTurnIncomeOf(state: GameState, empire: Empire): Resources {

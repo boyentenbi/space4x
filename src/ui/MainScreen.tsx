@@ -11,13 +11,18 @@ import {
   colonizeOrderForTarget,
   COLONIZE_HAMMERS,
   COLONIZE_POLITICAL,
+  computeBreakdownFor,
   effectiveSpace,
   empireById,
   growthEstimate,
   HAMMERS_PER_POP,
+  hammersBreakdownFor,
   perTurnIncome,
+  popsBreakdownFor,
+  resourceBreakdownAsStat,
   totalPops,
 } from "../sim/reducer";
+import type { StatBreakdown } from "../sim/reducer";
 import { projectById } from "../sim/content";
 import { RESOURCE_KEYS } from "../sim/events";
 import type { Body, Resources, ResourceKey } from "../sim/types";
@@ -26,7 +31,7 @@ import { GalaxyMap } from "./GalaxyMap";
 import { SystemScene } from "./SystemScene";
 import { PortraitMenu } from "./PortraitMenu";
 import { ProjectCompletionModal } from "./ProjectCompletionModal";
-import { ResourceBreakdownModal } from "./ResourceBreakdownModal";
+import { StatBreakdownModal } from "./StatBreakdownModal";
 import { COMPUTE_ICON, HAMMERS_ICON, POPS_ICON, RESOURCE_ICON, planetSpriteFor } from "./icons";
 
 const RESOURCE_ORDER: ResourceKey[] = ["food", "energy", "alloys", "political"];
@@ -357,7 +362,7 @@ export function MainScreen() {
 
   const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [breakdownResource, setBreakdownResource] = useState<ResourceKey | null>(null);
+  const [breakdown, setBreakdown] = useState<StatBreakdown | null>(null);
 
   const origin = originById(state.empire.originId);
   const species = speciesById(state.empire.speciesId);
@@ -445,12 +450,24 @@ export function MainScreen() {
               icon={RESOURCE_ICON[k]}
               value={Math.round(state.empire.resources[k])}
               delta={deltas[k]}
-              onClick={() => setBreakdownResource(k)}
+              onClick={() => setBreakdown(resourceBreakdownAsStat(state, state.empire, k))}
             />
           ))}
-          <ResCell icon={COMPUTE_ICON} value={state.empire.compute.cap} />
-          <ResCell icon={HAMMERS_ICON} value={totalHammers} />
-          <ResCell icon={POPS_ICON} value={`${popsNow}/${popsCap}`} />
+          <ResCell
+            icon={COMPUTE_ICON}
+            value={state.empire.compute.cap}
+            onClick={() => setBreakdown(computeBreakdownFor(state, state.empire))}
+          />
+          <ResCell
+            icon={HAMMERS_ICON}
+            value={totalHammers}
+            onClick={() => setBreakdown(hammersBreakdownFor(state, state.empire))}
+          />
+          <ResCell
+            icon={POPS_ICON}
+            value={`${popsNow}/${popsCap}`}
+            onClick={() => setBreakdown(popsBreakdownFor(state, state.empire))}
+          />
         </div>
 
         <button className="menu-btn" onClick={() => setMenuOpen(true)}>
@@ -600,11 +617,8 @@ export function MainScreen() {
         />
       )}
       {state.projectCompletions.length === 0 && pendingEvent && <EventModal eventId={pendingEvent.eventId} />}
-      {breakdownResource && (
-        <ResourceBreakdownModal
-          resource={breakdownResource}
-          onClose={() => setBreakdownResource(null)}
-        />
+      {breakdown && (
+        <StatBreakdownModal breakdown={breakdown} onClose={() => setBreakdown(null)} />
       )}
       {menuOpen && (
         <PortraitMenu onReset={reset} onClose={() => setMenuOpen(false)} />
