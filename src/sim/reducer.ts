@@ -262,14 +262,18 @@ export function expansionismModifiers(ex: Expansionism): Modifier[] {
 }
 
 // Politic lean:
-//  - Collectivist:  +0.5 political/turn from consensus.
+//  - Collectivist:  +0.5 political/turn from consensus + +0.25
+//                   hammers/pop from coordinated labour.
 //  - Centrist:      baseline.
-//  - Individualist: reserved — will gain a compute/research-style bonus
-//                   once we build that sink.
+//  - Individualist: reserved — an innovation/research bonus (compute
+//                   or discovery rate) lands when the tech layer does.
 export function politicModifiers(p: Politic): Modifier[] {
   switch (p) {
     case "collectivist":
-      return [{ kind: "flat", resource: "political", value: 0.5 }];
+      return [
+        { kind: "flat", resource: "political", value: 0.5 },
+        { kind: "hammersPerPopDelta", value: 0.25 },
+      ];
     case "centrist":
       return [];
     case "individualist":
