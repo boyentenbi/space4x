@@ -45,12 +45,15 @@ function rollStarKind(r: Rand): StarKind {
   return "blue_giant";
 }
 
-// Space cap per body depends on habitability.
+// Space cap per body depends on habitability. Pops only fit comfortably
+// on temperate (and gardens when they come back). Harsh worlds host a
+// mining outpost (1-2 pops); hellscapes are uninhabitable — owned for
+// territory, not population.
 const SPACE_BY_HAB: Record<HabitabilityTier, [number, number]> = {
   garden: [8, 12],
   temperate: [4, 7],
-  harsh: [2, 4],
-  hellscape: [1, 2],
+  harsh: [1, 2],
+  hellscape: [0, 0],
 };
 
 function rollSpace(r: Rand, hab: HabitabilityTier): number {
