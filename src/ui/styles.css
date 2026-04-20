@@ -137,6 +137,19 @@ button:disabled {
   overflow: hidden;
 }
 
+/* System + Galaxy as equal-width columns, filling remaining height. */
+.panels-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 6px;
+}
+
+.panels-row > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .flows-inline {
   flex: 0 0 auto;
   display: flex;
@@ -189,7 +202,6 @@ button:disabled {
 }
 
 .galaxy-panel {
-  flex: 1 1 0;
   min-height: 0;
   position: relative;
   background: var(--bg-panel);
@@ -228,7 +240,6 @@ button:disabled {
 }
 
 .system-panel {
-  flex: 1 1 0;
   min-height: 0;
   background: var(--bg-panel);
   border: 1px solid var(--border);
@@ -240,7 +251,7 @@ button:disabled {
 }
 
 .system-panel .scene-wrap {
-  flex: 0 0 45%;
+  flex: 0 0 55%;
   position: relative;
   overflow: hidden;
 }

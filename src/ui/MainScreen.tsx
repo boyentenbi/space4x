@@ -158,72 +158,73 @@ export function MainScreen() {
           <FlowPill icon={HAMMERS_ICON} value={`${totalHammers}/t`} />
         </div>
 
-        {/* Galaxy panel (big) */}
-        <div className="galaxy-panel">
-          <span className="panel-label">Galaxy</span>
-          <GalaxyMap
-            galaxy={state.galaxy}
-            ownedSystemIds={state.empire.systemIds}
-            ownerColor={state.empire.color}
-            selectedId={selectedSystemId}
-            onSelect={setSelectedSystemId}
-          />
-          <span className="panel-stats">
-            {state.empire.systemIds.length}/{Object.keys(state.galaxy.systems).length} yours
-          </span>
-        </div>
-
-        {/* System panel (scene + body details) */}
-        <div className="system-panel">
-          <div className="scene-wrap">
-            <div className="panel-label">
-              <span>
-                {focusSystem
-                  ? `${focusSystem.name}${focusOwned && focusSystem.id !== capitalSystem?.id ? "" : focusOwned ? " · home" : " · unclaimed"}`
-                  : "System"}
-              </span>
-              {selectedSystemId && (
-                <button className="deselect-btn" onClick={() => setSelectedSystemId(null)}>
-                  home
-                </button>
+        {/* System (left) + Galaxy (right), equal-width, equal-height. */}
+        <div className="panels-row">
+          <div className="system-panel">
+            <div className="scene-wrap">
+              <div className="panel-label">
+                <span>
+                  {focusSystem
+                    ? `${focusSystem.name}${focusOwned && focusSystem.id !== capitalSystem?.id ? "" : focusOwned ? " · home" : " · unclaimed"}`
+                    : "System"}
+                </span>
+                {selectedSystemId && (
+                  <button className="deselect-btn" onClick={() => setSelectedSystemId(null)}>
+                    home
+                  </button>
+                )}
+              </div>
+              {focusSystem ? (
+                <SystemScene
+                  system={focusSystem}
+                  bodies={focusBodies}
+                  ownerColor={focusOwned ? state.empire.color : null}
+                  capitalBodyId={state.empire.capitalBodyId}
+                  turn={state.turn}
+                />
+              ) : (
+                <div className="scene-empty">Tap a star on the galaxy map.</div>
               )}
             </div>
-            {focusSystem ? (
-              <SystemScene
-                system={focusSystem}
-                bodies={focusBodies}
-                ownerColor={focusOwned ? state.empire.color : null}
-                capitalBodyId={state.empire.capitalBodyId}
-                turn={state.turn}
-              />
-            ) : (
-              <div className="scene-empty">Tap a star on the galaxy map.</div>
-            )}
-          </div>
-          <div className="detail-scroll">
-            {focusSystem ? (
-              focusBodies.map((body) => (
-                <BodyRow
-                  key={body.id}
-                  body={body}
-                  income={focusOwned ? bodyIncome(state, body) : {}}
-                  isCapital={body.id === state.empire.capitalBodyId}
-                />
-              ))
-            ) : (
-              <div className="empire-card">
-                <div><span className="stat-label">Species:</span> {species?.name ?? "?"}</div>
-                <div><span className="stat-label">Origin:</span> {origin?.name ?? "?"}</div>
-                <div><span className="stat-label">Population:</span> {totalPops(state)}</div>
+            <div className="detail-scroll">
+              {focusSystem ? (
+                focusBodies.map((body) => (
+                  <BodyRow
+                    key={body.id}
+                    body={body}
+                    income={focusOwned ? bodyIncome(state, body) : {}}
+                    isCapital={body.id === state.empire.capitalBodyId}
+                  />
+                ))
+              ) : (
+                <div className="empire-card">
+                  <div><span className="stat-label">Species:</span> {species?.name ?? "?"}</div>
+                  <div><span className="stat-label">Origin:</span> {origin?.name ?? "?"}</div>
+                  <div><span className="stat-label">Population:</span> {totalPops(state)}</div>
+                </div>
+              )}
+              <div className="chronicle-ticker" onClick={() => setChronicleOpen(true)}>
+                <span className="ticker-label">Log</span>
+                <span className="ticker-text">
+                  {lastChronicle ? lastChronicle.text : "Nothing recorded yet."}
+                </span>
+                <span className="ticker-count">{state.eventLog.length}</span>
               </div>
-            )}
-            <div className="chronicle-ticker" onClick={() => setChronicleOpen(true)}>
-              <span className="ticker-label">Log</span>
-              <span className="ticker-text">
-                {lastChronicle ? lastChronicle.text : "Nothing recorded yet."}
-              </span>
-              <span className="ticker-count">{state.eventLog.length}</span>
             </div>
+          </div>
+
+          <div className="galaxy-panel">
+            <span className="panel-label">Galaxy</span>
+            <GalaxyMap
+              galaxy={state.galaxy}
+              ownedSystemIds={state.empire.systemIds}
+              ownerColor={state.empire.color}
+              selectedId={selectedSystemId}
+              onSelect={setSelectedSystemId}
+            />
+            <span className="panel-stats">
+              {state.empire.systemIds.length}/{Object.keys(state.galaxy.systems).length} yours
+            </span>
           </div>
         </div>
       </div>
