@@ -461,10 +461,10 @@ export function MainScreen() {
           <div className="scene-wrap">
             <div className="panel-label">
               <span className="panel-title-left">
-                {focusOwnerEmpire && focusOwnerSpecies?.art && (
+                {focusOwnerEmpire && (focusOwnerEmpire.portraitArt || focusOwnerSpecies?.art) && (
                   <img
                     className="owner-portrait"
-                    src={focusOwnerSpecies.art}
+                    src={focusOwnerEmpire.portraitArt || focusOwnerSpecies?.art}
                     alt=""
                     style={{ borderColor: focusOwnerEmpire.color }}
                     title={focusOwnerEmpire.name}

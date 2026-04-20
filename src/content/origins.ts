@@ -6,20 +6,10 @@ export const ORIGINS: Origin[] = [
     name: "Steady Evolution",
     description:
       "Your species rose the long, uneventful way. Tides sculpted your coast before you had the words for them. You made tools, cities, satellites, starships — in that order, over tens of thousands of years. No interstellar benefactor rescued you and no dark bargain had to be struck. The result is a civilization with long institutional memory and a quiet suspicion of sudden gifts.",
-    allowedSpeciesIds: ["humans", "insectoid"],
+    allowedSpeciesIds: ["humans"],
     startingResources: { energy: 100, alloys: 100, food: 100, political: 5 },
     startingPops: 5,
     art: "/origins/steady_evolution.png",
-  },
-  {
-    id: "seed_ark",
-    name: "Seed Ark",
-    description:
-      "Long before you woke to history, a living arkship crossed the void and seeded your world. Its cargo was carefully curated: a biosphere in miniature, an ecology pre-solved. Your scientists still pore over the fossil rotor-arms buried deep under the equator and argue about what was left out on purpose. You begin with a full larder — but every harvest is a reminder that someone else drew the blueprint.",
-    allowedSpeciesIds: ["humans", "insectoid"],
-    startingResources: { energy: 80, alloys: 60, food: 160, political: 5 },
-    startingPops: 4,
-    art: "/origins/seed_ark.png",
   },
   {
     id: "colony_seeders",

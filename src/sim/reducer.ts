@@ -94,7 +94,7 @@ const AI_SPECS: AiSpec[] = [
     name: "Kepler Directive",
     color: "#d88a3a",
     speciesId: "insectoid",
-    originId: "steady_evolution",
+    originId: "colony_seeders",
   },
   {
     id: "empire_ai_1",
@@ -705,6 +705,15 @@ export function reduce(state: GameState, action: Action): GameState {
           const empire = makeEmpire(spec);
           empire.capitalBodyId = starter.capitalBodyId;
           empire.systemIds = [starter.systemId];
+          // Random portrait variant so AI leaders feel distinct.
+          const aiSpecies = speciesById(spec.speciesId);
+          if (aiSpecies?.portraits && aiSpecies.portraits.length > 0) {
+            const aiRand = mulberry32((action.seed ^ 0xc2b2ae3d) + spec.id.charCodeAt(spec.id.length - 1));
+            const idx = Math.floor(aiRand() * aiSpecies.portraits.length);
+            empire.portraitArt = aiSpecies.portraits[idx];
+          } else if (aiSpecies?.art) {
+            empire.portraitArt = aiSpecies.art;
+          }
           if (originObj) {
             for (const key of RESOURCE_KEYS) {
               empire.resources[key] = originObj.startingResources[key] ?? 0;
