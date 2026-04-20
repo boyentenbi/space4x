@@ -83,6 +83,10 @@ export function NewGame() {
       </div>
 
       <button onClick={start} style={{ marginTop: 12 }}>Begin</button>
+
+      <div className="version-tag" style={{ alignSelf: "center" }}>
+        {__APP_VERSION__}
+      </div>
     </div>
   );
 }
