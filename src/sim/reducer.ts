@@ -254,9 +254,9 @@ export function expansionismModifiers(ex: Expansionism): Modifier[] {
       return [];
     case "isolationist":
       return [
-        { kind: "colonizePoliticalMult", value: 1.5 },
-        { kind: "spaceMult", value: 1.15 },
-        { kind: "popGrowthMult", value: 1.15 },
+        { kind: "colonizePoliticalMult", value: 2.0 },
+        { kind: "spaceMult", value: 2.0 },
+        { kind: "popGrowthMult", value: 1.25 },
       ];
   }
 }
