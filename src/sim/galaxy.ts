@@ -235,10 +235,11 @@ export function generateGalaxy(opts: GenOptions): Galaxy {
 
   const hyperlanes = generateHyperlanes(Object.values(systems), rand);
 
-  // Scatter a handful of temperate bodies across the galaxy. Starter
-  // bodies (one per empire) are force-temperate separately in the
-  // reducer. Gardens are disabled for now entirely.
-  const SCATTER_TEMPERATE_COUNT = 4;
+  // Scatter temperate bodies across the galaxy, proportional to system
+  // count. Starter bodies (one per empire) are force-temperate
+  // separately in the reducer. Gardens disabled for now.
+  const systemCount = Object.keys(systems).length;
+  const SCATTER_TEMPERATE_COUNT = Math.max(2, Math.round(systemCount * 0.12));
   const bodyIds = Object.keys(bodies);
   for (let i = 0; i < SCATTER_TEMPERATE_COUNT && bodyIds.length > 0; i++) {
     const pick = bodyIds[Math.floor(rand() * bodyIds.length)];

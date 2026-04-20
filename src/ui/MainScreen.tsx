@@ -11,6 +11,7 @@ import {
   colonizeOrderForTarget,
   COLONIZE_HAMMERS,
   COLONIZE_POLITICAL,
+  effectiveSpace,
   empireById,
   growthEstimate,
   HAMMERS_PER_POP,
@@ -89,16 +90,19 @@ function EmpireProjectsCard({
         const turns = hammerRate > 0 ? Math.ceil(remaining / hammerRate) : "—";
         return (
           <div key={order.id} className="project-card in-flight">
-            <div className="project-card-head">
-              <span className="project-name">{proj.name}</span>
-              <button className="project-cancel" onClick={() => onCancel(order.id)} title="Cancel">×</button>
-            </div>
-            <div className="project-card-desc">{proj.description}</div>
-            <div className="project-bar">
-              <div className="project-bar-fill" style={{ width: `${pct}%` }} />
-            </div>
-            <div className="project-stats">
-              {order.hammersPaid}/{order.hammersRequired} · ~{turns}T
+            {proj.art && <img className="project-art" src={proj.art} alt="" />}
+            <div className="project-card-body">
+              <div className="project-card-head">
+                <span className="project-name">{proj.name}</span>
+                <button className="project-cancel" onClick={() => onCancel(order.id)} title="Cancel">×</button>
+              </div>
+              <div className="project-card-desc">{proj.description}</div>
+              <div className="project-bar">
+                <div className="project-bar-fill" style={{ width: `${pct}%` }} />
+              </div>
+              <div className="project-stats">
+                {order.hammersPaid}/{order.hammersRequired} · ~{turns}T
+              </div>
             </div>
           </div>
         );
@@ -107,16 +111,19 @@ function EmpireProjectsCard({
         const turns = hammerRate > 0 ? Math.ceil(proj.hammersRequired / hammerRate) : "—";
         return (
           <div key={proj.id} className="project-card available">
-            <div className="project-card-head">
-              <span className="project-name">{proj.name}</span>
-              <button className="project-start" onClick={() => onQueue(proj.id)}>Start</button>
-            </div>
-            <div className="project-card-desc">{proj.description}</div>
-            <div className="project-stats">
-              {proj.hammersRequired} hammers · ~{turns}T
-              {proj.costs && Object.entries(proj.costs).map(([k, v]) =>
-                v ? <span key={k}> · {v} {k}</span> : null
-              )}
+            {proj.art && <img className="project-art" src={proj.art} alt="" />}
+            <div className="project-card-body">
+              <div className="project-card-head">
+                <span className="project-name">{proj.name}</span>
+                <button className="project-start" onClick={() => onQueue(proj.id)}>Start</button>
+              </div>
+              <div className="project-card-desc">{proj.description}</div>
+              <div className="project-stats">
+                {proj.hammersRequired} hammers · ~{turns}T
+                {proj.costs && Object.entries(proj.costs).map(([k, v]) =>
+                  v ? <span key={k}> · {v} {k}</span> : null
+                )}
+              </div>
             </div>
           </div>
         );
@@ -362,10 +369,18 @@ export function MainScreen() {
     return sum + sys.bodyIds.reduce((s, bid) => s + (state.galaxy.bodies[bid]?.hammers ?? 0), 0);
   }, 0);
   const popsNow = totalPops(state);
+  // Effective cap accounts for species spaceMult (e.g. insectoid +50%),
+  // matching what pop growth actually allows.
   const popsCap = state.empire.systemIds.reduce((sum, sid) => {
     const sys = state.galaxy.systems[sid];
     if (!sys) return sum;
-    return sum + sys.bodyIds.reduce((s, bid) => s + (state.galaxy.bodies[bid]?.space ?? 0), 0);
+    return (
+      sum +
+      sys.bodyIds.reduce((s, bid) => {
+        const body = state.galaxy.bodies[bid];
+        return s + (body ? effectiveSpace(state.empire, body) : 0);
+      }, 0)
+    );
   }, 0);
   // Turns to finish a new colonize project, given current hammer rate and
   // any existing FIFO queue already consuming from the pool.

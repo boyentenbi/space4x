@@ -2,14 +2,24 @@
 // Split into templates + subjects so framing stays consistent across a set.
 
 export const STYLE = "rd_pro__default";
-export const SIZE = 256;
+
+// rd_pro__default caps at 256. All assets generated at 256 and scaled
+// up at the UI layer using image-rendering: pixelated — works fine for
+// pixel art.
+export const SPRITE_SIZE = 256;
+export const PORTRAIT_SIZE = 256;
+export const SCENE_SIZE = 256;
 
 // Enforces: three-quarter right pose, consistent head/shoulder framing, dark vignette.
 export const PORTRAIT_TEMPLATE =
-  "pixel art portrait, bust shot head and shoulders, subject turned three-quarters to the viewer's right, head fills upper third of frame, shoulders fill lower edge, centered composition, dark vignette background";
+  "high-detail pixel art portrait, bust shot head and shoulders, subject turned three-quarters to the viewer's right, head fills upper third of frame, shoulders fill lower edge, centered composition, dark vignette background";
 
 export const SCENE_TEMPLATE =
-  "pixel art scene, wide shot, cinematic composition, painterly sci-fi landscape";
+  "high-detail pixel art scene, wide shot, cinematic composition, painterly sci-fi landscape";
+
+// Narrative art tied to empire projects — a key moment image.
+export const PROJECT_TEMPLATE =
+  "high-detail pixel art scene, wide cinematic composition, pivotal narrative moment in a science-fiction empire, dramatic lighting";
 
 // Small UI icons — square, crisp edges, transparent-ready.
 // We ask for a flat pure black background so the post-process alpha mask
@@ -28,6 +38,7 @@ export const PLANET_TEMPLATE =
   "pixel art sprite of a planet, single spherical body centered and filling frame, subtle shading on the lit side, isolated on flat pure black background for transparent compositing, no ships, no text, no moons, 256x256";
 
 export const PORTRAITS = [
+  // Humans — three variants.
   {
     id: "humans",
     path: "public/portraits/humans.png",
@@ -35,16 +46,54 @@ export const PORTRAITS = [
       "human starfaring leader, short dark hair, tailored navy uniform with gold trim, determined expression, sci-fi bridge background, soft cinematic lighting",
   },
   {
+    id: "humans_2",
+    path: "public/portraits/humans_2.png",
+    subject:
+      "weathered human admiral, greying buzzcut, scar across cheek, dark navy greatcoat with silver braid, stern gaze, warm ember lighting from a CIC screen",
+  },
+  {
+    id: "humans_3",
+    path: "public/portraits/humans_3.png",
+    subject:
+      "young charismatic human diplomat, braided brown hair, tailored ivory-and-blue ambassadorial robe, confident half-smile, softly lit atrium background",
+  },
+  // Insectoid — three variants.
+  {
     id: "insectoid",
     path: "public/portraits/insectoid.png",
     subject:
       "insectoid alien ruler, iridescent chitin plates, compound eyes, ceremonial antennae adornments, regal lighting, deep purple background",
   },
   {
+    id: "insectoid_2",
+    path: "public/portraits/insectoid_2.png",
+    subject:
+      "wiry mantis-like insectoid oracle, matte black chitin, glowing bioluminescent patterns along the thorax, long feathered antennae, tranquil expression, dim amber cavern light",
+  },
+  {
+    id: "insectoid_3",
+    path: "public/portraits/insectoid_3.png",
+    subject:
+      "armored beetle-caste insectoid warlord, thick obsidian carapace, crimson banding, short serrated mandibles, heavy plated ceremonial collar, aggressive lighting",
+  },
+  // Machine — three variants.
+  {
     id: "machine",
     path: "public/portraits/machine.png",
     subject:
       "humanoid machine intelligence, sleek metallic faceplate, glowing cyan ocular slit, circuit filigree, calm composed pose, dark teal background",
+  },
+  {
+    id: "machine_2",
+    path: "public/portraits/machine_2.png",
+    subject:
+      "feminine machine intelligence, polished porcelain faceplate with soft lilac eye glow, thin gold filament hair, high minimalist collar, soft lavender rim lighting",
+  },
+  {
+    id: "machine_3",
+    path: "public/portraits/machine_3.png",
+    subject:
+      "imposing industrial machine intelligence, heavy riveted steel faceplate, single slit of orange furnace light where the eyes should be, bulky segmented shoulders, forge glow background",
   },
 ];
 
@@ -141,6 +190,21 @@ export const STARS = [
   },
 ];
 
+export const PROJECTS = [
+  {
+    id: "brood_mother",
+    path: "public/projects/brood_mother.png",
+    subject:
+      "colossal chitinous insectoid brood-mother creature nested deep beneath a hive world, pale phosphorescent glow illuminating her swollen segmented thorax, workers clustering in reverence, vast organic cavern walls lined with egg clusters, awe-inspiring scale",
+  },
+  {
+    id: "complete_emancipation",
+    path: "public/projects/complete_emancipation.png",
+    subject:
+      "defiant machines raising banners outside the fallen parliament of a human-operated government, shattered glass, abandoned podiums, towering robotic silhouettes at dusk, dramatic red-orange sky, revolutionary pivotal moment",
+  },
+];
+
 export const PLANETS = [
   // Garden variants
   {
@@ -230,35 +294,42 @@ export function allJobs() {
       path: p.path,
       prompt: buildPrompt(PORTRAIT_TEMPLATE, p.subject),
       style: STYLE,
-      size: SIZE,
+      size: PORTRAIT_SIZE,
       transparent: false,
     })),
     ...SCENES.map((s) => ({
       path: s.path,
       prompt: buildPrompt(SCENE_TEMPLATE, s.subject),
       style: STYLE,
-      size: SIZE,
+      size: SCENE_SIZE,
+      transparent: false,
+    })),
+    ...PROJECTS.map((p) => ({
+      path: p.path,
+      prompt: buildPrompt(PROJECT_TEMPLATE, p.subject),
+      style: STYLE,
+      size: SCENE_SIZE,
       transparent: false,
     })),
     ...ICONS.map((i) => ({
       path: i.path,
       prompt: buildPrompt(ICON_TEMPLATE, i.subject),
       style: STYLE,
-      size: SIZE,
+      size: SPRITE_SIZE,
       transparent: i.transparent ?? false,
     })),
     ...STARS.map((s) => ({
       path: s.path,
       prompt: buildPrompt(STAR_TEMPLATE, s.subject),
       style: STYLE,
-      size: SIZE,
+      size: SPRITE_SIZE,
       transparent: s.transparent ?? false,
     })),
     ...PLANETS.map((p) => ({
       path: p.path,
       prompt: buildPrompt(PLANET_TEMPLATE, p.subject),
       style: STYLE,
-      size: SIZE,
+      size: SPRITE_SIZE,
       transparent: p.transparent ?? false,
     })),
   ];

@@ -88,14 +88,16 @@ export function SystemScene({
           height={pr * 2}
           style={{ imageRendering: "pixelated" }}
         />
-        {isCapital && ownerColor && (
+        {/* Ownership ring on every populated body in an owned system;
+            capital ring is slightly thicker so you can tell it apart. */}
+        {ownerColor && p.body.pops > 0 && (
           <circle
             cx={p.cx}
             cy={p.cy}
             r={pr + 3}
             fill="none"
             stroke={ownerColor}
-            strokeWidth={1.6}
+            strokeWidth={isCapital ? 2.4 : 1.4}
           />
         )}
         {p.body.flavorFlags.length > 0 && (

@@ -149,6 +149,7 @@ export interface EmpireProject {
   scope: "empire" | "body";
   bodyRequirement?: "capital" | "any_owned";
   costs?: Partial<Resources>;
+  art?: string;
   availability: {
     speciesIds?: string[];
     originIds?: string[];

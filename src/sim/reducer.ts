@@ -40,7 +40,9 @@ const EMPTY_RESOURCES: Resources = {
   political: 0,
 };
 
-export const GALAXY_SIZE = { width: 11, height: 9, density: 0.85 };
+// Disc shape carved from this grid by the generator. At width 13 x
+// height 11 we get ~80 systems (about 2x the previous galaxy).
+export const GALAXY_SIZE = { width: 13, height: 11, density: 0.85 };
 
 const PER_POP_BY_HAB: Record<HabitabilityTier, Partial<Record<ResourceKey, number>>> = {
   garden:    { food: 2, energy: 1, alloys: 0 },

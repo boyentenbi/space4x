@@ -9,6 +9,7 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     hammersRequired: 40,
     scope: "empire",
     costs: { political: 20 },
+    art: "/projects/complete_emancipation.png",
     availability: {
       originIds: ["emancipation"],
       excludesFlag: "emancipation_completed",
@@ -34,6 +35,7 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     scope: "body",
     bodyRequirement: "capital",
     costs: { food: 80, political: 5 },
+    art: "/projects/brood_mother.png",
     availability: {
       speciesIds: ["insectoid"],
       excludesFlag: "brood_mother_built",
