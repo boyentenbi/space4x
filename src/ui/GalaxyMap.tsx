@@ -136,12 +136,18 @@ export function GalaxyMap({
   fleets,
   selectedId,
   onSelect,
+  moveMode,
 }: {
   galaxy: Galaxy;
   empires: Empire[];
   fleets: Fleet[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  moveMode?: {
+    originSystemId: string;
+    destinationIds: Set<string>;
+    highlightColor: string;
+  } | null;
 }) {
   const systems = Object.values(galaxy.systems);
 
@@ -212,7 +218,8 @@ export function GalaxyMap({
       onClick={() => onSelect(null)}
     >
       {/* Hyperlanes (behind everything else). Color a lane with the
-          common owner when both endpoints share one. */}
+          common owner when both endpoints share one. Lanes touching a
+          move-mode destination glow in the highlight color. */}
       <g className="hyperlanes">
         {galaxy.hyperlanes.map(([aId, bId], i) => {
           const a = galaxy.systems[aId];
@@ -221,7 +228,15 @@ export function GalaxyMap({
           const pa = hexToPixel(a.q, a.r);
           const pb = hexToPixel(b.q, b.r);
           const sharedOwner = a.ownerId && a.ownerId === b.ownerId ? a.ownerId : null;
-          const color = sharedOwner ? (empireById.get(sharedOwner)?.color ?? "#3a4355") : "#3a4355";
+          const isMoveLane =
+            !!moveMode &&
+            ((a.id === moveMode.originSystemId && moveMode.destinationIds.has(b.id)) ||
+              (b.id === moveMode.originSystemId && moveMode.destinationIds.has(a.id)));
+          const color = isMoveLane
+            ? moveMode.highlightColor
+            : sharedOwner
+              ? (empireById.get(sharedOwner)?.color ?? "#3a4355")
+              : "#3a4355";
           return (
             <line
               key={i}
@@ -230,8 +245,9 @@ export function GalaxyMap({
               x2={pb.x}
               y2={pb.y}
               stroke={color}
-              strokeWidth={sharedOwner ? 1.4 : 0.8}
-              opacity={sharedOwner ? 0.7 : 0.5}
+              strokeWidth={isMoveLane ? 2.2 : sharedOwner ? 1.4 : 0.8}
+              opacity={isMoveLane ? 0.95 : sharedOwner ? 0.7 : 0.5}
+              className={isMoveLane ? "move-lane" : undefined}
             />
           );
         })}
@@ -298,6 +314,8 @@ export function GalaxyMap({
         const { x, y } = hexToPixel(sys.q, sys.r);
         const isOwned = !!sys.ownerId;
         const isSelected = sys.id === selectedId;
+        const isMoveOrigin = moveMode?.originSystemId === sys.id;
+        const isMoveDest = !!moveMode?.destinationIds.has(sys.id);
         const hasFlavor = sys.bodyIds.some((bid) =>
           (galaxy.bodies[bid]?.flavorFlags.length ?? 0) > 0,
         );
@@ -311,6 +329,33 @@ export function GalaxyMap({
             }}
             style={{ cursor: "pointer" }}
           >
+            {/* Move-mode destination fill — a pulsing translucent
+                wash in the highlight color, drawn below the regular
+                selection outline so a selected destination still shows
+                the amber ring. */}
+            {isMoveDest && moveMode && (
+              <polygon
+                className="move-dest-fill"
+                points={polygonPoints(hexCorners(x, y, HEX_SIZE - 1))}
+                fill={moveMode.highlightColor}
+                fillOpacity={0.18}
+                stroke={moveMode.highlightColor}
+                strokeWidth={1.8}
+                strokeLinejoin="round"
+              />
+            )}
+            {/* Move-mode origin ring — steady, same highlight color. */}
+            {isMoveOrigin && moveMode && (
+              <polygon
+                points={polygonPoints(hexCorners(x, y, HEX_SIZE - 1))}
+                fill="none"
+                stroke={moveMode.highlightColor}
+                strokeWidth={2}
+                strokeDasharray="2 2"
+                strokeLinejoin="round"
+                opacity={0.85}
+              />
+            )}
             {/* Selection highlight draws per-hex regardless of ownership. */}
             {isSelected && (
               <polygon

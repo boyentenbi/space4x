@@ -1,14 +1,14 @@
-import { useState } from "react";
 import { speciesById } from "../sim/content";
 import { empireById } from "../sim/reducer";
 import { useGame } from "../store";
 
+// Read-only info view. Used for foreign fleets and for friendly fleets
+// that can't move right now (already moved, zero ships). Actually
+// moving is done via the galaxy-map move-mode flow, so no destination
+// buttons live here.
 export function FleetModal({ fleetId, onClose }: { fleetId: string; onClose: () => void }) {
   const state = useGame((s) => s.state);
-  const dispatch = useGame((s) => s.dispatch);
   const fleet = state.fleets[fleetId];
-
-  const [splitCount, setSplitCount] = useState(1);
 
   if (!fleet) {
     return (
@@ -27,24 +27,13 @@ export function FleetModal({ fleetId, onClose }: { fleetId: string; onClose: () 
   const system = state.galaxy.systems[fleet.systemId];
   const isPlayer = fleet.empireId === state.empire.id;
 
-  // Hyperlane-adjacent destinations.
-  const adjacentSystemIds = new Set<string>();
-  for (const [a, b] of state.galaxy.hyperlanes) {
-    if (a === fleet.systemId) adjacentSystemIds.add(b);
-    if (b === fleet.systemId) adjacentSystemIds.add(a);
-  }
-  const adjacent = Array.from(adjacentSystemIds)
-    .map((id) => state.galaxy.systems[id])
-    .filter((s): s is NonNullable<typeof s> => !!s);
-
-  const canMove = isPlayer && fleet.movedTurn !== state.turn && fleet.shipCount > 0;
-  const moveBlockedReason = !isPlayer
+  const status = !isPlayer
     ? "Foreign fleet — cannot command."
     : fleet.movedTurn === state.turn
       ? "Already moved this turn."
-      : null;
-
-  const splitClamped = Math.max(1, Math.min(fleet.shipCount - 1, splitCount));
+      : fleet.shipCount <= 0
+        ? "No ships left."
+        : "Tap the fleet pill on the system view to move it.";
 
   return (
     <div className="modal-scrim" onClick={onClose}>
@@ -70,71 +59,7 @@ export function FleetModal({ fleetId, onClose }: { fleetId: string; onClose: () 
           </div>
         </div>
 
-        {moveBlockedReason && (
-          <div className="fleet-blocked">{moveBlockedReason}</div>
-        )}
-
-        {isPlayer && (
-          <>
-            <div className="fleet-section">
-              <div className="fleet-section-label">Move whole fleet</div>
-              {adjacent.length === 0 && (
-                <div className="policies-empty">No connected systems.</div>
-              )}
-              <div className="fleet-move-grid">
-                {adjacent.map((sys) => (
-                  <button
-                    key={sys.id}
-                    disabled={!canMove}
-                    className="fleet-move-btn"
-                    onClick={() => {
-                      dispatch({ type: "moveFleet", fleetId: fleet.id, toSystemId: sys.id });
-                      onClose();
-                    }}
-                  >
-                    → {sys.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {fleet.shipCount > 1 && (
-              <div className="fleet-section">
-                <div className="fleet-section-label">Split and move</div>
-                <div className="fleet-split-row">
-                  <input
-                    type="number"
-                    min={1}
-                    max={fleet.shipCount - 1}
-                    value={splitCount}
-                    onChange={(e) => setSplitCount(parseInt(e.target.value, 10) || 1)}
-                  />
-                  <span>of {fleet.shipCount}</span>
-                </div>
-                <div className="fleet-move-grid">
-                  {adjacent.map((sys) => (
-                    <button
-                      key={sys.id}
-                      disabled={!canMove}
-                      className="fleet-move-btn"
-                      onClick={() => {
-                        dispatch({
-                          type: "moveFleet",
-                          fleetId: fleet.id,
-                          toSystemId: sys.id,
-                          count: splitClamped,
-                        });
-                        onClose();
-                      }}
-                    >
-                      → {sys.name} ({splitClamped})
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        )}
+        <div className="fleet-blocked">{status}</div>
 
         <button className="close-btn" onClick={onClose}>close</button>
       </div>

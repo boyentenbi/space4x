@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useGame } from "../store";
 import { originById, speciesById } from "../sim/content";
 import {
@@ -377,6 +377,13 @@ export function MainScreen() {
   const [profileEmpireId, setProfileEmpireId] = useState<string | null>(null);
   const [fleetModalId, setFleetModalId] = useState<string | null>(null);
   const [breakdown, setBreakdown] = useState<StatBreakdown | null>(null);
+  // Move mode: a player fleet is selected; galaxy-map taps on adjacent
+  // systems dispatch a move. `split` of null means "move all"; a number
+  // means "split off that many ships".
+  const [moveMode, setMoveMode] = useState<{
+    fleetId: string;
+    split: number | null;
+  } | null>(null);
 
   const origin = originById(state.empire.originId);
   const species = speciesById(state.empire.speciesId);
@@ -421,6 +428,52 @@ export function MainScreen() {
     return Math.ceil(totalNeed / totalHammers);
   }
   const colonizeTurnEstimate = turnsToColonize();
+
+  // Resolve move mode: if the fleet vanished (combat, end-of-turn) or
+  // has since moved, drop out of move mode.
+  const moveFleet = moveMode ? state.fleets[moveMode.fleetId] ?? null : null;
+  const moveFleetStale =
+    !!moveMode &&
+    (!moveFleet ||
+      moveFleet.empireId !== state.empire.id ||
+      moveFleet.movedTurn === state.turn ||
+      moveFleet.shipCount <= 0);
+  useEffect(() => {
+    if (moveFleetStale) setMoveMode(null);
+  }, [moveFleetStale]);
+  const moveAdjacentIds = new Set<string>();
+  if (moveFleet && !moveFleetStale) {
+    for (const [a, b] of state.galaxy.hyperlanes) {
+      if (a === moveFleet.systemId) moveAdjacentIds.add(b);
+      if (b === moveFleet.systemId) moveAdjacentIds.add(a);
+    }
+  }
+  const moveOwnerEmpire = moveFleet ? empireById(state, moveFleet.empireId) : null;
+  const moveHighlight = moveOwnerEmpire?.color ?? "#ffd580";
+
+  function handleSystemSelect(id: string | null) {
+    // In move mode, tapping a highlighted destination fires the move.
+    if (moveMode && moveFleet && !moveFleetStale && id && moveAdjacentIds.has(id)) {
+      const split = moveMode.split;
+      const count =
+        split === null
+          ? undefined
+          : Math.max(1, Math.min(moveFleet.shipCount - 1, split));
+      dispatch({
+        type: "moveFleet",
+        fleetId: moveMode.fleetId,
+        toSystemId: id,
+        ...(count !== undefined ? { count } : {}),
+      });
+      setMoveMode(null);
+      setSelectedSystemId(id);
+      return;
+    }
+    // Any other tap (including origin, non-destination, empty space)
+    // exits move mode and behaves normally.
+    if (moveMode) setMoveMode(null);
+    setSelectedSystemId(id);
+  }
 
   const focusSystem = selectedSystemId
     ? state.galaxy.systems[selectedSystemId] ?? null
@@ -538,7 +591,7 @@ export function MainScreen() {
                 </span>
               </span>
               {selectedSystemId && (
-                <button className="deselect-btn" onClick={() => setSelectedSystemId(null)}>
+                <button className="deselect-btn" onClick={() => handleSystemSelect(null)}>
                   home
                 </button>
               )}
@@ -564,13 +617,33 @@ export function MainScreen() {
                   <span className="fleet-strip-label">Fleets</span>
                   {fleets.map((f) => {
                     const empire = empireById(state, f.empireId);
+                    const isPlayer = f.empireId === state.empire.id;
+                    const canMove = isPlayer && f.movedTurn !== state.turn && f.shipCount > 0;
+                    const isMoving = moveMode?.fleetId === f.id;
                     return (
                       <button
                         key={f.id}
-                        className="fleet-pill fleet-pill-btn"
+                        className={`fleet-pill fleet-pill-btn ${isMoving ? "moving" : ""}`}
                         style={{ borderColor: empire?.color ?? "var(--border)" }}
-                        title={empire ? `${empire.name} · tap for fleet details` : ""}
-                        onClick={() => setFleetModalId(f.id)}
+                        title={
+                          empire
+                            ? canMove
+                              ? `${empire.name} · tap to move`
+                              : `${empire.name} · tap for details`
+                            : ""
+                        }
+                        onClick={() => {
+                          if (canMove) {
+                            // Toggle: tapping the active fleet pill exits move mode.
+                            if (isMoving) {
+                              setMoveMode(null);
+                            } else {
+                              setMoveMode({ fleetId: f.id, split: null });
+                            }
+                          } else {
+                            setFleetModalId(f.id);
+                          }
+                        }}
                       >
                         <svg width="10" height="10" viewBox="0 0 10 10">
                           <polygon
@@ -644,8 +717,81 @@ export function MainScreen() {
               empires={allEmpires(state)}
               fleets={Object.values(state.fleets)}
               selectedId={selectedSystemId}
-              onSelect={setSelectedSystemId}
+              onSelect={handleSystemSelect}
+              moveMode={
+                moveFleet && !moveFleetStale
+                  ? {
+                      originSystemId: moveFleet.systemId,
+                      destinationIds: moveAdjacentIds,
+                      highlightColor: moveHighlight,
+                    }
+                  : null
+              }
             />
+            {moveFleet && !moveFleetStale && (
+              <div className="move-bar" style={{ borderColor: moveHighlight }}>
+                <div className="move-bar-line">
+                  <span className="move-bar-title">
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ marginRight: 4 }}>
+                      <polygon points="5,1 9,9 1,9" fill={moveHighlight} />
+                    </svg>
+                    Moving {moveMode?.split ?? moveFleet.shipCount}/{moveFleet.shipCount}
+                  </span>
+                  <button
+                    className="move-bar-cancel"
+                    onClick={() => setMoveMode(null)}
+                  >
+                    cancel
+                  </button>
+                </div>
+                {moveFleet.shipCount > 1 && (
+                  <div className="move-bar-split">
+                    <button
+                      type="button"
+                      className={`move-seg ${moveMode?.split === null ? "on" : ""}`}
+                      onClick={() =>
+                        setMoveMode((m) => (m ? { ...m, split: null } : m))
+                      }
+                    >
+                      all
+                    </button>
+                    <button
+                      type="button"
+                      className={`move-seg ${moveMode?.split !== null ? "on" : ""}`}
+                      onClick={() =>
+                        setMoveMode((m) =>
+                          m
+                            ? { ...m, split: m.split ?? Math.max(1, Math.floor(moveFleet.shipCount / 2)) }
+                            : m,
+                        )
+                      }
+                    >
+                      split
+                    </button>
+                    {moveMode?.split !== null && moveMode?.split !== undefined && (
+                      <input
+                        className="move-bar-num"
+                        type="number"
+                        min={1}
+                        max={moveFleet.shipCount - 1}
+                        value={moveMode.split}
+                        onChange={(e) => {
+                          const raw = parseInt(e.target.value, 10);
+                          const n = Number.isFinite(raw) ? raw : 1;
+                          const clamped = Math.max(1, Math.min(moveFleet.shipCount - 1, n));
+                          setMoveMode((m) => (m ? { ...m, split: clamped } : m));
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
+                <div className="move-bar-hint">
+                  {moveAdjacentIds.size === 0
+                    ? "No connected systems."
+                    : "Tap a highlighted system."}
+                </div>
+              </div>
+            )}
             <span className="panel-stats">
               {state.empire.systemIds.length}/{Object.keys(state.galaxy.systems).length} yours
             </span>
