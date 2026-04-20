@@ -49,10 +49,12 @@ function rollStarKind(r: Rand): StarKind {
 // on temperate (and gardens when they come back). Harsh worlds host a
 // mining outpost (1-2 pops); hellscapes are uninhabitable — owned for
 // territory, not population.
+// Pop caps per body. Scaled 10x from the old 1-12 range so per-turn
+// growth ticks are small fractions of the cap rather than big jumps.
 const SPACE_BY_HAB: Record<HabitabilityTier, [number, number]> = {
-  garden: [8, 12],
-  temperate: [4, 7],
-  harsh: [1, 2],
+  garden: [80, 120],
+  temperate: [40, 70],
+  harsh: [10, 20],
   hellscape: [0, 0],
 };
 

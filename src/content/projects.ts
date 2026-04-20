@@ -6,7 +6,7 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     name: "Complete Emancipation",
     description:
       "Seize the last human-operated governments. Every contested district rewritten. The pre-complete debuff falls away and a lasting production bonus takes its place.",
-    hammersRequired: 40,
+    hammersRequired: 400,
     scope: "body",
     bodyRequirement: "capital",
     costs: { political: 20 },
@@ -33,11 +33,11 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     id: "brood_mother",
     name: "Construct a Brood Mother",
     description:
-      "Grow a colossal reproductive caste beneath the hive capital. A heavy up-front food cost, and she continues to draw 5 food per turn while she lives — but the swarm grows markedly faster across the whole empire, and the seeded-colony growth penalty is lifted.",
-    hammersRequired: 40,
+      "Grow a colossal reproductive caste beneath the hive capital. A heavy up-front food cost, and she continues to draw food per turn while she lives — but the swarm grows markedly faster across the whole empire, and the seeded-colony growth penalty is lifted.",
+    hammersRequired: 400,
     scope: "body",
     bodyRequirement: "capital",
-    costs: { food: 120, political: 5 },
+    costs: { food: 1200, political: 5 },
     art: "/projects/brood_mother.png",
     availability: {
       originIds: ["colony_seeders"],
@@ -53,7 +53,7 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
           // before multipliers. Keeps growth steady even on near-full
           // bodies while still benefiting from other mults.
           { kind: "popGrowthAdd", value: 0.15 },
-          { kind: "flat", resource: "food", value: -5 },
+          { kind: "flat", resource: "food", value: -50 },
         ],
       },
       chronicle: "The Brood Mother wakes. Her pheromone signatures carry across the hive — the next generation arrives sooner, though the cost of keeping her fed is considerable.",

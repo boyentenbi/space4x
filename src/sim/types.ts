@@ -230,7 +230,7 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 10;
+  schemaVersion: 11;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;

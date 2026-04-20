@@ -35,10 +35,12 @@ export type Action =
   | { type: "cancelOrder"; orderId: string }
   | { type: "dismissProjectCompletion" };
 
-// Colonization tunables.
-export const COLONIZE_HAMMERS = 20;
+// Colonization tunables. Pop counts + space caps are now on a 10x
+// scale (so a starter temperate world runs ~40 pops instead of 4),
+// which gives per-turn growth a smoother feel.
+export const COLONIZE_HAMMERS = 200;
 export const COLONIZE_POLITICAL = 5;
-export const COLONIZE_STARTER_POPS = 1;
+export const COLONIZE_STARTER_POPS = 10;
 
 let orderCounter = 0;
 function nextOrderId(): string {
@@ -77,7 +79,7 @@ const HAB_COLONIZE_SCORE: Record<HabitabilityTier, number> = {
 
 export const HAMMERS_PER_POP = 1;
 const COMPUTE_PER_BODY = 1;
-export const POP_GROWTH_FOOD_COST = 5;
+export const POP_GROWTH_FOOD_COST = 50;
 
 // Expected turns until this body grows by +1 pop, or a status string.
 // Matches the actual growth roll: chance = headroom * 0.5 each turn,
@@ -180,7 +182,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 10,
+    schemaVersion: 11,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -916,12 +918,15 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
       const body = draft.galaxy.bodies[bid];
       if (!body) continue;
       const cap = effectiveSpace(empire, body);
+      // Strict logistic: pops never exceed cap. Clamp downward if
+      // a cap-reducing modifier was removed between turns.
+      if (body.pops > cap) body.pops = cap;
       if (body.pops >= cap) continue;
       if (empire.resources.food < POP_GROWTH_FOOD_COST) continue;
       const headroom = (cap - body.pops) / cap;
       const chance = Math.max(0, Math.min(1, (headroom * 0.5 + growthAdd) * growthMult));
       if (growthRand() < chance) {
-        body.pops += 1;
+        body.pops = Math.min(cap, body.pops + 1);
         empire.resources.food -= POP_GROWTH_FOOD_COST;
       }
     }
@@ -1065,7 +1070,7 @@ export function reduce(state: GameState, action: Action): GameState {
           ...starterBody,
           habitability: "temperate" as const,
           kind: "planet" as const,
-          space: Math.max(starterBody.space, 8),
+          space: Math.max(starterBody.space, 80),
           pops: startingPops,
         };
         const updatedSys = { ...sys, ownerId: empireId };
