@@ -19,7 +19,7 @@ const EMPTY_RESOURCES: Resources = {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     turn: 0,
     rngSeed: 0,
     empire: {

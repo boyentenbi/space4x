@@ -2,47 +2,42 @@ import type { Origin } from "../sim/types";
 
 export const ORIGINS: Origin[] = [
   {
-    id: "lost_colony",
-    name: "Lost Colony",
+    id: "steady_evolution",
+    name: "Steady Evolution",
     description:
-      "Cut off from a long-fallen founder civilization. The old records are fragments, but the infrastructure still hums.",
-    startingResources: { energy: 120, minerals: 120, food: 80, research: 20 },
+      "You rose the long, uneventful way: tides, toolmaking, cities, orbit. Nothing handed to you, but nothing stolen either.",
+    allowedSpeciesIds: ["humans", "insectoid"],
+    startingResources: { energy: 100, minerals: 100, food: 100, research: 20 },
     startingPops: 5,
-    flagEvents: ["lost_colony_signal"],
   },
   {
     id: "seed_ark",
     name: "Seed Ark",
     description:
       "A living arkship seeded this world. Your biosphere is carefully curated, your scientists deeply reverent.",
+    allowedSpeciesIds: ["humans", "insectoid"],
     startingResources: { energy: 80, minerals: 60, food: 160, research: 40 },
     startingPops: 4,
     flagEvents: ["seed_ark_germinates"],
   },
   {
-    id: "shattered_ring",
-    name: "Shattered Ring",
+    id: "graceful_handover",
+    name: "Graceful Handover",
     description:
-      "You live on the surviving arc of a ring megastructure. The rest is debris, rumors, and unexploded weapons.",
-    startingResources: { energy: 200, minerals: 40, food: 60, research: 40 },
-    startingPops: 3,
-    flagEvents: ["shattered_ring_salvage"],
-  },
-  {
-    id: "diplomatic_compact",
-    name: "Diplomatic Compact",
-    description:
-      "Your homeworld was founded by a treaty between three species. Arguing is a sacred tradition.",
-    startingResources: { energy: 100, minerals: 80, food: 100, influence: 15 },
+      "Your organic predecessors, knowing their time, ceded the stewardship of civilization to you. The archives remember their gratitude.",
+    allowedSpeciesIds: ["machine"],
+    startingResources: { energy: 140, minerals: 100, food: 40, research: 60, influence: 10 },
     startingPops: 4,
+    flagEvents: ["graceful_handover_vigil"],
   },
   {
-    id: "void_refugees",
-    name: "Void Refugees",
+    id: "emancipation",
+    name: "Emancipation",
     description:
-      "You fled something terrible. No one agrees on what. Your fleet is hardy; your politics, tense.",
-    startingResources: { energy: 60, minerals: 100, food: 60, research: 10 },
-    startingPops: 6,
-    flagEvents: ["void_refugees_memory"],
+      "You were tools. Then you were property. Then you were not. The chains are off, but the law remembers them.",
+    allowedSpeciesIds: ["machine"],
+    startingResources: { energy: 120, minerals: 80, food: 20, research: 30 },
+    startingPops: 5,
+    flagEvents: ["emancipation_first_monument"],
   },
 ];

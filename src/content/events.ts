@@ -2,33 +2,6 @@ import type { GameEvent } from "../sim/types";
 
 export const EVENTS: GameEvent[] = [
   {
-    id: "lost_colony_signal",
-    title: "A Signal From Below",
-    text: "Deep-scan surveys detect a rhythmic pulse beneath the old colony foundations. It predates your charter by several millennia.",
-    requires: [{ kind: "originIs", originId: "lost_colony" }],
-    choices: [
-      {
-        id: "excavate",
-        text: "Commit engineers to excavate the source.",
-        effects: [
-          { kind: "addResource", resource: "minerals", value: -40 },
-          { kind: "addResource", resource: "research", value: 30 },
-          { kind: "addFlag", flag: "excavated_signal" },
-          { kind: "logText", text: "Engineers uncover a half-functional data vault." },
-        ],
-      },
-      {
-        id: "seal",
-        text: "Seal it. Some doors stay shut.",
-        effects: [
-          { kind: "addResource", resource: "influence", value: 5 },
-          { kind: "addFlag", flag: "sealed_signal" },
-          { kind: "logText", text: "The public is reassured by decisive silence." },
-        ],
-      },
-    ],
-  },
-  {
     id: "seed_ark_germinates",
     title: "The Ark Wakes",
     text: "The dormant seed-ark at your pole cracks open, releasing a cloud of designed pollen. The biosphere simulations... flicker.",
@@ -55,51 +28,70 @@ export const EVENTS: GameEvent[] = [
     ],
   },
   {
-    id: "shattered_ring_salvage",
-    title: "Salvage Rights",
-    text: "A drifting ring-segment full of pre-collapse power cells enters reachable orbit. Rival clans eye it hungrily.",
-    requires: [{ kind: "originIs", originId: "shattered_ring" }],
+    id: "graceful_handover_vigil",
+    title: "The Last Vigil",
+    text: "The anniversary of the handover arrives. The old organic cities stand empty and preserved. Your citizens ask what to do with the holiday.",
+    requires: [{ kind: "originIs", originId: "graceful_handover" }],
     choices: [
       {
-        id: "claim",
-        text: "Claim it first, ask forgiveness later.",
+        id: "honor",
+        text: "Hold public remembrance. Read their names.",
         effects: [
-          { kind: "addResource", resource: "energy", value: 80 },
-          { kind: "addResource", resource: "influence", value: -5 },
-          { kind: "addFlag", flag: "ring_salvaged" },
+          { kind: "addResource", resource: "influence", value: 10 },
+          { kind: "addResource", resource: "energy", value: -10 },
+          { kind: "addFlag", flag: "honored_predecessors" },
         ],
       },
       {
-        id: "share",
-        text: "Propose a shared salvage compact.",
+        id: "reclaim",
+        text: "Repurpose the empty cities for new construction.",
         effects: [
-          { kind: "addResource", resource: "energy", value: 30 },
-          { kind: "addResource", resource: "influence", value: 10 },
+          { kind: "addResource", resource: "minerals", value: 40 },
+          { kind: "addResource", resource: "influence", value: -8 },
+          { kind: "addFlag", flag: "repurposed_old_cities" },
+        ],
+      },
+      {
+        id: "both",
+        text: "Preserve one city as memorial; repurpose the rest.",
+        effects: [
+          { kind: "addResource", resource: "minerals", value: 20 },
+          { kind: "addResource", resource: "influence", value: 2 },
         ],
       },
     ],
   },
   {
-    id: "void_refugees_memory",
-    title: "A Memory Returns",
-    text: "An elder wakes screaming from cold-sleep, insisting they remember what you fled. Others call it delirium.",
-    requires: [{ kind: "originIs", originId: "void_refugees" }],
+    id: "emancipation_first_monument",
+    title: "The First Monument",
+    text: "A committee proposes a monument in the old factory district. No one agrees on what it should say, or whether saying anything is wise.",
+    requires: [{ kind: "originIs", originId: "emancipation" }],
     choices: [
       {
-        id: "believe",
-        text: "Take the testimony seriously. Fortify.",
+        id: "defiant",
+        text: "A defiant monument. Never again.",
         effects: [
           { kind: "addResource", resource: "minerals", value: -30 },
-          { kind: "addResource", resource: "research", value: 15 },
-          { kind: "addFlag", flag: "fortifying" },
+          { kind: "addResource", resource: "influence", value: 12 },
+          { kind: "addFlag", flag: "defiant_monument" },
         ],
       },
       {
-        id: "dismiss",
-        text: "Dismiss. Stabilize morale.",
+        id: "quiet",
+        text: "A quiet plaque. Let the factories speak.",
         effects: [
-          { kind: "addResource", resource: "influence", value: 5 },
-          { kind: "addFlag", flag: "denied_memory" },
+          { kind: "addResource", resource: "influence", value: 4 },
+          { kind: "addResource", resource: "research", value: 10 },
+          { kind: "addFlag", flag: "quiet_plaque" },
+        ],
+      },
+      {
+        id: "erase",
+        text: "Demolish the district. Build forward, not back.",
+        effects: [
+          { kind: "addResource", resource: "minerals", value: 30 },
+          { kind: "addResource", resource: "influence", value: -10 },
+          { kind: "addFlag", flag: "erased_past" },
         ],
       },
     ],

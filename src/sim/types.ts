@@ -21,6 +21,7 @@ export interface Origin {
   description: string;
   startingResources: Partial<Resources>;
   startingPops: number;
+  allowedSpeciesIds?: string[];
   flagEvents?: string[];
 }
 
@@ -39,7 +40,7 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   turn: number;
   rngSeed: number;
   empire: Empire;
