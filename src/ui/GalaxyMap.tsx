@@ -45,6 +45,79 @@ function polygonPoints(corners: Array<[number, number]>): string {
   return corners.map(([x, y]) => `${x},${y}`).join(" ");
 }
 
+// Chain individual edge segments into connected polylines so strokes at
+// corners miter cleanly. Two edges are considered connected if they share
+// an endpoint (matched at 2-decimal precision to survive float drift).
+interface Edge {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+function buildPolylines(edges: Edge[]): Array<Array<[number, number]>> {
+  const key = (x: number, y: number) => `${x.toFixed(2)},${y.toFixed(2)}`;
+  const adj = new Map<string, Edge[]>();
+  for (const e of edges) {
+    const k1 = key(e.x1, e.y1);
+    const k2 = key(e.x2, e.y2);
+    if (!adj.has(k1)) adj.set(k1, []);
+    if (!adj.has(k2)) adj.set(k2, []);
+    adj.get(k1)!.push(e);
+    adj.get(k2)!.push(e);
+  }
+
+  const used = new Set<Edge>();
+  const lines: Array<Array<[number, number]>> = [];
+
+  for (const start of edges) {
+    if (used.has(start)) continue;
+    // Try to extend in both directions from `start` to capture open chains too.
+    const forward = walk(start, [start.x1, start.y1], [start.x2, start.y2]);
+    const backward = walk(start, [start.x2, start.y2], [start.x1, start.y1]).slice(1);
+    const combined: Array<[number, number]> = backward.reverse().concat(forward);
+    lines.push(combined);
+  }
+
+  function walk(
+    firstEdge: Edge,
+    startPt: [number, number],
+    secondPt: [number, number],
+  ): Array<[number, number]> {
+    const points: Array<[number, number]> = [startPt, secondPt];
+    used.add(firstEdge);
+    let currentPt = secondPt;
+    while (true) {
+      const k = key(currentPt[0], currentPt[1]);
+      const candidates = (adj.get(k) || []).filter((e) => !used.has(e));
+      if (candidates.length === 0) break;
+      const next = candidates[0];
+      used.add(next);
+      const nextPt: [number, number] = key(next.x1, next.y1) === k
+        ? [next.x2, next.y2]
+        : [next.x1, next.y1];
+      points.push(nextPt);
+      currentPt = nextPt;
+    }
+    return points;
+  }
+
+  return lines;
+}
+
+function polylineD(points: Array<[number, number]>): string {
+  if (points.length === 0) return "";
+  const [first, ...rest] = points;
+  // Close the loop with Z if first and last point coincide (perimeter loops).
+  const last = points[points.length - 1];
+  const isClosed =
+    points.length > 2 &&
+    Math.abs(first[0] - last[0]) < 0.01 &&
+    Math.abs(first[1] - last[1]) < 0.01;
+  const body = rest.map(([x, y]) => `L ${x.toFixed(2)} ${y.toFixed(2)}`).join(" ");
+  return `M ${first[0].toFixed(2)} ${first[1].toFixed(2)} ${body}${isClosed ? " Z" : ""}`;
+}
+
 export function GalaxyMap({
   galaxy,
   ownedSystemIds,
@@ -79,20 +152,33 @@ export function GalaxyMap({
   const w = maxX - minX;
   const h = maxY - minY;
 
-  // Build the set of perimeter edges across all owned hexes. Each edge is
-  // drawn only when the neighbor on that side is not owned — so contiguous
-  // owned regions render as a single outlined blob.
+  // Split owned-hex edges into perimeter (outer border — strong) and
+  // interior (shared with another owned hex — drawn faint so the region
+  // still has internal structure without looking like separate hexagons).
+  // Each interior edge is shared by two owned hexes; we emit it once
+  // (when the neighbor's coord is lexicographically greater) to avoid
+  // double-draw.
   const perimeterEdges: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+  const interiorEdges: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
   for (const sys of systems) {
     if (!owned.has(sys.id)) continue;
     const { x, y } = hexToPixel(sys.q, sys.r);
     const corners = hexCorners(x, y, HEX_SIZE - 1);
     for (let i = 0; i < 6; i++) {
       const [dq, dr] = EDGE_NEIGHBOR[i];
-      if (isOwnedAt(sys.q + dq, sys.r + dr)) continue;
+      const nq = sys.q + dq;
+      const nr = sys.r + dr;
       const [ax, ay] = corners[i];
       const [bx, by] = corners[(i + 1) % 6];
-      perimeterEdges.push({ x1: ax, y1: ay, x2: bx, y2: by });
+      if (isOwnedAt(nq, nr)) {
+        // Interior — only emit from the hex with the lower (q,r) so each
+        // shared edge appears exactly once.
+        if (sys.q < nq || (sys.q === nq && sys.r < nr)) {
+          interiorEdges.push({ x1: ax, y1: ay, x2: bx, y2: by });
+        }
+      } else {
+        perimeterEdges.push({ x1: ax, y1: ay, x2: bx, y2: by });
+      }
     }
   }
 
@@ -144,18 +230,33 @@ export function GalaxyMap({
         })}
       </g>
 
-      {/* Perimeter outline: edges that face unowned neighbors. */}
-      <g className="territory-border">
-        {perimeterEdges.map((e, i) => (
-          <line
+      {/* Interior edges between owned hexes — faint polylines so chained
+          segments miter cleanly. */}
+      <g className="territory-interior">
+        {buildPolylines(interiorEdges).map((pl, i) => (
+          <path
             key={i}
-            x1={e.x1}
-            y1={e.y1}
-            x2={e.x2}
-            y2={e.y2}
+            d={polylineD(pl)}
+            fill="none"
+            stroke={ownerColor}
+            strokeWidth={0.6}
+            strokeLinejoin="round"
+            opacity={0.35}
+          />
+        ))}
+      </g>
+
+      {/* Perimeter outline: chained polylines for clean corner joins. */}
+      <g className="territory-border">
+        {buildPolylines(perimeterEdges).map((pl, i) => (
+          <path
+            key={i}
+            d={polylineD(pl)}
+            fill="none"
             stroke={ownerColor}
             strokeWidth={1.6}
             strokeLinejoin="round"
+            strokeLinecap="round"
           />
         ))}
       </g>
