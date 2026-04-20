@@ -84,12 +84,19 @@ export function NewGame() {
   const validOrigins = useMemo(() => originsFor(speciesId), [speciesId]);
   const [originId, setOriginId] = useState(validOrigins[0].id);
 
+  const currentSpecies = SPECIES.find((s) => s.id === speciesId);
+  const portraitOptions = currentSpecies?.portraits ?? (currentSpecies?.art ? [currentSpecies.art] : []);
+  const [portraitArt, setPortraitArt] = useState<string>(portraitOptions[0] ?? "");
+
   function onSelectSpecies(id: string) {
     setSpeciesId(id);
     const next = originsFor(id);
     if (!next.some((o) => o.id === originId)) {
       setOriginId(next[0].id);
     }
+    const species = SPECIES.find((s) => s.id === id);
+    const firstPortrait = species?.portraits?.[0] ?? species?.art ?? "";
+    setPortraitArt(firstPortrait);
   }
 
   function start() {
@@ -100,6 +107,7 @@ export function NewGame() {
       originId,
       speciesId,
       seed,
+      portraitArt,
     });
   }
 
@@ -139,6 +147,24 @@ export function NewGame() {
           </button>
         ))}
       </div>
+
+      {portraitOptions.length > 1 && (
+        <>
+          <label>Portrait</label>
+          <div className="portrait-picker">
+            {portraitOptions.map((src) => (
+              <button
+                key={src}
+                className={`portrait-option ${src === portraitArt ? "selected" : ""}`}
+                onClick={() => setPortraitArt(src)}
+                style={{ borderColor: src === portraitArt ? (currentSpecies?.color ?? "var(--accent)") : "var(--border)" }}
+              >
+                <img src={src} alt="" />
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       <label>Origin</label>
       <div className="chooser">

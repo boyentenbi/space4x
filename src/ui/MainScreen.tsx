@@ -413,13 +413,13 @@ export function MainScreen() {
     <>
       {/* ===== Left sidebar ===== */}
       <div className="sidebar">
-        {species?.art && (
+        {(state.empire.portraitArt || species?.art) && (
           <div
             className="portrait-card"
             style={{ borderColor: state.empire.color }}
-            title={`${species.name} · ${state.empire.name}`}
+            title={`${species?.name ?? ""} · ${state.empire.name}`}
           >
-            <img src={species.art} alt={species.name} />
+            <img src={state.empire.portraitArt || species?.art} alt={species?.name ?? ""} />
           </div>
         )}
         <button

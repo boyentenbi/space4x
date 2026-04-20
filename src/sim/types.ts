@@ -111,9 +111,9 @@ export interface Species {
   name: string;
   description: string;
   traitIds: string[];
-  art?: string;
+  art?: string;                // Default portrait (first entry of portraits).
+  portraits?: string[];        // All available portrait variants.
   color: string;
-  // Species-level innate modifiers (applied before traits).
   modifiers: Modifier[];
 }
 
@@ -176,6 +176,9 @@ export interface Empire {
   color: string;             // Territory/UI color. Derived from species at new game.
   resources: Resources;
   compute: Compute;
+  // Chosen portrait URL (from the species' portraits list). Falls back to
+  // the species default if unset.
+  portraitArt?: string;
   capitalBodyId: string | null;
   systemIds: string[];       // Owned systems.
   projects: BuildOrder[];    // Empire-level project queue (FIFO).

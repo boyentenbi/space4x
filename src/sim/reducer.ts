@@ -15,7 +15,7 @@ import type {
 } from "./types";
 
 export type Action =
-  | { type: "newGame"; empireName: string; originId: string; speciesId: string; seed: number }
+  | { type: "newGame"; empireName: string; originId: string; speciesId: string; seed: number; portraitArt?: string }
   | { type: "endTurn" }
   | { type: "resolveEvent"; eventId: string; choiceId: string }
   | { type: "queueColonize"; targetBodyId: string }
@@ -662,6 +662,7 @@ export function reduce(state: GameState, action: Action): GameState {
         draft.empire.speciesId = action.speciesId;
         const species = speciesById(action.speciesId);
         if (species) draft.empire.color = species.color;
+        if (action.portraitArt) draft.empire.portraitArt = action.portraitArt;
         draft.empire.capitalBodyId = playerStarter.capitalBodyId;
         draft.empire.systemIds = [playerStarter.systemId];
         for (const key of RESOURCE_KEYS) {
