@@ -14,9 +14,11 @@ const EXPANSIONISM_BLURB: Record<Expansionism, string> = {
 };
 
 const POLITIC_BLURB: Record<Politic, string> = {
-  collectivist: "Consensus politics — decisions emerge from shared deliberation.",
-  centrist: "Balanced — neither hive nor atomized.",
-  individualist: "Atomized households — autonomy prized, decisions decentralized.",
+  collectivist:
+    "State over individual — authority is centralized, dissent rare. Mass mobilisation is its strength.",
+  centrist: "Balanced — neither state nor atomized.",
+  individualist:
+    "Individual over state — personal liberty is prized and decisions are decentralized.",
 };
 
 export function EmpireProfileModal({

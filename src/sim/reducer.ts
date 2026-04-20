@@ -262,11 +262,12 @@ export function expansionismModifiers(ex: Expansionism): Modifier[] {
 }
 
 // Politic lean:
-//  - Collectivist:  +0.5 political/turn from consensus + +0.25
-//                   hammers/pop from coordinated labour.
+//  - Collectivist:  state over individual — centralized authority
+//                   translates to +0.5 political/turn and coordinated
+//                   labour gives +0.25 hammers/pop.
 //  - Centrist:      baseline.
-//  - Individualist: reserved — an innovation/research bonus (compute
-//                   or discovery rate) lands when the tech layer does.
+//  - Individualist: liberty over state — reserved for an innovation /
+//                   research bonus once the tech layer lands.
 export function politicModifiers(p: Politic): Modifier[] {
   switch (p) {
     case "collectivist":

@@ -13,9 +13,9 @@ const EXPANSIONISM_OPTIONS: Array<{ id: Expansionism; label: string; blurb: stri
 ];
 
 const POLITIC_OPTIONS: Array<{ id: Politic; label: string; blurb: string }> = [
-  { id: "collectivist",  label: "Collectivist",  blurb: "Coordinated labour and consensus politics. Extra hammers and political capital." },
+  { id: "collectivist",  label: "Collectivist",  blurb: "The state subsumes the individual. Centralized authority, coordinated labour, and mass mobilisation generate extra hammers and political capital." },
   { id: "centrist",      label: "Centrist",      blurb: "Balanced. No lean." },
-  { id: "individualist", label: "Individualist", blurb: "Innovation-driven. Bonus unlocks once tech exists." },
+  { id: "individualist", label: "Individualist", blurb: "Personal liberty over collective duty. Innovation-driven. Mechanical bonus unlocks once tech exists." },
 ];
 
 function originsFor(speciesId: string) {
