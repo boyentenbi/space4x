@@ -102,20 +102,22 @@ export function MainScreen() {
     return sum + sys.bodyIds.reduce((s, bid) => s + (state.galaxy.bodies[bid]?.hammers ?? 0), 0);
   }, 0);
 
-  const selectedSystem = selectedSystemId ? state.galaxy.systems[selectedSystemId] : null;
-  const selectedBodies = selectedSystem
-    ? selectedSystem.bodyIds.map((bid) => state.galaxy.bodies[bid]).filter((b): b is Body => !!b)
+  const focusSystem = selectedSystemId
+    ? state.galaxy.systems[selectedSystemId] ?? null
+    : capitalSystem;
+  const focusBodies = focusSystem
+    ? focusSystem.bodyIds.map((bid) => state.galaxy.bodies[bid]).filter((b): b is Body => !!b)
     : [];
-  const selectedOwned = selectedSystem
-    ? state.empire.systemIds.includes(selectedSystem.id)
+  const focusOwned = focusSystem
+    ? state.empire.systemIds.includes(focusSystem.id)
     : false;
 
   const lastChronicle = state.eventLog.length > 0 ? state.eventLog[state.eventLog.length - 1] : null;
 
   return (
     <>
-      {/* ====== HUD top bar ====== */}
-      <div className="topbar">
+      {/* ===== Left sidebar ===== */}
+      <div className="sidebar">
         {species?.art && (
           <div
             className="portrait-card"
@@ -125,7 +127,20 @@ export function MainScreen() {
             <img src={species.art} alt={species.name} />
           </div>
         )}
+        <button
+          className="endturn-card"
+          onClick={() => dispatch({ type: "endTurn" })}
+          disabled={!!pendingEvent}
+          title="End turn"
+        >
+          <span className="turn-num">T{state.turn}</span>
+          <span>End Turn</span>
+        </button>
+      </div>
 
+      {/* ===== Main column ===== */}
+      <div className="main-column">
+        {/* Narrow flows strip */}
         <div className="flows-inline">
           {RESOURCE_ORDER.map((k) => (
             <FlowPill
@@ -143,100 +158,72 @@ export function MainScreen() {
           <FlowPill icon={HAMMERS_ICON} value={`${totalHammers}/t`} />
         </div>
 
-        <button
-          className="endturn-card"
-          onClick={() => dispatch({ type: "endTurn" })}
-          disabled={!!pendingEvent}
-          title="End turn"
-        >
-          <span className="turn-num">T{state.turn}</span>
-          <span>End Turn</span>
-        </button>
-      </div>
-
-      {/* ====== Main workspace ====== */}
-      <div className="workspace">
-        <div className="scene-area">
-          {selectedSystem ? (
-            <>
-              <SystemScene
-                system={selectedSystem}
-                bodies={selectedBodies}
-                ownerColor={selectedOwned ? state.empire.color : null}
-                capitalBodyId={state.empire.capitalBodyId}
-                turn={state.turn}
-              />
-              <div className="selected-label">
-                <span>{selectedSystem.name}</span>
-                <button className="deselect-btn" onClick={() => setSelectedSystemId(null)}>
-                  back
-                </button>
-              </div>
-            </>
-          ) : capitalSystem ? (
-            <>
-              <SystemScene
-                system={capitalSystem}
-                bodies={capitalSystem.bodyIds.map((bid) => state.galaxy.bodies[bid]).filter((b): b is Body => !!b)}
-                ownerColor={state.empire.color}
-                capitalBodyId={state.empire.capitalBodyId}
-                turn={state.turn}
-              />
-              <div className="selected-label">
-                <span>{capitalSystem.name} · home</span>
-              </div>
-            </>
-          ) : (
-            <div className="scene-empty">Tap a star to inspect.</div>
-          )}
-
-          <div className="minimap-card">
-            <GalaxyMap
-              galaxy={state.galaxy}
-              ownedSystemIds={state.empire.systemIds}
-              ownerColor={state.empire.color}
-              selectedId={selectedSystemId}
-              onSelect={setSelectedSystemId}
-            />
-          </div>
+        {/* Galaxy panel (big) */}
+        <div className="galaxy-panel">
+          <span className="panel-label">Galaxy</span>
+          <GalaxyMap
+            galaxy={state.galaxy}
+            ownedSystemIds={state.empire.systemIds}
+            ownerColor={state.empire.color}
+            selectedId={selectedSystemId}
+            onSelect={setSelectedSystemId}
+          />
+          <span className="panel-stats">
+            {state.empire.systemIds.length}/{Object.keys(state.galaxy.systems).length} yours
+          </span>
         </div>
 
-        <div className="detail-area">
-          {selectedSystem ? (
-            <>
-              {selectedBodies.map((body) => (
+        {/* System panel (scene + body details) */}
+        <div className="system-panel">
+          <div className="scene-wrap">
+            <div className="panel-label">
+              <span>
+                {focusSystem
+                  ? `${focusSystem.name}${focusOwned && focusSystem.id !== capitalSystem?.id ? "" : focusOwned ? " · home" : " · unclaimed"}`
+                  : "System"}
+              </span>
+              {selectedSystemId && (
+                <button className="deselect-btn" onClick={() => setSelectedSystemId(null)}>
+                  home
+                </button>
+              )}
+            </div>
+            {focusSystem ? (
+              <SystemScene
+                system={focusSystem}
+                bodies={focusBodies}
+                ownerColor={focusOwned ? state.empire.color : null}
+                capitalBodyId={state.empire.capitalBodyId}
+                turn={state.turn}
+              />
+            ) : (
+              <div className="scene-empty">Tap a star on the galaxy map.</div>
+            )}
+          </div>
+          <div className="detail-scroll">
+            {focusSystem ? (
+              focusBodies.map((body) => (
                 <BodyRow
                   key={body.id}
                   body={body}
-                  income={selectedOwned ? bodyIncome(state, body) : {}}
+                  income={focusOwned ? bodyIncome(state, body) : {}}
                   isCapital={body.id === state.empire.capitalBodyId}
                 />
-              ))}
-            </>
-          ) : (
-            <div className="empire-card">
-              <h2>{state.empire.name}</h2>
-              <div><span className="stat-label">Species:</span> {species?.name ?? "?"}</div>
-              <div><span className="stat-label">Origin:</span> {origin?.name ?? "?"}</div>
-              <div><span className="stat-label">Population:</span> {totalPops(state)}</div>
-              <div>
-                <span className="stat-label">Systems:</span> {state.empire.systemIds.length} owned ·{" "}
-                {Object.keys(state.galaxy.systems).length} total
+              ))
+            ) : (
+              <div className="empire-card">
+                <div><span className="stat-label">Species:</span> {species?.name ?? "?"}</div>
+                <div><span className="stat-label">Origin:</span> {origin?.name ?? "?"}</div>
+                <div><span className="stat-label">Population:</span> {totalPops(state)}</div>
               </div>
-              {capitalSystem && capital && (
-                <div>
-                  <span className="stat-label">Capital:</span> {capital.name} ({capitalSystem.name})
-                </div>
-              )}
+            )}
+            <div className="chronicle-ticker" onClick={() => setChronicleOpen(true)}>
+              <span className="ticker-label">Log</span>
+              <span className="ticker-text">
+                {lastChronicle ? lastChronicle.text : "Nothing recorded yet."}
+              </span>
+              <span className="ticker-count">{state.eventLog.length}</span>
             </div>
-          )}
-
-          <div className="chronicle-ticker" onClick={() => setChronicleOpen(true)}>
-            <span className="ticker-label">Log</span>
-            <span className="ticker-text">
-              {lastChronicle ? lastChronicle.text : "Nothing recorded yet. End a turn to see what happens."}
-            </span>
-            <span className="ticker-count">{state.eventLog.length}</span>
           </div>
         </div>
       </div>

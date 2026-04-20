@@ -10,7 +10,7 @@
   --warn: #ffb673;
   --good: #8bdca6;
   --bad: #ff8a8a;
-  --hud-height: 72px;
+  --sidebar-w: 72px;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
@@ -47,36 +47,37 @@ button:disabled {
 }
 
 /* ==================================================================
-   App shell — fills the viewport, never scrolls at the root.
+   App shell — horizontal split, never scrolls at the root.
    ================================================================== */
 
 .app {
   height: 100svh;
   display: flex;
-  flex-direction: column;
-  max-width: 720px;
+  flex-direction: row;
+  gap: 8px;
+  max-width: 960px;
   margin: 0 auto;
-  padding: env(safe-area-inset-top) 10px env(safe-area-inset-bottom) 10px;
+  padding: env(safe-area-inset-top) 8px env(safe-area-inset-bottom) 8px;
   overflow: hidden;
 }
 
 /* ==================================================================
-   Top bar — portrait | flows | end turn, single row, fixed height.
+   Left sidebar — portrait, end turn, (optional future slots).
    ================================================================== */
 
-.topbar {
+.sidebar {
+  flex: 0 0 var(--sidebar-w);
+  width: var(--sidebar-w);
   display: flex;
+  flex-direction: column;
   gap: 8px;
   padding: 8px 0;
-  align-items: stretch;
-  height: calc(var(--hud-height) + 16px);
-  flex-shrink: 0;
 }
 
 .portrait-card {
-  flex: 0 0 var(--hud-height);
-  width: var(--hud-height);
-  height: var(--hud-height);
+  flex: 0 0 var(--sidebar-w);
+  width: 100%;
+  height: var(--sidebar-w);
   border-radius: 8px;
   overflow: hidden;
   border: 2px solid var(--accent);
@@ -91,9 +92,53 @@ button:disabled {
   image-rendering: pixelated;
 }
 
-.flows-inline {
+.endturn-card {
+  flex: 0 0 var(--sidebar-w);
+  width: 100%;
+  height: var(--sidebar-w);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: var(--bg-panel);
+  border: 2px solid var(--accent);
+  color: var(--text);
+  border-radius: 8px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+
+.endturn-card:hover:not(:disabled) {
+  background: rgba(126, 200, 255, 0.12);
+}
+
+.endturn-card .turn-num {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--accent);
+}
+
+/* ==================================================================
+   Main column — flows row on top, then galaxy + system panels.
+   ================================================================== */
+
+.main-column {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+  overflow: hidden;
+}
+
+.flows-inline {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -103,6 +148,7 @@ button:disabled {
   border-radius: 8px;
   overflow-x: auto;
   scrollbar-width: none;
+  height: 36px;
 }
 
 .flows-inline::-webkit-scrollbar { display: none; }
@@ -142,54 +188,9 @@ button:disabled {
   margin: 0 2px;
 }
 
-.endturn-card {
-  flex: 0 0 var(--hud-height);
-  width: var(--hud-height);
-  height: var(--hud-height);
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  background: var(--bg-panel);
-  border: 2px solid var(--accent);
-  color: var(--text);
-  border-radius: 8px;
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  line-height: 1.1;
-}
-
-.endturn-card:hover:not(:disabled) {
-  background: rgba(126, 200, 255, 0.12);
-}
-
-.endturn-card .turn-num {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0;
-  color: var(--accent);
-}
-
-/* ==================================================================
-   Workspace — fills remaining height, no scroll at this level.
-   ================================================================== */
-
-.workspace {
-  flex: 1;
+.galaxy-panel {
+  flex: 1 1 0;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-bottom: 8px;
-  position: relative;
-}
-
-.scene-area {
-  flex: 0 0 auto;
-  height: 180px;
   position: relative;
   background: var(--bg-panel);
   border: 1px solid var(--border);
@@ -197,13 +198,60 @@ button:disabled {
   overflow: hidden;
 }
 
-.scene-area .system-scene {
+.galaxy-panel .galaxy-map {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: radial-gradient(ellipse at center, rgba(126, 200, 255, 0.04), transparent 70%);
+  touch-action: manipulation;
+}
+
+.galaxy-panel .panel-label {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
+.galaxy-panel .panel-stats {
+  position: absolute;
+  bottom: 6px;
+  right: 10px;
+  font-size: 10px;
+  color: var(--text-dim);
+  pointer-events: none;
+  letter-spacing: 0.04em;
+}
+
+.system-panel {
+  flex: 1 1 0;
+  min-height: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.system-panel .scene-wrap {
+  flex: 0 0 45%;
+  position: relative;
+  overflow: hidden;
+}
+
+.system-panel .system-scene {
   width: 100%;
   height: 100%;
   display: block;
 }
 
-.scene-empty {
+.system-panel .scene-empty {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -215,27 +263,7 @@ button:disabled {
   line-height: 1.5;
 }
 
-.minimap-card {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 110px;
-  height: 110px;
-  background: rgba(7, 8, 12, 0.7);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 2px;
-  backdrop-filter: blur(4px);
-  z-index: 2;
-}
-
-.minimap-card .galaxy-map {
-  width: 100%;
-  height: 100%;
-  background: transparent;
-}
-
-.scene-area .selected-label {
+.system-panel .panel-label {
   position: absolute;
   top: 8px;
   left: 10px;
@@ -249,7 +277,7 @@ button:disabled {
   gap: 6px;
 }
 
-.scene-area .deselect-btn {
+.system-panel .deselect-btn {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -260,31 +288,27 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.scene-area .deselect-btn:hover {
-  color: var(--text);
-}
-
-.detail-area {
+.system-panel .detail-scroll {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  padding: 6px 8px 6px 8px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  overflow-y: auto;
-  padding-right: 2px;
+  gap: 4px;
 }
 
 /* ==================================================================
-   Body rows — used inside detail-area.
+   Body rows + empire overview + chronicle ticker.
    ================================================================== */
 
 .body-row {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border-left: 2px solid var(--border);
-  background: var(--bg-panel);
+  background: rgba(255, 255, 255, 0.02);
   border-radius: 0 6px 6px 0;
 }
 
@@ -301,12 +325,12 @@ button:disabled {
 }
 
 .body-row .body-name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
 }
 
 .body-row .hab {
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-dim);
@@ -318,7 +342,7 @@ button:disabled {
 .body-row .hab.hellscape { color: var(--bad); }
 
 .body-row .body-stats {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-dim);
   display: flex;
   flex-wrap: wrap;
@@ -356,51 +380,32 @@ button:disabled {
 .body-row .chip.neg { color: var(--bad); border-color: rgba(255, 138, 138, 0.3); }
 .body-row .chip.flavor { color: var(--warn); border-color: rgba(255, 182, 115, 0.4); }
 
-/* ==================================================================
-   Empire overview — shown when nothing is selected.
-   ================================================================== */
-
 .empire-card {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px 14px;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.empire-card h2 {
-  margin: 0 0 6px;
-  font-size: 13px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-dim);
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .empire-card .stat-label { color: var(--text-dim); }
 
-/* ==================================================================
-   Chronicle ticker — slim strip inside detail-area; expandable on tap.
-   ================================================================== */
-
 .chronicle-ticker {
-  background: var(--bg-panel);
+  background: rgba(0, 0, 0, 0.35);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 10px;
-  font-size: 12px;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
   color: var(--text-dim);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   cursor: pointer;
+  margin-top: auto;
 }
 
 .chronicle-ticker .ticker-label {
   font-size: 9px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-dim);
   flex: 0 0 auto;
 }
 
@@ -415,30 +420,12 @@ button:disabled {
 
 .chronicle-ticker .ticker-count {
   flex: 0 0 auto;
-  color: var(--text-dim);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
 
 /* ==================================================================
-   SystemScene internals.
-   ================================================================== */
-
-.system-scene {
-  display: block;
-}
-
-/* ==================================================================
-   Galaxy map — used inside minimap-card.
-   ================================================================== */
-
-.galaxy-map {
-  display: block;
-  touch-action: manipulation;
-}
-
-/* ==================================================================
-   New Game screen (unchanged).
+   New Game screen.
    ================================================================== */
 
 .new-game {
@@ -448,6 +435,9 @@ button:disabled {
   gap: 14px;
   overflow-y: auto;
   height: 100%;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
 }
 
 .new-game h2 {
@@ -508,9 +498,7 @@ button:disabled {
   background: rgba(126, 200, 255, 0.08);
 }
 
-.chooser .name {
-  font-size: 15px;
-}
+.chooser .name { font-size: 15px; }
 
 .chooser .desc {
   font-size: 12px;
@@ -520,7 +508,7 @@ button:disabled {
 }
 
 /* ==================================================================
-   Modals — event modal + chronicle overlay.
+   Modals.
    ================================================================== */
 
 .modal-scrim {
@@ -548,10 +536,7 @@ button:disabled {
   overflow-y: auto;
 }
 
-.modal h2 {
-  margin: 0;
-  font-size: 18px;
-}
+.modal h2 { margin: 0; font-size: 18px; }
 
 .modal .event-text {
   color: var(--text);

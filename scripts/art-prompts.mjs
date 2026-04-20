@@ -103,7 +103,7 @@ export const ICONS = [
   {
     id: "compute",
     path: "public/icons/compute.png",
-    subject: "stylized glowing microchip with circuit traces, cool teal accent lighting, represents digital computation",
+    subject: "single silicon microprocessor CPU chip seen from above, black square package with metallic pins on all four sides, glowing teal core dot in the center, tilted slight perspective, no background elements, no traces outside the chip",
     transparent: true,
   },
   {

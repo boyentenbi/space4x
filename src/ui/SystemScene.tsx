@@ -1,8 +1,8 @@
 import type { Body, HabitabilityTier, StarKind, StarSystem } from "../sim/types";
 
 // Deterministic positions for bodies — each body gets a stable orbit index
-// + phase derived from its id. Positions don't move yet, but the layout
-// can be animated later by rotating the phase each turn.
+// + phase derived from its id. Phase advances each turn so orbits actually
+// rotate.
 
 function hashCode(s: string): number {
   let h = 0;
@@ -25,6 +25,14 @@ const PLANET_SRC: Record<HabitabilityTier, string> = {
   hellscape: "/planets/hellscape.png",
 };
 
+interface Placed {
+  body: Body;
+  i: number;
+  cx: number;
+  cy: number;
+  depth: number;   // sin(phase): >0 = near side, <0 = far side
+}
+
 export function SystemScene({
   system,
   bodies,
@@ -40,16 +48,80 @@ export function SystemScene({
 }) {
   const width = 320;
   const height = 140;
-  const sunX = 48;
+  const sunX = width / 2;
   const sunY = height / 2;
   const sunR = 22;
 
-  // Orbit radii stepped outward.
-  const orbitBase = 50;
-  const orbitStep = 34;
+  const orbitBase = 44;
+  const orbitStep = 30;
+  const tiltY = 0.42;
 
-  // Scale ellipse y by 0.45 for a slight perspective tilt.
-  const tiltY = 0.45;
+  const placed: Placed[] = bodies.map((body, i) => {
+    const rx = orbitBase + i * orbitStep;
+    const basePhase = ((hashCode(body.id) % 1000) / 1000) * Math.PI * 2;
+    const orbitSpeed = 0.18 / (1 + i * 0.5);
+    const phase = basePhase + turn * orbitSpeed;
+    return {
+      body,
+      i,
+      cx: sunX + rx * Math.cos(phase),
+      cy: sunY + rx * tiltY * Math.sin(phase),
+      depth: Math.sin(phase),
+    };
+  });
+
+  // Painter's order: far side -> sun -> near side. Within each group sort
+  // by depth ascending so more-distant bodies render first.
+  const backBodies = placed.filter((p) => p.depth < 0).sort((a, b) => a.depth - b.depth);
+  const frontBodies = placed.filter((p) => p.depth >= 0).sort((a, b) => a.depth - b.depth);
+
+  function renderBody(p: Placed) {
+    const isMoon = p.body.kind === "moon";
+    const pr = isMoon ? 8 : 13;
+    const isCapital = p.body.id === capitalBodyId;
+    return (
+      <g key={p.body.id}>
+        <image
+          href={PLANET_SRC[p.body.habitability]}
+          x={p.cx - pr}
+          y={p.cy - pr}
+          width={pr * 2}
+          height={pr * 2}
+          style={{ imageRendering: "pixelated" }}
+        />
+        {isCapital && ownerColor && (
+          <circle
+            cx={p.cx}
+            cy={p.cy}
+            r={pr + 3}
+            fill="none"
+            stroke={ownerColor}
+            strokeWidth={1.6}
+          />
+        )}
+        {p.body.flavorFlags.length > 0 && (
+          <circle
+            cx={p.cx}
+            cy={p.cy}
+            r={pr + 5}
+            fill="none"
+            stroke="var(--warn)"
+            strokeWidth={0.7}
+            opacity={0.8}
+          />
+        )}
+        <text
+          x={p.cx}
+          y={p.cy + pr + 12}
+          textAnchor="middle"
+          fontSize={8}
+          fill="var(--text-dim)"
+        >
+          {p.body.name.split(" ").slice(-1)[0]}
+        </text>
+      </g>
+    );
+  }
 
   return (
     <svg
@@ -57,7 +129,7 @@ export function SystemScene({
       className="system-scene"
       preserveAspectRatio="xMidYMid meet"
     >
-      {/* Faint orbit ellipses. */}
+      {/* Orbit ellipses sit behind everything. */}
       {bodies.map((_b, i) => {
         const rx = orbitBase + i * orbitStep;
         return (
@@ -75,7 +147,10 @@ export function SystemScene({
         );
       })}
 
-      {/* Sun sprite. */}
+      {/* Far-side bodies draw first. */}
+      {backBodies.map(renderBody)}
+
+      {/* Sun renders between back and front bodies. */}
       <image
         href={STAR_SRC[system.starKind]}
         x={sunX - sunR * 1.6}
@@ -85,71 +160,12 @@ export function SystemScene({
         style={{ imageRendering: "pixelated" }}
       />
 
-      {/* Bodies — stable orbit positions derived from id hash, advanced per turn.
-          Inner orbits rotate faster than outer ones (Kepler-ish flavor). */}
-      {bodies.map((body, i) => {
-        const rx = orbitBase + i * orbitStep;
-        const basePhase = ((hashCode(body.id) % 1000) / 1000) * Math.PI * 2;
-        const orbitSpeed = 0.18 / (1 + i * 0.5);       // radians per turn
-        const phase = basePhase + turn * orbitSpeed;
-        const cx = sunX + rx * Math.cos(phase);
-        const cy = sunY + rx * tiltY * Math.sin(phase);
-        const isMoon = body.kind === "moon";
-        const pr = isMoon ? 8 : 13;
-        const isCapital = body.id === capitalBodyId;
-        return (
-          <g key={body.id}>
-            <image
-              href={PLANET_SRC[body.habitability]}
-              x={cx - pr}
-              y={cy - pr}
-              width={pr * 2}
-              height={pr * 2}
-              style={{ imageRendering: "pixelated" }}
-            />
-            {isCapital && ownerColor && (
-              <circle
-                cx={cx}
-                cy={cy}
-                r={pr + 3}
-                fill="none"
-                stroke={ownerColor}
-                strokeWidth={1.6}
-              />
-            )}
-            {body.flavorFlags.length > 0 && (
-              <circle
-                cx={cx}
-                cy={cy}
-                r={pr + 5}
-                fill="none"
-                stroke="var(--warn)"
-                strokeWidth={0.7}
-                opacity={0.8}
-              />
-            )}
-            <text
-              x={cx}
-              y={cy + pr + 12}
-              textAnchor="middle"
-              fontSize={8}
-              fill="var(--text-dim)"
-            >
-              {body.name.split(" ").slice(-1)[0]}
-            </text>
-          </g>
-        );
-      })}
+      {/* Near-side bodies draw last, on top of the sun. */}
+      {frontBodies.map(renderBody)}
 
-      {/* System name & ownership pip. */}
-      <text x={6} y={12} fontSize={10} fill="var(--text-dim)" letterSpacing="0.08em">
-        {system.name.toUpperCase()}
-      </text>
       {ownerColor && (
         <circle cx={width - 10} cy={10} r={3.5} fill={ownerColor} />
       )}
     </svg>
   );
 }
-// Kept here rather than unused-imported: habitability tiers exist at the type level.
-export type { HabitabilityTier };
