@@ -194,6 +194,18 @@ button:disabled {
   border-color: var(--accent-dim);
 }
 
+.version-tag {
+  flex: 0 0 auto;
+  text-align: center;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+  padding: 4px 0 2px;
+}
+
 /* ==================================================================
    Main column — galaxy + system panels side by side.
    ================================================================== */

@@ -238,6 +238,10 @@ export function MainScreen() {
         <button className="menu-btn" onClick={() => setMenuOpen(true)}>
           Menu
         </button>
+
+        <div className="version-tag" title="Build version">
+          {__APP_VERSION__}
+        </div>
       </div>
 
       {/* ===== Main ===== */}
