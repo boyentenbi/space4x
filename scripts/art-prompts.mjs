@@ -122,6 +122,12 @@ export const SCENES = [
     subject:
       "factory district with broken chains scattered across the floor, tall robotic silhouettes standing in defiant formation, dramatic red dusk lighting, revolutionary banners",
   },
+  {
+    id: "colony_seeders",
+    path: "public/origins/colony_seeders.png",
+    subject:
+      "small insectoid colony pod crashed into a harsh alien valley, segmented pod shell cracked open, workers emerging to tend early clutches of eggs, distant ruined husk of a carrier ship in orbital sunset, isolation and hope",
+  },
 ];
 
 export const ICONS = [

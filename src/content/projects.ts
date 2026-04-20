@@ -30,25 +30,27 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     id: "brood_mother",
     name: "Construct a Brood Mother",
     description:
-      "A colossal reproductive caste buried under the hive capital. Expensive in food, but once she wakes the swarm grows markedly faster across the whole empire.",
-    hammersRequired: 30,
+      "Grow a colossal reproductive caste beneath the hive capital. A heavy up-front food cost, and she continues to draw 5 food per turn while she lives — but the swarm grows markedly faster across the whole empire, and the seeded-colony growth penalty is lifted.",
+    hammersRequired: 40,
     scope: "body",
     bodyRequirement: "capital",
-    costs: { food: 80, political: 5 },
+    costs: { food: 120, political: 5 },
     art: "/projects/brood_mother.png",
     availability: {
-      speciesIds: ["insectoid"],
+      originIds: ["colony_seeders"],
       excludesFlag: "brood_mother_built",
       excludesCompleted: true,
     },
     onComplete: {
       addFlag: "brood_mother_built",
+      removeStoryModifierKeys: ["seeded_colony"],
       grantStoryModifiers: {
         brood_mother: [
           { kind: "popGrowthMult", value: 1.4 },
+          { kind: "flat", resource: "food", value: -5 },
         ],
       },
-      chronicle: "The Brood Mother wakes. Her pheromone signatures carry across the hive — the next generation arrives sooner.",
+      chronicle: "The Brood Mother wakes. Her pheromone signatures carry across the hive — the next generation arrives sooner, though the cost of keeping her fed is considerable.",
     },
   },
 ];
