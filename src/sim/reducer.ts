@@ -3,7 +3,13 @@ import { originById, speciesById, traitById } from "./content";
 import { pickRandomEvent, resolveEventChoice, RESOURCE_KEYS } from "./events";
 import { assignStarterSystem, generateGalaxy } from "./galaxy";
 import { mulberry32, nextSeed } from "./rng";
-import type { GameState, Resources, ResourceKey } from "./types";
+import type {
+  Body,
+  GameState,
+  HabitabilityTier,
+  Resources,
+  ResourceKey,
+} from "./types";
 
 export type Action =
   | { type: "newGame"; empireName: string; originId: string; speciesId: string; seed: number }
@@ -18,6 +24,24 @@ const EMPTY_RESOURCES: Resources = {
 };
 
 export const GALAXY_SIZE = { width: 9, height: 6, density: 0.75 };
+
+// Per-pop production by habitability. Gardens farm, hellscapes mine.
+// Net of food consumption: every pop also eats 1 food/turn (applied once at empire level).
+const PER_POP_BY_HAB: Record<HabitabilityTier, Partial<Record<ResourceKey, number>>> = {
+  garden:    { food: 2, energy: 1, alloys: 0 },
+  temperate: { food: 1, energy: 1, alloys: 1 },
+  harsh:     { food: 0, energy: 1, alloys: 2 },
+  hellscape: { food: -1, energy: 1, alloys: 3 },
+};
+
+// Flat per-pop hammers (production flow, resets each turn).
+const HAMMERS_PER_POP = 1;
+
+// Flat per-body passive compute (stand-in for future data-center buildings).
+const COMPUTE_PER_BODY = 1;
+
+// Food cost to spawn one new pop via natural growth.
+const POP_GROWTH_FOOD_COST = 5;
 
 export function initialState(): GameState {
   return {
@@ -42,40 +66,77 @@ export function initialState(): GameState {
   };
 }
 
-export function totalPops(state: GameState): number {
-  let sum = 0;
-  for (const id of Object.keys(state.galaxy.bodies)) {
-    const body = state.galaxy.bodies[id];
-    if (state.galaxy.systems[body.systemId]?.ownerId === state.empire.id) {
-      sum += body.pops;
+export function ownedBodies(state: GameState): Body[] {
+  const out: Body[] = [];
+  for (const sid of state.empire.systemIds) {
+    const sys = state.galaxy.systems[sid];
+    if (!sys) continue;
+    for (const bid of sys.bodyIds) {
+      const b = state.galaxy.bodies[bid];
+      if (b) out.push(b);
     }
   }
-  return sum;
+  return out;
 }
 
-function perTurnIncome(state: GameState): Resources {
+export function totalPops(state: GameState): number {
+  return ownedBodies(state).reduce((s, b) => s + b.pops, 0);
+}
+
+function traitBonusPerPop(state: GameState): Partial<Record<ResourceKey, number>> {
   const species = speciesById(state.empire.speciesId);
-  const pops = totalPops(state);
-  const income: Resources = { ...EMPTY_RESOURCES };
-  const perPop: Partial<Record<ResourceKey, number>> = {
-    energy: 1,
-    alloys: 1,
-    food: 1,
-  };
-  for (const key of RESOURCE_KEYS) {
-    income[key] = (perPop[key] ?? 0) * pops;
-  }
-  if (species) {
-    for (const traitId of species.traitIds) {
-      const trait = traitById(traitId);
-      if (!trait) continue;
-      for (const key of RESOURCE_KEYS) {
-        income[key] += (trait.modifiers[key] ?? 0) * pops;
-      }
+  if (!species) return {};
+  const bonus: Partial<Record<ResourceKey, number>> = {};
+  for (const tid of species.traitIds) {
+    const t = traitById(tid);
+    if (!t) continue;
+    for (const k of RESOURCE_KEYS) {
+      bonus[k] = (bonus[k] ?? 0) + (t.modifiers[k] ?? 0);
     }
   }
+  return bonus;
+}
+
+export function perTurnIncome(state: GameState): Resources {
+  const income: Resources = { ...EMPTY_RESOURCES };
+  const traitBonus = traitBonusPerPop(state);
+  for (const body of ownedBodies(state)) {
+    const base = PER_POP_BY_HAB[body.habitability];
+    for (const k of RESOURCE_KEYS) {
+      income[k] += ((base[k] ?? 0) + (traitBonus[k] ?? 0)) * body.pops;
+    }
+  }
+  // Empire-level food upkeep: 1 per pop.
+  income.food -= totalPops(state);
+  // Baseline influence tick.
   income.influence += 1;
   return income;
+}
+
+export function computeCap(state: GameState): number {
+  return ownedBodies(state).length * COMPUTE_PER_BODY;
+}
+
+// Simple logistic-ish growth: more headroom => more likely to grow this turn.
+// Gated on food availability to avoid growth during famine.
+function tryGrowPops(state: GameState, rand: () => number): GameState {
+  return produce(state, (draft) => {
+    for (const sid of draft.empire.systemIds) {
+      const sys = draft.galaxy.systems[sid];
+      if (!sys) continue;
+      for (const bid of sys.bodyIds) {
+        const body = draft.galaxy.bodies[bid];
+        if (!body || body.pops >= body.space) continue;
+        if (draft.empire.resources.food < POP_GROWTH_FOOD_COST) continue;
+        const headroom = (body.space - body.pops) / body.space;
+        const chance = headroom * 0.5;
+        if (rand() < chance) {
+          body.pops += 1;
+          draft.empire.resources.food -= POP_GROWTH_FOOD_COST;
+        }
+      }
+    }
+  });
 }
 
 export function reduce(state: GameState, action: Action): GameState {
@@ -105,6 +166,13 @@ export function reduce(state: GameState, action: Action): GameState {
         for (const key of RESOURCE_KEYS) {
           draft.empire.resources[key] = origin.startingResources[key] ?? 0;
         }
+        // Seed compute cap + per-body hammers for turn 1.
+        draft.empire.compute.cap = starter.galaxy.systems[starter.systemId].bodyIds.length * COMPUTE_PER_BODY;
+        draft.empire.compute.used = 0;
+        for (const bid of starter.galaxy.systems[starter.systemId].bodyIds) {
+          const body = draft.galaxy.bodies[bid];
+          if (body) body.hammers = body.pops * HAMMERS_PER_POP;
+        }
         if (origin.flagEvents) {
           for (const eventId of origin.flagEvents) {
             draft.eventQueue.push({ eventId, seed: action.seed });
@@ -118,25 +186,39 @@ export function reduce(state: GameState, action: Action): GameState {
 
     case "endTurn": {
       if (state.eventQueue.length > 0) return state;
+
+      // 1. Accumulate stock resources (food/energy/alloys/influence).
       const income = perTurnIncome(state);
-      const withIncome = produce(state, (draft) => {
+      let next = produce(state, (draft) => {
         draft.turn += 1;
         for (const key of RESOURCE_KEYS) {
           draft.empire.resources[key] += income[key];
         }
+        // 2. Reset flow resources.
+        draft.empire.compute.cap = computeCap(draft);
+        draft.empire.compute.used = 0;
+        for (const body of ownedBodies(draft)) {
+          const live = draft.galaxy.bodies[body.id];
+          if (live) live.hammers = live.pops * HAMMERS_PER_POP;
+        }
         draft.rngSeed = nextSeed(draft.rngSeed);
       });
-      const rand = mulberry32(withIncome.rngSeed);
-      const eventRoll = rand();
-      if (eventRoll < 0.55) {
-        const event = pickRandomEvent(withIncome, withIncome.rngSeed);
+
+      // 3. Pop growth (uses seeded RNG — deterministic per turn).
+      const growthRand = mulberry32(next.rngSeed ^ 0xa5a5a5a5);
+      next = tryGrowPops(next, growthRand);
+
+      // 4. Roll a random event (same as before).
+      const rand = mulberry32(next.rngSeed);
+      if (rand() < 0.55) {
+        const event = pickRandomEvent(next, next.rngSeed);
         if (event) {
-          return produce(withIncome, (draft) => {
-            draft.eventQueue.push({ eventId: event.id, seed: withIncome.rngSeed });
+          next = produce(next, (draft) => {
+            draft.eventQueue.push({ eventId: event.id, seed: next.rngSeed });
           });
         }
       }
-      return withIncome;
+      return next;
     }
   }
 }
