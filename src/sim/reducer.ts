@@ -54,9 +54,25 @@ const HAB_COLONIZE_SCORE: Record<HabitabilityTier, number> = {
   hellscape: 1,
 };
 
-const HAMMERS_PER_POP = 1;
+export const HAMMERS_PER_POP = 1;
 const COMPUTE_PER_BODY = 1;
-const POP_GROWTH_FOOD_COST = 5;
+export const POP_GROWTH_FOOD_COST = 5;
+
+// Expected turns until this body grows by +1 pop, or a status string.
+// Matches the actual growth roll: chance = headroom * 0.5 each turn,
+// so expected wait = 1/chance (rounded up). Gated on empire food.
+export function growthEstimate(
+  _state: GameState,
+  empire: Empire,
+  body: Body,
+): { kind: "full" } | { kind: "starved" } | { kind: "growing"; turns: number } {
+  if (body.pops >= body.space) return { kind: "full" };
+  if (empire.resources.food < POP_GROWTH_FOOD_COST) return { kind: "starved" };
+  const headroom = (body.space - body.pops) / body.space;
+  const chance = headroom * 0.5;
+  if (chance <= 0) return { kind: "full" };
+  return { kind: "growing", turns: Math.ceil(1 / chance) };
+}
 
 // ===== AI empire setup =====
 interface AiSpec {

@@ -383,6 +383,24 @@ button:disabled {
   gap: 6px;
 }
 
+.system-panel .panel-title-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: 0.1em;
+}
+
+.owner-portrait {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  object-fit: cover;
+  image-rendering: pixelated;
+  border: 1.5px solid var(--accent);
+  background: var(--bg-panel);
+  flex: 0 0 auto;
+}
+
 .system-panel .deselect-btn {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid var(--border);
@@ -476,6 +494,15 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.body-row .growth-pill {
+  color: var(--good);
+  opacity: 0.85;
+}
+
+.body-row .growth-pill.starved {
+  color: var(--bad);
 }
 
 .body-row .stat-icon,

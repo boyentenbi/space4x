@@ -9,6 +9,8 @@ import {
   COLONIZE_HAMMERS,
   COLONIZE_POLITICAL,
   empireById,
+  growthEstimate,
+  HAMMERS_PER_POP,
   perTurnIncome,
   totalPops,
 } from "../sim/reducer";
@@ -61,6 +63,7 @@ function BodyRow({
   colonizable,
   activeOrder,
   colonizeTurns,
+  growth,
   onColonize,
   onCancelOrder,
 }: {
@@ -71,6 +74,7 @@ function BodyRow({
   colonizable: boolean;
   activeOrder: { id: string; hammersPaid: number; hammersRequired: number } | null;
   colonizeTurns: number;
+  growth: ReturnType<typeof growthEstimate> | null;
   onColonize: () => void;
   onCancelOrder: (orderId: string) => void;
 }) {
@@ -101,9 +105,27 @@ function BodyRow({
           {body.pops}/{body.space}
         </span>
         {owned && body.hammers > 0 && (
-          <span className="stat-pill">
+          <span className="stat-pill" title={`${HAMMERS_PER_POP} hammer per pop`}>
             <img className="stat-icon" src={HAMMERS_ICON} alt="" />
             +{body.hammers}
+          </span>
+        )}
+        {owned && growth && growth.kind === "growing" && (
+          <span className="stat-pill growth-pill" title="Turns until +1 pop (costs 5 food)">
+            <img className="stat-icon" src={POPS_ICON} alt="" />
+            +1 ~{growth.turns}T
+          </span>
+        )}
+        {owned && growth && growth.kind === "starved" && (
+          <span className="stat-pill growth-pill starved" title="Empire food is below the growth threshold">
+            <img className="stat-icon" src={POPS_ICON} alt="" />
+            starved
+          </span>
+        )}
+        {owned && growth && growth.kind === "full" && (
+          <span className="stat-pill growth-pill" title="No space for more pops on this body">
+            <img className="stat-icon" src={POPS_ICON} alt="" />
+            full
           </span>
         )}
       </div>
@@ -224,6 +246,9 @@ export function MainScreen() {
     ? empireById(state, focusSystem.ownerId)
     : null;
   const focusIsOurs = focusOwnerEmpire?.id === state.empire.id;
+  const focusOwnerSpecies = focusOwnerEmpire
+    ? speciesById(focusOwnerEmpire.speciesId)
+    : null;
 
   return (
     <>
@@ -276,16 +301,27 @@ export function MainScreen() {
         <div className="system-panel">
           <div className="scene-wrap">
             <div className="panel-label">
-              <span>
-                {focusSystem
-                  ? `${focusSystem.name}${
-                      focusIsOurs && focusSystem.id === capitalSystem?.id
-                        ? " · home"
-                        : focusOwnerEmpire
-                          ? ` · ${focusOwnerEmpire.name}`
-                          : " · unclaimed"
-                    }`
-                  : "System"}
+              <span className="panel-title-left">
+                {focusOwnerEmpire && focusOwnerSpecies?.art && (
+                  <img
+                    className="owner-portrait"
+                    src={focusOwnerSpecies.art}
+                    alt=""
+                    style={{ borderColor: focusOwnerEmpire.color }}
+                    title={focusOwnerEmpire.name}
+                  />
+                )}
+                <span>
+                  {focusSystem
+                    ? `${focusSystem.name}${
+                        focusIsOurs && focusSystem.id === capitalSystem?.id
+                          ? " · home"
+                          : focusOwnerEmpire
+                            ? ` · ${focusOwnerEmpire.name}`
+                            : " · unclaimed"
+                      }`
+                    : "System"}
+                </span>
               </span>
               {selectedSystemId && (
                 <button className="deselect-btn" onClick={() => setSelectedSystemId(null)}>
@@ -319,6 +355,7 @@ export function MainScreen() {
                     colonizable={canColonize(state, body.id)}
                     activeOrder={order}
                     colonizeTurns={colonizeTurnEstimate}
+                    growth={focusIsOurs ? growthEstimate(state, state.empire, body) : null}
                     onColonize={() =>
                       dispatch({ type: "queueColonize", targetBodyId: body.id })
                     }
