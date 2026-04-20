@@ -1,8 +1,14 @@
 import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { ORIGINS, SPECIES } from "../sim/content";
-import type { Modifier } from "../sim/types";
+import type { Modifier, ResourceKey } from "../sim/types";
 import { useGame } from "../store";
 import { Thumb } from "./Thumb";
+import { HAMMERS_ICON, POPS_ICON, RESOURCE_ICON } from "./icons";
+
+function ResIcon({ k }: { k: ResourceKey }) {
+  return <img className="bonus-icon" src={RESOURCE_ICON[k]} alt={k} />;
+}
 
 function originsFor(speciesId: string) {
   return ORIGINS.filter(
@@ -10,32 +16,64 @@ function originsFor(speciesId: string) {
   );
 }
 
-// Human-readable one-liner for each modifier kind. Used for summary rows on
-// species cards. Trait descriptions override this — traits carry their own prose.
-function describeModifier(mod: Modifier): string {
+// Render a modifier as a bonus chip: sign + number + icon + context.
+function renderModifier(mod: Modifier): ReactNode {
+  const signed = (v: number) => (v > 0 ? `+${v}` : `${v}`);
   switch (mod.kind) {
     case "perPop":
-      return `${mod.value > 0 ? "+" : ""}${mod.value} ${mod.resource}/pop`;
+      return (
+        <>
+          {signed(mod.value)} <ResIcon k={mod.resource} /> /pop
+        </>
+      );
     case "flat":
-      return `${mod.value > 0 ? "+" : ""}${mod.value} ${mod.resource}/turn`;
+      return (
+        <>
+          {signed(mod.value)} <ResIcon k={mod.resource} /> /turn
+        </>
+      );
     case "popGrowthMult": {
       const pct = Math.round((mod.value - 1) * 100);
-      return `${pct > 0 ? "+" : ""}${pct}% pop growth`;
+      return (
+        <>
+          {pct > 0 ? "+" : ""}{pct}% <img className="bonus-icon" src={POPS_ICON} alt="" /> growth
+        </>
+      );
     }
     case "spaceMult": {
       const pct = Math.round((mod.value - 1) * 100);
-      return `${pct > 0 ? "+" : ""}${pct}% body space`;
+      return (
+        <>
+          {pct > 0 ? "+" : ""}{pct}% max <img className="bonus-icon" src={POPS_ICON} alt="" />
+        </>
+      );
     }
     case "colonizeHammerMult": {
       const pct = Math.round((mod.value - 1) * 100);
-      return `${pct > 0 ? "+" : ""}${pct}% colonize cost`;
+      return (
+        <>
+          {pct > 0 ? "+" : ""}{pct}% colonize cost
+        </>
+      );
     }
     case "foodUpkeepDelta":
-      return `${mod.value > 0 ? "+" : ""}${mod.value} food upkeep/pop`;
+      return (
+        <>
+          {signed(mod.value)} <ResIcon k="food" /> upkeep /pop
+        </>
+      );
     case "hammersPerPopDelta":
-      return `${mod.value > 0 ? "+" : ""}${mod.value} hammers/pop`;
+      return (
+        <>
+          {signed(mod.value)} <img className="bonus-icon" src={HAMMERS_ICON} alt="" /> /pop
+        </>
+      );
     case "habBonus":
-      return `${mod.value > 0 ? "+" : ""}${mod.value} ${mod.resource} on ${mod.habitability}`;
+      return (
+        <>
+          {signed(mod.value)} <ResIcon k={mod.resource} /> on {mod.habitability}
+        </>
+      );
   }
 }
 
@@ -93,7 +131,7 @@ export function NewGame() {
               {s.modifiers.length > 0 && (
                 <span className="bonuses">
                   {s.modifiers.map((m, i) => (
-                    <span key={i} className="bonus-chip">{describeModifier(m)}</span>
+                    <span key={i} className="bonus-chip">{renderModifier(m)}</span>
                   ))}
                 </span>
               )}

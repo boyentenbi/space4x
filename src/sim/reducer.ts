@@ -677,12 +677,17 @@ export function reduce(state: GameState, action: Action): GameState {
           for (const pid of origin.startingProjectIds) {
             const proj = projectById(pid);
             if (!proj) continue;
+            const targetBodyId =
+              proj.scope === "body"
+                ? draft.empire.capitalBodyId ?? undefined
+                : undefined;
             draft.empire.projects.push({
               kind: "empire_project",
               id: nextOrderId(),
               projectId: proj.id,
               hammersRequired: proj.hammersRequired,
               hammersPaid: 0,
+              targetBodyId,
             });
           }
         }
@@ -715,12 +720,17 @@ export function reduce(state: GameState, action: Action): GameState {
               for (const pid of originObj.startingProjectIds) {
                 const proj = projectById(pid);
                 if (!proj) continue;
+                const targetBodyId =
+                  proj.scope === "body"
+                    ? empire.capitalBodyId ?? undefined
+                    : undefined;
                 empire.projects.push({
                   kind: "empire_project",
                   id: nextOrderId(),
                   projectId: proj.id,
                   hammersRequired: proj.hammersRequired,
                   hammersPaid: 0,
+                  targetBodyId,
                 });
               }
             }

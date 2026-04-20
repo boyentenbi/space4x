@@ -7,7 +7,8 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     description:
       "Seize the last human-operated governments. Every contested district rewritten. The pre-complete debuff falls away and a lasting production bonus takes its place.",
     hammersRequired: 40,
-    scope: "empire",
+    scope: "body",
+    bodyRequirement: "capital",
     costs: { political: 20 },
     art: "/projects/complete_emancipation.png",
     availability: {

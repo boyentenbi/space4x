@@ -862,11 +862,23 @@ button:disabled {
 
 .chooser .bonus-chip {
   font-size: 10px;
-  padding: 1px 6px;
+  padding: 2px 6px;
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--good);
   font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.chooser .bonus-icon {
+  width: 12px;
+  height: 12px;
+  image-rendering: pixelated;
+  object-fit: contain;
+  vertical-align: middle;
 }
 
 /* ==================================================================
