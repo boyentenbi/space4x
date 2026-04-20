@@ -1,10 +1,9 @@
 import type { Resources, ResourceKey } from "../sim/types";
 
 const ORDER: { key: ResourceKey; label: string }[] = [
-  { key: "energy", label: "Energy" },
-  { key: "minerals", label: "Minerals" },
   { key: "food", label: "Food" },
-  { key: "research", label: "Research" },
+  { key: "energy", label: "Energy" },
+  { key: "alloys", label: "Alloys" },
   { key: "influence", label: "Influence" },
 ];
 

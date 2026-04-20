@@ -3,7 +3,7 @@ import { eventById, EVENTS } from "./content";
 import { mulberry32 } from "./rng";
 import type { Condition, Effect, GameEvent, GameState, ResourceKey } from "./types";
 
-const RESOURCE_KEYS: ResourceKey[] = ["energy", "minerals", "food", "influence", "research"];
+const RESOURCE_KEYS: ResourceKey[] = ["food", "energy", "alloys", "influence"];
 
 export function conditionMet(state: GameState, cond: Condition): boolean {
   switch (cond.kind) {
@@ -46,9 +46,15 @@ export function applyEffect(state: GameState, effect: Effect): GameState {
         draft.empire.resources[effect.resource] =
           (draft.empire.resources[effect.resource] ?? 0) + effect.value;
         break;
-      case "addPops":
-        draft.empire.pops += effect.value;
+      case "addPops": {
+        // Pops live on bodies — funnel event-granted pops into the capital.
+        const capitalId = draft.empire.capitalBodyId;
+        if (capitalId && draft.galaxy.bodies[capitalId]) {
+          const body = draft.galaxy.bodies[capitalId];
+          body.pops = Math.min(body.space, body.pops + effect.value);
+        }
         break;
+      }
       case "addFlag":
         if (!draft.empire.flags.includes(effect.flag)) {
           draft.empire.flags.push(effect.flag);

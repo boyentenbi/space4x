@@ -1,6 +1,63 @@
-export type ResourceKey = "energy" | "minerals" | "food" | "influence" | "research";
+// =====================================================================
+// Resources
+// =====================================================================
+// Empire-wide stocks (accumulate across turns).
+export type ResourceKey = "food" | "energy" | "alloys" | "influence";
 export type Resources = Record<ResourceKey, number>;
 
+// Empire-wide flow (resets every turn — capacity, not stockpile).
+export interface Compute {
+  cap: number;      // Max compute this turn (sum of data-center output).
+  used: number;     // Allocated this turn (research, events, etc).
+}
+
+// =====================================================================
+// Map — one hex tile is one star system containing bodies.
+// =====================================================================
+export type HabitabilityTier = "garden" | "temperate" | "harsh" | "hellscape";
+
+export type BodyKind = "planet" | "moon";
+
+export interface Body {
+  id: string;
+  systemId: string;
+  name: string;
+  kind: BodyKind;
+  habitability: HabitabilityTier;
+  space: number;           // Pop cap.
+  pops: number;            // Current population.
+  hammers: number;         // Per-turn production flow (resets each tick).
+  queue: BuildOrder[];     // Projects hammers flow into.
+  flavorFlags: string[];   // e.g. "precursor_ruins", "rare_crystals".
+}
+
+// Placeholder — real build orders land in M2+.
+export interface BuildOrder {
+  id: string;
+  label: string;
+  hammersRequired: number;
+  hammersPaid: number;
+}
+
+export interface StarSystem {
+  id: string;
+  name: string;
+  q: number;               // Axial hex coord.
+  r: number;
+  bodyIds: string[];
+  ownerId: string | null;  // Empire id, null = unclaimed.
+}
+
+export interface Galaxy {
+  systems: Record<string, StarSystem>;
+  bodies: Record<string, Body>;
+  width: number;           // Hex grid bounds (inclusive).
+  height: number;
+}
+
+// =====================================================================
+// Species / Origins / Traits
+// =====================================================================
 export interface SpeciesTrait {
   id: string;
   name: string;
@@ -27,12 +84,18 @@ export interface Origin {
   art?: string;
 }
 
+// =====================================================================
+// Empire + game state
+// =====================================================================
 export interface Empire {
+  id: string;
   name: string;
   speciesId: string;
   originId: string;
   resources: Resources;
-  pops: number;
+  compute: Compute;
+  capitalBodyId: string | null;
+  systemIds: string[];       // Owned systems.
   flags: string[];
 }
 
@@ -42,15 +105,19 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 2;
+  schemaVersion: 3;
   turn: number;
   rngSeed: number;
+  galaxy: Galaxy;
   empire: Empire;
   eventQueue: PendingEvent[];
   eventLog: Array<{ turn: number; eventId: string; choiceId: string | null; text: string }>;
   gameOver: boolean;
 }
 
+// =====================================================================
+// Events
+// =====================================================================
 export interface EventChoice {
   id: string;
   text: string;
@@ -74,7 +141,7 @@ export type Condition =
 
 export type Effect =
   | { kind: "addResource"; resource: ResourceKey; value: number }
-  | { kind: "addPops"; value: number }
+  | { kind: "addPops"; value: number }        // Added to capital body.
   | { kind: "addFlag"; flag: string }
   | { kind: "removeFlag"; flag: string }
   | { kind: "logText"; text: string };

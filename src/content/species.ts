@@ -22,7 +22,7 @@ export const SPECIES: Species[] = [
     name: "Machine Intelligence",
     description:
       "Networked synthetic minds. No food needed; no sleep either. Patient, precise, and legally complicated.",
-    traitIds: ["solar_attuned", "intelligent"],
+    traitIds: ["solar_attuned", "efficient_cores"],
     art: "/portraits/machine.png",
   },
 ];

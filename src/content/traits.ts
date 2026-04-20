@@ -4,14 +4,8 @@ export const TRAITS: SpeciesTrait[] = [
   {
     id: "industrious",
     name: "Industrious",
-    description: "Hard-working hands and deep mineral intuition.",
-    modifiers: { minerals: 2 },
-  },
-  {
-    id: "intelligent",
-    name: "Intelligent",
-    description: "Rapid insight accelerates research.",
-    modifiers: { research: 2 },
+    description: "Hard-working hands and a keen sense for metallurgy.",
+    modifiers: { alloys: 2 },
   },
   {
     id: "agrarian",
@@ -30,5 +24,11 @@ export const TRAITS: SpeciesTrait[] = [
     name: "Solar-Attuned",
     description: "Bodies that photosynthesize starlight directly.",
     modifiers: { energy: 2 },
+  },
+  {
+    id: "efficient_cores",
+    name: "Efficient Cores",
+    description: "Dense computation with minimal waste heat.",
+    modifiers: {},
   },
 ];
