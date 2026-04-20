@@ -162,10 +162,6 @@ export function SystemScene({
 
       {/* Near-side bodies draw last, on top of the sun. */}
       {frontBodies.map(renderBody)}
-
-      {ownerColor && (
-        <circle cx={width - 10} cy={10} r={3.5} fill={ownerColor} />
-      )}
     </svg>
   );
 }

@@ -82,6 +82,12 @@ button:disabled {
   overflow: hidden;
   border: 2px solid var(--accent);
   background: var(--bg-panel);
+  padding: 0;
+  cursor: pointer;
+}
+
+.portrait-card:hover {
+  filter: brightness(1.15);
 }
 
 .portrait-card img {
@@ -574,6 +580,28 @@ button:disabled {
   padding: 6px 12px;
   font-size: 12px;
   color: var(--text-dim);
+}
+
+.menu-modal .menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.menu-modal .menu-item {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.menu-modal .menu-item.danger {
+  color: var(--bad);
+  border-color: rgba(255, 138, 138, 0.4);
+}
+
+.menu-modal .menu-item.danger:hover:not(:disabled) {
+  background: rgba(255, 138, 138, 0.08);
+  border-color: var(--bad);
 }
 
 .effect-list {

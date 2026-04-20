@@ -8,6 +8,7 @@ import { EventModal } from "./EventModal";
 import { GalaxyMap } from "./GalaxyMap";
 import { SystemScene } from "./SystemScene";
 import { ChronicleModal } from "./ChronicleModal";
+import { PortraitMenu } from "./PortraitMenu";
 import { COMPUTE_ICON, HAMMERS_ICON, RESOURCE_ICON } from "./icons";
 
 const RESOURCE_ORDER: ResourceKey[] = ["food", "energy", "alloys", "political"];
@@ -82,9 +83,11 @@ function BodyRow({
 export function MainScreen() {
   const state = useGame((s) => s.state);
   const dispatch = useGame((s) => s.dispatch);
+  const reset = useGame((s) => s.reset);
 
   const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
   const [chronicleOpen, setChronicleOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const origin = originById(state.empire.originId);
   const species = speciesById(state.empire.speciesId);
@@ -119,13 +122,14 @@ export function MainScreen() {
       {/* ===== Left sidebar ===== */}
       <div className="sidebar">
         {species?.art && (
-          <div
+          <button
             className="portrait-card"
             style={{ borderColor: state.empire.color }}
-            title={`${species.name} · ${state.empire.name}`}
+            title={`${species.name} · ${state.empire.name} — menu`}
+            onClick={() => setMenuOpen(true)}
           >
             <img src={species.art} alt={species.name} />
-          </div>
+          </button>
         )}
         <button
           className="endturn-card"
@@ -232,6 +236,9 @@ export function MainScreen() {
       {pendingEvent && <EventModal eventId={pendingEvent.eventId} />}
       {chronicleOpen && (
         <ChronicleModal log={state.eventLog} onClose={() => setChronicleOpen(false)} />
+      )}
+      {menuOpen && (
+        <PortraitMenu onReset={reset} onClose={() => setMenuOpen(false)} />
       )}
     </>
   );
