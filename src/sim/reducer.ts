@@ -244,7 +244,7 @@ export function totalPopsOf(state: GameState, empire: Empire): number {
 //  - Isolationist: +50% PC cost to colonize (reluctant to expand), but
 //                  +15% max pops and +15% pop growth on the worlds
 //                  they do hold.
-function expansionismModifiers(ex: Expansionism): Modifier[] {
+export function expansionismModifiers(ex: Expansionism): Modifier[] {
   switch (ex) {
     case "conqueror":
       return [
@@ -266,7 +266,7 @@ function expansionismModifiers(ex: Expansionism): Modifier[] {
 //  - Centrist:      baseline.
 //  - Individualist: reserved — will gain a compute/research-style bonus
 //                   once we build that sink.
-function politicModifiers(p: Politic): Modifier[] {
+export function politicModifiers(p: Politic): Modifier[] {
   switch (p) {
     case "collectivist":
       return [{ kind: "flat", resource: "political", value: 0.5 }];

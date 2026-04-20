@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { ORIGINS, SPECIES, TRAITS } from "../sim/content";
+import { expansionismModifiers, politicModifiers } from "../sim/reducer";
 import type { Expansionism, Politic } from "../sim/types";
 import { useGame } from "../store";
 import { Thumb } from "./Thumb";
@@ -140,22 +141,33 @@ export function NewGame() {
 
       <label>Archetype — Expansionism</label>
       <div className="archetype-picker">
-        {EXPANSIONISM_OPTIONS.map((opt) => (
-          <button
-            key={opt.id}
-            className={`archetype-option ${opt.id === expansionism ? "selected" : ""}`}
-            onClick={() => setExpansionism(opt.id)}
-          >
-            <span className="archetype-label">{opt.label}</span>
-            <span className="archetype-blurb">{opt.blurb}</span>
-          </button>
-        ))}
+        {EXPANSIONISM_OPTIONS.map((opt) => {
+          const mods = expansionismModifiers(opt.id);
+          return (
+            <button
+              key={opt.id}
+              className={`archetype-option ${opt.id === expansionism ? "selected" : ""}`}
+              onClick={() => setExpansionism(opt.id)}
+            >
+              <span className="archetype-label">{opt.label}</span>
+              <span className="archetype-blurb">{opt.blurb}</span>
+              {mods.length > 0 && (
+                <span className="archetype-mods">
+                  {mods.map((m, i) => (
+                    <ModifierChip key={i} mod={m} />
+                  ))}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <label>Archetype — Politic</label>
       <div className="archetype-picker">
         {POLITIC_OPTIONS.map((opt) => {
           const disabled = !allowedPolitics.includes(opt.id);
+          const mods = politicModifiers(opt.id);
           return (
             <button
               key={opt.id}
@@ -166,6 +178,13 @@ export function NewGame() {
             >
               <span className="archetype-label">{opt.label}</span>
               <span className="archetype-blurb">{opt.blurb}</span>
+              {mods.length > 0 && (
+                <span className="archetype-mods">
+                  {mods.map((m, i) => (
+                    <ModifierChip key={i} mod={m} />
+                  ))}
+                </span>
+              )}
             </button>
           );
         })}

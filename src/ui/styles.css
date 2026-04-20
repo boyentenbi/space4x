@@ -924,6 +924,13 @@ button.res-cell:hover:not(:disabled) {
   letter-spacing: 0;
 }
 
+.archetype-option .archetype-mods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
 /* =======================================================
    Empire profile modal — reached from system-panel portrait
    or from the sidebar roster.
