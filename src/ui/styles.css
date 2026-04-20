@@ -397,12 +397,12 @@ button.res-cell:hover:not(:disabled) {
 }
 
 .owner-portrait {
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
+  width: 42px;
+  height: 42px;
+  border-radius: 6px;
   object-fit: cover;
   image-rendering: pixelated;
-  border: 1.5px solid var(--accent);
+  border: 2px solid var(--accent);
   background: var(--bg-panel);
   flex: 0 0 auto;
 }
