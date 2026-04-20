@@ -468,8 +468,43 @@ button:disabled {
   color: var(--text-dim);
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   font-variant-numeric: tabular-nums;
+}
+
+.body-row .stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.body-row .stat-icon,
+.colonize-btn .stat-icon {
+  width: 12px;
+  height: 12px;
+  image-rendering: pixelated;
+  object-fit: contain;
+}
+
+.colonize-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px;
+}
+
+.colonize-btn .colonize-cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.colonize-btn .colonize-turns {
+  margin-left: 6px;
+  color: var(--text-dim);
+  font-size: 10px;
 }
 
 .body-row .chips {

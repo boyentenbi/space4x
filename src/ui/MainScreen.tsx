@@ -11,21 +11,14 @@ import {
   totalPops,
 } from "../sim/reducer";
 import { RESOURCE_KEYS } from "../sim/events";
-import type { Body, HabitabilityTier, Resources, ResourceKey } from "../sim/types";
+import type { Body, Resources, ResourceKey } from "../sim/types";
 import { EventModal } from "./EventModal";
 import { GalaxyMap } from "./GalaxyMap";
 import { SystemScene } from "./SystemScene";
 import { PortraitMenu } from "./PortraitMenu";
-import { COMPUTE_ICON, HAMMERS_ICON, RESOURCE_ICON } from "./icons";
+import { COMPUTE_ICON, HAMMERS_ICON, POPS_ICON, RESOURCE_ICON, planetSpriteFor } from "./icons";
 
 const RESOURCE_ORDER: ResourceKey[] = ["food", "energy", "alloys", "political"];
-
-const PLANET_SRC: Record<HabitabilityTier, string> = {
-  garden: "/planets/garden.png",
-  temperate: "/planets/temperate.png",
-  harsh: "/planets/harsh.png",
-  hellscape: "/planets/hellscape.png",
-};
 
 // Matches SystemScene: planet sprite radius 13, moon radius 8.
 // Scale both proportionally for the body-list thumbnails.
@@ -65,6 +58,7 @@ function BodyRow({
   owned,
   colonizable,
   activeOrder,
+  colonizeTurns,
   onColonize,
   onCancelOrder,
 }: {
@@ -74,9 +68,12 @@ function BodyRow({
   owned: boolean;
   colonizable: boolean;
   activeOrder: { id: string; hammersPaid: number; hammersRequired: number } | null;
+  colonizeTurns: number;
   onColonize: () => void;
   onCancelOrder: (orderId: string) => void;
 }) {
+  const thumbSize =
+    body.kind === "moon" ? BODY_THUMB_BASE * BODY_THUMB_MOON_RATIO : BODY_THUMB_BASE;
   return (
     <div className={`body-row ${isCapital ? "capital" : ""}`}>
       <div className="body-head">
@@ -87,16 +84,9 @@ function BodyRow({
           >
             <img
               className="body-thumb"
-              src={PLANET_SRC[body.habitability]}
+              src={planetSpriteFor(body.id, body.habitability)}
               alt=""
-              style={{
-                width: body.kind === "moon"
-                  ? BODY_THUMB_BASE * BODY_THUMB_MOON_RATIO
-                  : BODY_THUMB_BASE,
-                height: body.kind === "moon"
-                  ? BODY_THUMB_BASE * BODY_THUMB_MOON_RATIO
-                  : BODY_THUMB_BASE,
-              }}
+              style={{ width: thumbSize, height: thumbSize }}
             />
           </span>
           {body.name}
@@ -104,8 +94,16 @@ function BodyRow({
         <span className={`hab ${body.habitability}`}>{body.habitability}</span>
       </div>
       <div className="body-stats">
-        <span>pops {body.pops}/{body.space}</span>
-        {owned && <span>hammers +{body.hammers}</span>}
+        <span className="stat-pill">
+          <img className="stat-icon" src={POPS_ICON} alt="" />
+          {body.pops}/{body.space}
+        </span>
+        {owned && body.hammers > 0 && (
+          <span className="stat-pill">
+            <img className="stat-icon" src={HAMMERS_ICON} alt="" />
+            +{body.hammers}
+          </span>
+        )}
       </div>
       {owned && (
         <div className="chips">
@@ -157,8 +155,15 @@ function BodyRow({
           </div>
         </div>
       ) : colonizable ? (
-        <button className="project-btn" onClick={onColonize}>
-          + Colonize · {COLONIZE_HAMMERS}⚒ {COLONIZE_POLITICAL}P
+        <button className="project-btn colonize-btn" onClick={onColonize}>
+          <span>+ Colonize</span>
+          <span className="colonize-cost">
+            <img className="stat-icon" src={HAMMERS_ICON} alt="" />
+            {COLONIZE_HAMMERS}
+            <img className="stat-icon" src={RESOURCE_ICON.political} alt="" />
+            {COLONIZE_POLITICAL}
+            <span className="colonize-turns">· {colonizeTurns}T</span>
+          </span>
         </button>
       ) : null}
     </div>
@@ -188,6 +193,24 @@ export function MainScreen() {
     if (!sys) return sum;
     return sum + sys.bodyIds.reduce((s, bid) => s + (state.galaxy.bodies[bid]?.hammers ?? 0), 0);
   }, 0);
+  const popsNow = totalPops(state);
+  const popsCap = state.empire.systemIds.reduce((sum, sid) => {
+    const sys = state.galaxy.systems[sid];
+    if (!sys) return sum;
+    return sum + sys.bodyIds.reduce((s, bid) => s + (state.galaxy.bodies[bid]?.space ?? 0), 0);
+  }, 0);
+  // Turns to finish a new colonize project, given current hammer rate and
+  // any existing FIFO queue already consuming from the pool.
+  function turnsToColonize(): number {
+    if (totalHammers <= 0) return Infinity;
+    const backlogHammers = state.empire.projects.reduce(
+      (s, o) => s + (o.hammersRequired - o.hammersPaid),
+      0,
+    );
+    const totalNeed = backlogHammers + COLONIZE_HAMMERS;
+    return Math.ceil(totalNeed / totalHammers);
+  }
+  const colonizeTurnEstimate = turnsToColonize();
 
   const focusSystem = selectedSystemId
     ? state.galaxy.systems[selectedSystemId] ?? null
@@ -233,6 +256,7 @@ export function MainScreen() {
           ))}
           <ResCell icon={COMPUTE_ICON} value={state.empire.compute.cap} />
           <ResCell icon={HAMMERS_ICON} value={totalHammers} />
+          <ResCell icon={POPS_ICON} value={`${popsNow}/${popsCap}`} />
         </div>
 
         <button className="menu-btn" onClick={() => setMenuOpen(true)}>
@@ -285,6 +309,7 @@ export function MainScreen() {
                     owned={focusOwned}
                     colonizable={canColonize(state, body.id)}
                     activeOrder={order}
+                    colonizeTurns={colonizeTurnEstimate}
                     onColonize={() =>
                       dispatch({ type: "queueColonize", targetBodyId: body.id })
                     }

@@ -112,6 +112,12 @@ export const ICONS = [
     subject: "crossed industrial hammers, burnt orange metal with worn wooden handles, bold silhouette",
     transparent: true,
   },
+  {
+    id: "pops",
+    path: "public/icons/pops.png",
+    subject: "three stylized humanoid bust silhouettes clustered together, pale cream tones, representing a civic population group, bold silhouette, no facial detail",
+    transparent: true,
+  },
 ];
 
 export const STARS = [
@@ -136,6 +142,7 @@ export const STARS = [
 ];
 
 export const PLANETS = [
+  // Garden variants
   {
     id: "garden",
     path: "public/planets/garden.png",
@@ -143,11 +150,37 @@ export const PLANETS = [
     transparent: true,
   },
   {
+    id: "garden_2",
+    path: "public/planets/garden_2.png",
+    subject: "tropical garden world, cyan seas dotted with archipelagos, dense emerald jungle, wispy equatorial clouds",
+    transparent: true,
+  },
+  {
+    id: "garden_3",
+    path: "public/planets/garden_3.png",
+    subject: "island world, small scattered archipelagos across a deep blue ocean, turquoise coastlines, broken cloud layer",
+    transparent: true,
+  },
+  // Temperate variants
+  {
     id: "temperate",
     path: "public/planets/temperate.png",
     subject: "temperate planet, tan and dusty-green continents, scattered clouds, some small seas",
     transparent: true,
   },
+  {
+    id: "temperate_2",
+    path: "public/planets/temperate_2.png",
+    subject: "savannah planet, russet plains and dry yellow grasslands, thin cirrus cloud bands, narrow rivers",
+    transparent: true,
+  },
+  {
+    id: "temperate_3",
+    path: "public/planets/temperate_3.png",
+    subject: "dusty earthlike planet, golden ochre continents across a steel-blue ocean, patchy clouds",
+    transparent: true,
+  },
+  // Harsh variants
   {
     id: "harsh",
     path: "public/planets/harsh.png",
@@ -155,9 +188,34 @@ export const PLANETS = [
     transparent: true,
   },
   {
+    id: "harsh_2",
+    path: "public/planets/harsh_2.png",
+    subject: "frozen ice world, blue-white cracked surface, pale atmospheric haze, glacial plains",
+    transparent: true,
+  },
+  {
+    id: "harsh_3",
+    path: "public/planets/harsh_3.png",
+    subject: "dust-storm planet, ochre swirling winds across a cratered brown surface, thin golden atmosphere",
+    transparent: true,
+  },
+  // Hellscape variants
+  {
     id: "hellscape",
     path: "public/planets/hellscape.png",
     subject: "volcanic hellscape planet, dark crust cracked with glowing lava flows, angry red atmosphere",
+    transparent: true,
+  },
+  {
+    id: "hellscape_2",
+    path: "public/planets/hellscape_2.png",
+    subject: "acid-rain world, sulfurous yellow-green atmosphere, churning thick cloud layer, no visible surface",
+    transparent: true,
+  },
+  {
+    id: "hellscape_3",
+    path: "public/planets/hellscape_3.png",
+    subject: "shattered moon world, dark cratered crust laced with glowing magma fissures, broken crescent ring of debris",
     transparent: true,
   },
 ];

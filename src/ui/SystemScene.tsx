@@ -1,4 +1,4 @@
-import type { Body, HabitabilityTier, StarKind, StarSystem } from "../sim/types";
+import type { Body, StarKind, StarSystem } from "../sim/types";
 
 // Deterministic positions for bodies — each body gets a stable orbit index
 // + phase derived from its id. Phase advances each turn so orbits actually
@@ -22,12 +22,7 @@ const STAR_SRC: Record<StarKind, string> = {
   blue_giant: "/stars/blue_giant.png",
 };
 
-const PLANET_SRC: Record<HabitabilityTier, string> = {
-  garden: "/planets/garden.png",
-  temperate: "/planets/temperate.png",
-  harsh: "/planets/harsh.png",
-  hellscape: "/planets/hellscape.png",
-};
+import { planetSpriteFor } from "./icons";
 
 interface Placed {
   body: Body;
@@ -86,7 +81,7 @@ export function SystemScene({
     return (
       <g key={p.body.id}>
         <image
-          href={PLANET_SRC[p.body.habitability]}
+          href={planetSpriteFor(p.body.id, p.body.habitability)}
           x={p.cx - pr}
           y={p.cy - pr}
           width={pr * 2}
