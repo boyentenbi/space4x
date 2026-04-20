@@ -102,18 +102,22 @@ export function colonizeOrderForTarget(state: GameState, targetBodyId: string) {
 }
 
 // Can `target` body be colonized by the player right now?
-// - Target's system must not already be owned.
-// - Target's system must be hyperlane-adjacent to an owned system.
-// - No existing empire project already targets this body.
+// Two cases:
+//  - Intra-system expansion: the body's system is already ours but this
+//    particular body has no pops yet.
+//  - Frontier expansion: the body's system is unclaimed and hyperlane-
+//    adjacent to one of our systems.
+// In both cases the body must be unpopulated and not already targeted.
 export function canColonize(state: GameState, targetBodyId: string): boolean {
   const target = state.galaxy.bodies[targetBodyId];
   if (!target) return false;
   const targetSys = state.galaxy.systems[target.systemId];
   if (!targetSys) return false;
-  if (targetSys.ownerId) return false;
-  if (!isSystemAdjacentToEmpire(state, targetSys.id)) return false;
+  if (target.pops > 0) return false;
   if (colonizeOrderForTarget(state, targetBodyId)) return false;
-  return true;
+  if (targetSys.ownerId === state.empire.id) return true;   // intra-system
+  if (targetSys.ownerId) return false;                       // someone else owns it
+  return isSystemAdjacentToEmpire(state, targetSys.id);      // frontier
 }
 
 export function ownedBodies(state: GameState): Body[] {
@@ -306,8 +310,10 @@ export function reduce(state: GameState, action: Action): GameState {
           const live = draft.galaxy.bodies[body.id];
           if (live) live.hammers = live.pops * HAMMERS_PER_POP;
         }
-        // 3. Sum all empire hammers, drain them FIFO into empire-level
-        //    projects. Unused hammers this turn are lost (flow-not-stock).
+        // 3. Sum this turn's hammer capacity into a pool and drain it
+        //    FIFO into empire-level projects. body.hammers represents the
+        //    per-turn RATE so the UI can read it — we don't mutate it
+        //    during the drain. Unused hammers are lost (flow-not-stock).
         let pool = 0;
         for (const sid of draft.empire.systemIds) {
           const sys = draft.galaxy.systems[sid];
@@ -316,7 +322,6 @@ export function reduce(state: GameState, action: Action): GameState {
             const body = draft.galaxy.bodies[bid];
             if (!body) continue;
             pool += body.hammers;
-            body.hammers = 0;
           }
         }
         while (pool > 0 && draft.empire.projects.length > 0) {

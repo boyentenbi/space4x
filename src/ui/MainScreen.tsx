@@ -27,6 +27,11 @@ const PLANET_SRC: Record<HabitabilityTier, string> = {
   hellscape: "/planets/hellscape.png",
 };
 
+// Matches SystemScene: planet sprite radius 13, moon radius 8.
+// Scale both proportionally for the body-list thumbnails.
+const BODY_THUMB_BASE = 26; // diameter of a planet in the list
+const BODY_THUMB_MOON_RATIO = 8 / 13;
+
 function fmtDelta(n: number): string {
   const r = Math.round(n * 10) / 10;
   if (r > 0) return `+${r}`;
@@ -76,8 +81,25 @@ function BodyRow({
     <div className={`body-row ${isCapital ? "capital" : ""}`}>
       <div className="body-head">
         <span className="body-name">
-          <img className="body-thumb" src={PLANET_SRC[body.habitability]} alt="" />
-          {body.name} {body.kind === "moon" ? "◐" : ""}
+          <span
+            className="body-thumb-wrap"
+            style={{ width: BODY_THUMB_BASE, height: BODY_THUMB_BASE }}
+          >
+            <img
+              className="body-thumb"
+              src={PLANET_SRC[body.habitability]}
+              alt=""
+              style={{
+                width: body.kind === "moon"
+                  ? BODY_THUMB_BASE * BODY_THUMB_MOON_RATIO
+                  : BODY_THUMB_BASE,
+                height: body.kind === "moon"
+                  ? BODY_THUMB_BASE * BODY_THUMB_MOON_RATIO
+                  : BODY_THUMB_BASE,
+              }}
+            />
+          </span>
+          {body.name}
         </span>
         <span className={`hab ${body.habitability}`}>{body.habitability}</span>
       </div>
@@ -209,11 +231,8 @@ export function MainScreen() {
               delta={deltas[k]}
             />
           ))}
-          <ResCell
-            icon={COMPUTE_ICON}
-            value={`${state.empire.compute.used}/${state.empire.compute.cap}`}
-          />
-          <ResCell icon={HAMMERS_ICON} value={`${totalHammers}/t`} />
+          <ResCell icon={COMPUTE_ICON} value={state.empire.compute.cap} />
+          <ResCell icon={HAMMERS_ICON} value={totalHammers} />
         </div>
 
         <button className="menu-btn" onClick={() => setMenuOpen(true)}>
@@ -260,7 +279,7 @@ export function MainScreen() {
                     income={focusOwned ? bodyIncome(state, body) : {}}
                     isCapital={body.id === state.empire.capitalBodyId}
                     owned={focusOwned}
-                    colonizable={!focusOwned && canColonize(state, body.id)}
+                    colonizable={canColonize(state, body.id)}
                     activeOrder={order}
                     onColonize={() =>
                       dispatch({ type: "queueColonize", targetBodyId: body.id })

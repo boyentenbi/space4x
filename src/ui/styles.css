@@ -426,9 +426,14 @@ button:disabled {
   gap: 6px;
 }
 
+.body-row .body-thumb-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
 .body-row .body-thumb {
-  width: 18px;
-  height: 18px;
   image-rendering: pixelated;
   object-fit: contain;
   flex: 0 0 auto;
