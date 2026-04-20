@@ -10,7 +10,9 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     scope: "body",
     bodyRequirement: "capital",
     costs: { political: 20 },
-    art: "/projects/complete_emancipation.png",
+    // Reuse the origin scene so the completion moment visually lands on
+    // the same illustration the player started with.
+    art: "/origins/emancipation.png",
     availability: {
       originIds: ["emancipation"],
       excludesFlag: "emancipation_completed",

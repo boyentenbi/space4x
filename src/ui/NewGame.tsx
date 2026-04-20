@@ -1,99 +1,13 @@
 import { useMemo, useState } from "react";
-import type { ReactNode } from "react";
 import { ORIGINS, SPECIES, TRAITS } from "../sim/content";
-import type { Modifier, ResourceKey } from "../sim/types";
 import { useGame } from "../store";
 import { Thumb } from "./Thumb";
-import { HAMMERS_ICON, POPS_ICON, RESOURCE_ICON } from "./icons";
-
-// A modifier is "bad" when it pushes a useful quantity in the wrong
-// direction. Used to colour bonus chips red rather than green.
-function isNegativeModifier(mod: Modifier): boolean {
-  switch (mod.kind) {
-    case "perPop":
-    case "flat":
-    case "hammersPerPopDelta":
-    case "habBonus":
-      return mod.value < 0;
-    case "popGrowthMult":
-    case "spaceMult":
-      return mod.value < 1;
-    case "colonizeHammerMult":
-      return mod.value > 1;
-    case "foodUpkeepDelta":
-      return mod.value > 0;
-  }
-}
-
-function ResIcon({ k }: { k: ResourceKey }) {
-  return <img className="bonus-icon" src={RESOURCE_ICON[k]} alt={k} />;
-}
+import { ModifierChip } from "./modifierUi";
 
 function originsFor(speciesId: string) {
   return ORIGINS.filter(
     (o) => !o.allowedSpeciesIds || o.allowedSpeciesIds.includes(speciesId),
   );
-}
-
-// Render a modifier as a bonus chip: sign + number + icon + context.
-function renderModifier(mod: Modifier): ReactNode {
-  const signed = (v: number) => (v > 0 ? `+${v}` : `${v}`);
-  switch (mod.kind) {
-    case "perPop":
-      return (
-        <>
-          {signed(mod.value)} <ResIcon k={mod.resource} /> /pop
-        </>
-      );
-    case "flat":
-      return (
-        <>
-          {signed(mod.value)} <ResIcon k={mod.resource} /> /turn
-        </>
-      );
-    case "popGrowthMult": {
-      const pct = Math.round((mod.value - 1) * 100);
-      return (
-        <>
-          {pct > 0 ? "+" : ""}{pct}% <img className="bonus-icon" src={POPS_ICON} alt="" /> growth
-        </>
-      );
-    }
-    case "spaceMult": {
-      const pct = Math.round((mod.value - 1) * 100);
-      return (
-        <>
-          {pct > 0 ? "+" : ""}{pct}% max <img className="bonus-icon" src={POPS_ICON} alt="" />
-        </>
-      );
-    }
-    case "colonizeHammerMult": {
-      const pct = Math.round((mod.value - 1) * 100);
-      return (
-        <>
-          {pct > 0 ? "+" : ""}{pct}% colonize cost
-        </>
-      );
-    }
-    case "foodUpkeepDelta":
-      return (
-        <>
-          {signed(mod.value)} <ResIcon k="food" /> upkeep /pop
-        </>
-      );
-    case "hammersPerPopDelta":
-      return (
-        <>
-          {signed(mod.value)} <img className="bonus-icon" src={HAMMERS_ICON} alt="" /> /pop
-        </>
-      );
-    case "habBonus":
-      return (
-        <>
-          {signed(mod.value)} <ResIcon k={mod.resource} /> on {mod.habitability}
-        </>
-      );
-  }
 }
 
 export function NewGame() {
@@ -158,9 +72,7 @@ export function NewGame() {
               {s.modifiers.length > 0 && (
                 <span className="bonuses">
                   {s.modifiers.map((m, i) => (
-                    <span key={i} className={`bonus-chip ${isNegativeModifier(m) ? "neg" : "pos"}`}>
-                      {renderModifier(m)}
-                    </span>
+                    <ModifierChip key={i} mod={m} />
                   ))}
                 </span>
               )}
@@ -173,12 +85,7 @@ export function NewGame() {
                       <span key={tid} className="trait-group" title={t.description}>
                         <span className="trait-name">{t.name}</span>
                         {t.modifiers.map((m, i) => (
-                          <span
-                            key={i}
-                            className={`bonus-chip ${isNegativeModifier(m) ? "neg" : "pos"}`}
-                          >
-                            {renderModifier(m)}
-                          </span>
+                          <ModifierChip key={i} mod={m} />
                         ))}
                       </span>
                     );

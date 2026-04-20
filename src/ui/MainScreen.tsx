@@ -25,6 +25,7 @@ import { EventModal } from "./EventModal";
 import { GalaxyMap } from "./GalaxyMap";
 import { SystemScene } from "./SystemScene";
 import { PortraitMenu } from "./PortraitMenu";
+import { ProjectCompletionModal } from "./ProjectCompletionModal";
 import { COMPUTE_ICON, HAMMERS_ICON, POPS_ICON, RESOURCE_ICON, planetSpriteFor } from "./icons";
 
 const RESOURCE_ORDER: ResourceKey[] = ["food", "energy", "alloys", "political"];
@@ -585,7 +586,14 @@ export function MainScreen() {
         </div>
       </div>
 
-      {pendingEvent && <EventModal eventId={pendingEvent.eventId} />}
+      {state.projectCompletions.length > 0 && (
+        <ProjectCompletionModal
+          projectId={state.projectCompletions[0].projectId}
+          turn={state.projectCompletions[0].turn}
+          onDismiss={() => dispatch({ type: "dismissProjectCompletion" })}
+        />
+      )}
+      {state.projectCompletions.length === 0 && pendingEvent && <EventModal eventId={pendingEvent.eventId} />}
       {menuOpen && (
         <PortraitMenu onReset={reset} onClose={() => setMenuOpen(false)} />
       )}

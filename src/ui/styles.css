@@ -1002,6 +1002,49 @@ button:disabled {
   color: var(--text-dim);
 }
 
+.project-completion .completion-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.project-completion .completion-art {
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  image-rendering: pixelated;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.project-completion .completion-label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--good);
+  margin-bottom: 4px;
+}
+
+.project-completion .completion-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.project-completion .completion-section-label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.project-completion .bonuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .menu-modal .menu-list {
   display: flex;
   flex-direction: column;

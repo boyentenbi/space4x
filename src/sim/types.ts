@@ -196,7 +196,7 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 8;
+  schemaVersion: 9;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;
@@ -204,6 +204,9 @@ export interface GameState {
   aiEmpires: Empire[];      // AI-controlled rivals.
   eventQueue: PendingEvent[];
   eventLog: Array<{ turn: number; eventId: string; choiceId: string | null; text: string }>;
+  // Modal queue: a project just finished for the player and we want to
+  // show its completion panel before returning to the normal flow.
+  projectCompletions: Array<{ projectId: string; turn: number }>;
   gameOver: boolean;
 }
 

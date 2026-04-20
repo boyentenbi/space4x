@@ -20,7 +20,8 @@ export type Action =
   | { type: "resolveEvent"; eventId: string; choiceId: string }
   | { type: "queueColonize"; targetBodyId: string }
   | { type: "queueEmpireProject"; projectId: string; targetBodyId?: string }
-  | { type: "cancelOrder"; orderId: string };
+  | { type: "cancelOrder"; orderId: string }
+  | { type: "dismissProjectCompletion" };
 
 // Colonization tunables.
 export const COLONIZE_HAMMERS = 20;
@@ -125,7 +126,7 @@ function makeEmpire(spec: { id: string; name: string; color: string; speciesId: 
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -147,6 +148,7 @@ export function initialState(): GameState {
     aiEmpires: [],
     eventQueue: [],
     eventLog: [],
+    projectCompletions: [],
     gameOver: false,
   };
 }
@@ -473,6 +475,8 @@ function completeOrder(draft: GameState, empire: Empire, order: BuildOrder): voi
         choiceId: null,
         text: proj.onComplete.chronicle,
       });
+      // Queue a modal so the player gets a dedicated flavour beat.
+      draft.projectCompletions.push({ projectId: proj.id, turn: draft.turn });
     }
   }
 }
@@ -795,6 +799,12 @@ export function reduce(state: GameState, action: Action): GameState {
     case "cancelOrder": {
       return produce(state, (draft) => {
         draft.empire.projects = draft.empire.projects.filter((o) => o.id !== action.orderId);
+      });
+    }
+
+    case "dismissProjectCompletion": {
+      return produce(state, (draft) => {
+        draft.projectCompletions.shift();
       });
     }
 
