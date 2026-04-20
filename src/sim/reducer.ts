@@ -1,5 +1,5 @@
 import { produce } from "immer";
-import { LEADERS, originById, projectById, speciesById, traitById, EMPIRE_PROJECTS } from "./content";
+import { LEADERS, POLICIES, originById, policyById, projectById, speciesById, traitById, EMPIRE_PROJECTS } from "./content";
 import { pickRandomEvent, resolveEventChoice, RESOURCE_KEYS } from "./events";
 import { generateGalaxy } from "./galaxy";
 import { mulberry32, nextSeed } from "./rng";
@@ -34,6 +34,8 @@ export type Action =
   | { type: "queueColonize"; targetBodyId: string }
   | { type: "queueEmpireProject"; projectId: string; targetBodyId?: string }
   | { type: "cancelOrder"; orderId: string }
+  | { type: "adoptPolicy"; policyId: string }
+  | { type: "moveFleet"; fleetId: string; toSystemId: string; count?: number }
   | { type: "dismissProjectCompletion" };
 
 // Colonization tunables. Pop counts + space caps are now on a 10x
@@ -177,13 +179,14 @@ function makeEmpire(spec: {
     projects: [],
     storyModifiers: {},
     completedProjects: [],
+    adoptedPolicies: [],
     flags: [],
   };
 }
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 12,
+    schemaVersion: 13,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -202,6 +205,7 @@ export function initialState(): GameState {
       projects: [],
       storyModifiers: {},
       completedProjects: [],
+      adoptedPolicies: [],
       flags: [],
     },
     aiEmpires: [],
@@ -792,6 +796,83 @@ export function bodyProjectOrderFor(empire: Empire, bodyId: string) {
   return null;
 }
 
+// Hyperlane diameter of an empire's owned-systems subgraph. 0 for
+// single-system empires, Infinity for empires whose systems aren't
+// connected through their own hyperlane graph (rare — disconnected
+// clusters from conquered islands). Implemented as BFS from each
+// owned system, returning the max shortest-path distance.
+export function empireDiameter(state: GameState, empire: Empire): number {
+  const owned = new Set(empire.systemIds);
+  if (owned.size <= 1) return 0;
+  const adj: Record<string, string[]> = {};
+  for (const [a, b] of state.galaxy.hyperlanes) {
+    if (owned.has(a) && owned.has(b)) {
+      (adj[a] ??= []).push(b);
+      (adj[b] ??= []).push(a);
+    }
+  }
+  let best = 0;
+  for (const start of empire.systemIds) {
+    const dist: Record<string, number> = { [start]: 0 };
+    const queue: string[] = [start];
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      const cd = dist[cur];
+      for (const nxt of adj[cur] ?? []) {
+        if (nxt in dist) continue;
+        dist[nxt] = cd + 1;
+        queue.push(nxt);
+      }
+    }
+    for (const d of Object.values(dist)) {
+      if (d > best) best = d;
+    }
+  }
+  return best;
+}
+
+// Political capital cost for a policy at the given empire's current
+// spread. Base cost × (1 + diameter × 0.15), rounded.
+export function policyCost(state: GameState, empire: Empire, policyId: string): number {
+  const p = policyById(policyId);
+  if (!p) return Infinity;
+  const diameter = empireDiameter(state, empire);
+  return Math.max(1, Math.round(p.basePoliticalCost * (1 + diameter * 0.15)));
+}
+
+export function canAdoptPolicy(state: GameState, empire: Empire, policyId: string): boolean {
+  const p = policyById(policyId);
+  if (!p) return false;
+  if (empire.adoptedPolicies.includes(policyId)) return false;
+  const a = p.availability;
+  if (a?.speciesIds && !a.speciesIds.includes(empire.speciesId)) return false;
+  if (a?.expansionism && !a.expansionism.includes(empire.expansionism)) return false;
+  if (a?.politic && !a.politic.includes(empire.politic)) return false;
+  if (a?.requiresFlag && !empire.flags.includes(a.requiresFlag)) return false;
+  if (a?.excludesFlag && empire.flags.includes(a.excludesFlag)) return false;
+  if (empire.resources.political < policyCost(state, empire, policyId)) return false;
+  return true;
+}
+
+export function availablePoliciesFor(state: GameState, empire: Empire): Array<{ policyId: string; cost: number; affordable: boolean }> {
+  const diameter = empireDiameter(state, empire);
+  return POLICIES
+    .filter((p) => !empire.adoptedPolicies.includes(p.id))
+    .filter((p) => {
+      const a = p.availability;
+      if (a?.speciesIds && !a.speciesIds.includes(empire.speciesId)) return false;
+      if (a?.expansionism && !a.expansionism.includes(empire.expansionism)) return false;
+      if (a?.politic && !a.politic.includes(empire.politic)) return false;
+      if (a?.requiresFlag && !empire.flags.includes(a.requiresFlag)) return false;
+      if (a?.excludesFlag && empire.flags.includes(a.excludesFlag)) return false;
+      return true;
+    })
+    .map((p) => {
+      const cost = Math.max(1, Math.round(p.basePoliticalCost * (1 + diameter * 0.15)));
+      return { policyId: p.id, cost, affordable: empire.resources.political >= cost };
+    });
+}
+
 export function fleetsInSystem(state: GameState, systemId: string): Fleet[] {
   return Object.values(state.fleets).filter((f) => f.systemId === systemId);
 }
@@ -1317,10 +1398,33 @@ export function reduce(state: GameState, action: Action): GameState {
       });
     }
 
+    case "adoptPolicy": {
+      if (!canAdoptPolicy(state, state.empire, action.policyId)) return state;
+      const p = policyById(action.policyId);
+      if (!p) return state;
+      const cost = policyCost(state, state.empire, action.policyId);
+      return produce(state, (draft) => {
+        draft.empire.resources.political -= cost;
+        draft.empire.adoptedPolicies.push(p.id);
+        draft.empire.storyModifiers[`policy:${p.id}`] = [...p.modifiers];
+        draft.eventLog.push({
+          turn: draft.turn,
+          eventId: `policy:${p.id}`,
+          choiceId: null,
+          text: `Policy adopted: ${p.name}.`,
+        });
+      });
+    }
+
     case "dismissProjectCompletion": {
       return produce(state, (draft) => {
         draft.projectCompletions.shift();
       });
+    }
+
+    case "moveFleet": {
+      // Implemented in the follow-up fleet-movement pass.
+      return state;
     }
 
     case "endTurn": {

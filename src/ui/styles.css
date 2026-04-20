@@ -1125,6 +1125,90 @@ button.res-cell:hover:not(:disabled) {
   color: var(--text);
 }
 
+/* =======================================================
+   Policies modal.
+   ======================================================= */
+.policies-modal .policies-subtitle {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.policies-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.policies-section-label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.policies-empty {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.policy-card {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.policy-card.adopted {
+  border-color: var(--accent-dim);
+  background: rgba(126, 200, 255, 0.05);
+}
+
+.policy-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.policy-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.policy-card-desc {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+.policy-mods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.policy-adopt {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: transparent;
+}
+
+.policy-adopt:hover:not(:disabled) {
+  background: rgba(126, 200, 255, 0.08);
+}
+
 .chooser .desc {
   font-size: 12px;
   color: var(--text-dim);

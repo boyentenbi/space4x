@@ -175,6 +175,26 @@ export interface Origin {
   startingProjectIds?: string[];
 }
 
+// Content-defined policy. Adopted at empire level for a one-shot
+// political capital cost that scales with the empire's hyperlane
+// diameter (spread-out empires pay more). Modifiers layer into
+// storyModifiers under the key "policy:<id>".
+export interface Policy {
+  id: string;
+  name: string;
+  description: string;
+  // Before diameter scaling.
+  basePoliticalCost: number;
+  modifiers: Modifier[];
+  availability?: {
+    speciesIds?: string[];
+    expansionism?: Expansionism[];
+    politic?: Politic[];
+    requiresFlag?: string;
+    excludesFlag?: string;
+  };
+}
+
 // Content-defined project template. Distinct from BuildOrder (which is
 // the in-flight queue entry).
 //
@@ -236,6 +256,7 @@ export interface Empire {
   projects: BuildOrder[];    // Empire-level project queue (FIFO).
   storyModifiers: Record<string, Modifier[]>;
   completedProjects: string[];
+  adoptedPolicies: string[];
   flags: string[];
 }
 
@@ -245,7 +266,7 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 12;
+  schemaVersion: 13;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;

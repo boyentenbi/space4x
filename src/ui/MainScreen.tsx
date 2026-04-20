@@ -34,6 +34,7 @@ import { SystemScene } from "./SystemScene";
 import { PortraitMenu } from "./PortraitMenu";
 import { EmpireProfileModal } from "./EmpireProfileModal";
 import { EmpireRosterModal } from "./EmpireRosterModal";
+import { PoliciesModal } from "./PoliciesModal";
 import { ProjectCompletionModal } from "./ProjectCompletionModal";
 import { StatBreakdownModal } from "./StatBreakdownModal";
 import { COMPUTE_ICON, HAMMERS_ICON, POPS_ICON, RESOURCE_ICON, planetSpriteFor } from "./icons";
@@ -371,6 +372,7 @@ export function MainScreen() {
   const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
+  const [policiesOpen, setPoliciesOpen] = useState(false);
   const [profileEmpireId, setProfileEmpireId] = useState<string | null>(null);
   const [breakdown, setBreakdown] = useState<StatBreakdown | null>(null);
 
@@ -483,6 +485,9 @@ export function MainScreen() {
           />
         </div>
 
+        <button className="menu-btn" onClick={() => setPoliciesOpen(true)}>
+          Policies
+        </button>
         <button className="menu-btn" onClick={() => setRosterOpen(true)}>
           Empires
         </button>
@@ -690,6 +695,7 @@ export function MainScreen() {
           onClose={() => setProfileEmpireId(null)}
         />
       )}
+      {policiesOpen && <PoliciesModal onClose={() => setPoliciesOpen(false)} />}
       {menuOpen && (
         <PortraitMenu onReset={reset} onClose={() => setMenuOpen(false)} />
       )}
