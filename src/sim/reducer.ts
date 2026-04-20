@@ -19,7 +19,7 @@ export type Action =
   | { type: "endTurn" }
   | { type: "resolveEvent"; eventId: string; choiceId: string }
   | { type: "queueColonize"; targetBodyId: string }
-  | { type: "queueEmpireProject"; projectId: string }
+  | { type: "queueEmpireProject"; projectId: string; targetBodyId?: string }
   | { type: "cancelOrder"; orderId: string };
 
 // Colonization tunables.
@@ -331,7 +331,13 @@ export function systemClaimant(state: GameState, systemId: string): string | nul
 }
 
 // Is this empire allowed to queue the given project right now?
-export function canQueueProjectFor(empire: Empire, projectId: string): boolean {
+// For body-scope projects, pass the `targetBodyId` of the intended host
+// (capital or any-owned) so the body requirement can be validated.
+export function canQueueProjectFor(
+  empire: Empire,
+  projectId: string,
+  targetBodyId?: string,
+): boolean {
   const proj = projectById(projectId);
   if (!proj) return false;
   const a = proj.availability;
@@ -340,16 +346,40 @@ export function canQueueProjectFor(empire: Empire, projectId: string): boolean {
   if (a.requiresFlag && !empire.flags.includes(a.requiresFlag)) return false;
   if (a.excludesFlag && empire.flags.includes(a.excludesFlag)) return false;
   if (a.excludesCompleted && empire.completedProjects.includes(projectId)) return false;
-  // Not already in flight.
+  // Scope-specific: body projects need a valid host body.
+  if (proj.scope === "body") {
+    if (!targetBodyId) return false;
+    if (proj.bodyRequirement === "capital" && targetBodyId !== empire.capitalBodyId) return false;
+    // "any_owned" — caller is expected to only call with an owned body.
+  }
+  // Not already in flight (dedupe by projectId; body-scope dedupes by
+  // projectId too, not per target, since our projects are one-shot).
   for (const order of empire.projects) {
     if (order.kind === "empire_project" && order.projectId === projectId) return false;
   }
   return true;
 }
 
-// Projects that an empire could queue (filtered + not currently in flight).
+// Empire-scope projects this empire can queue right now.
 export function availableProjectsFor(empire: Empire) {
-  return EMPIRE_PROJECTS.filter((p) => canQueueProjectFor(empire, p.id));
+  return EMPIRE_PROJECTS.filter(
+    (p) => p.scope === "empire" && canQueueProjectFor(empire, p.id),
+  );
+}
+
+// Body-scope projects this empire can queue on the given body.
+export function availableBodyProjectsFor(empire: Empire, bodyId: string) {
+  return EMPIRE_PROJECTS.filter(
+    (p) => p.scope === "body" && canQueueProjectFor(empire, p.id, bodyId),
+  );
+}
+
+// In-flight body-scope project order for a given body, if any.
+export function bodyProjectOrderFor(empire: Empire, bodyId: string) {
+  for (const order of empire.projects) {
+    if (order.kind === "empire_project" && order.targetBodyId === bodyId) return order;
+  }
+  return null;
 }
 
 export function canColonizeFor(state: GameState, empire: Empire, targetBodyId: string): boolean {
@@ -676,6 +706,22 @@ export function reduce(state: GameState, action: Action): GameState {
                 empire.storyModifiers[key] = [...mods];
               }
             }
+            // AIs also auto-queue their origin starter projects (e.g., an
+            // Emancipation AI must build Complete Emancipation to lift the
+            // debuff — same rules as the player).
+            if (originObj.startingProjectIds) {
+              for (const pid of originObj.startingProjectIds) {
+                const proj = projectById(pid);
+                if (!proj) continue;
+                empire.projects.push({
+                  kind: "empire_project",
+                  id: nextOrderId(),
+                  projectId: proj.id,
+                  hammersRequired: proj.hammersRequired,
+                  hammersPaid: 0,
+                });
+              }
+            }
           }
           empire.compute.cap = draft.galaxy.systems[starter.systemId].bodyIds.length * COMPUTE_PER_BODY;
           return empire;
@@ -709,7 +755,7 @@ export function reduce(state: GameState, action: Action): GameState {
     }
 
     case "queueEmpireProject": {
-      if (!canQueueProjectFor(state.empire, action.projectId)) return state;
+      if (!canQueueProjectFor(state.empire, action.projectId, action.targetBodyId)) return state;
       const proj = projectById(action.projectId);
       if (!proj) return state;
       return produce(state, (draft) => {
@@ -719,6 +765,7 @@ export function reduce(state: GameState, action: Action): GameState {
           projectId: proj.id,
           hammersRequired: proj.hammersRequired,
           hammersPaid: 0,
+          targetBodyId: action.targetBodyId,
         });
       });
     }

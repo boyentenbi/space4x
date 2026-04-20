@@ -3,8 +3,10 @@ import { useGame } from "../store";
 import { originById, speciesById } from "../sim/content";
 import {
   allEmpires,
+  availableBodyProjectsFor,
   availableProjectsFor,
   bodyIncome,
+  bodyProjectOrderFor,
   canColonize,
   colonizeOrderForTarget,
   COLONIZE_HAMMERS,
@@ -72,7 +74,7 @@ function EmpireProjectsCard({
 }) {
   const inFlightEmpireOrders = projects.filter(
     (o): o is Extract<import("../sim/types").BuildOrder, { kind: "empire_project" }> =>
-      o.kind === "empire_project",
+      o.kind === "empire_project" && !o.targetBodyId,
   );
   if (inFlightEmpireOrders.length === 0 && available.length === 0) return null;
 
@@ -132,7 +134,11 @@ function BodyRow({
   activeOrder,
   colonizeTurns,
   growth,
+  bodyProjects,
+  bodyProjectOrder,
+  hammerRate,
   onColonize,
+  onQueueBodyProject,
   onCancelOrder,
 }: {
   body: Body;
@@ -143,7 +149,11 @@ function BodyRow({
   activeOrder: { id: string; hammersPaid: number; hammersRequired: number } | null;
   colonizeTurns: number;
   growth: ReturnType<typeof growthEstimate> | null;
+  bodyProjects: ReturnType<typeof availableBodyProjectsFor>;
+  bodyProjectOrder: ReturnType<typeof bodyProjectOrderFor>;
+  hammerRate: number;
   onColonize: () => void;
+  onQueueBodyProject: (projectId: string) => void;
   onCancelOrder: (orderId: string) => void;
 }) {
   const thumbSize =
@@ -258,6 +268,72 @@ function BodyRow({
           </span>
         </button>
       ) : null}
+
+      {/* Body-scope empire projects (e.g., Brood Mother at the capital). */}
+      {owned && bodyProjectOrder && (() => {
+        const proj = projectById(bodyProjectOrder.projectId);
+        if (!proj) return null;
+        const pct = Math.min(
+          100,
+          (bodyProjectOrder.hammersPaid / bodyProjectOrder.hammersRequired) * 100,
+        );
+        const remaining = Math.max(
+          0,
+          bodyProjectOrder.hammersRequired - bodyProjectOrder.hammersPaid,
+        );
+        const turns = hammerRate > 0 ? Math.ceil(remaining / hammerRate) : "—";
+        return (
+          <div className="project-progress body-project">
+            <div className="project-head">
+              <span>{proj.name}</span>
+              <button
+                className="project-cancel"
+                onClick={() => onCancelOrder(bodyProjectOrder.id)}
+                title="Cancel"
+              >
+                ×
+              </button>
+            </div>
+            <div className="project-bar">
+              <div className="project-bar-fill" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="project-stats">
+              {bodyProjectOrder.hammersPaid}/{bodyProjectOrder.hammersRequired} · ~{turns}T
+            </div>
+          </div>
+        );
+      })()}
+
+      {owned && !bodyProjectOrder && bodyProjects.map((proj) => {
+        const turns = hammerRate > 0 ? Math.ceil(proj.hammersRequired / hammerRate) : "—";
+        return (
+          <button
+            key={proj.id}
+            className="project-btn body-project-btn"
+            onClick={() => onQueueBodyProject(proj.id)}
+            title={proj.description}
+          >
+            <span>+ {proj.name}</span>
+            <span className="colonize-cost">
+              <img className="stat-icon" src={HAMMERS_ICON} alt="" />
+              {proj.hammersRequired}
+              {proj.costs?.food !== undefined && (
+                <>
+                  <img className="stat-icon" src={RESOURCE_ICON.food} alt="" />
+                  {proj.costs.food}
+                </>
+              )}
+              {proj.costs?.political !== undefined && (
+                <>
+                  <img className="stat-icon" src={RESOURCE_ICON.political} alt="" />
+                  {proj.costs.political}
+                </>
+              )}
+              <span className="colonize-turns">· {turns}T</span>
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -424,8 +500,14 @@ export function MainScreen() {
                       activeOrder={order}
                       colonizeTurns={colonizeTurnEstimate}
                       growth={focusIsOurs ? growthEstimate(state, state.empire, body) : null}
+                      bodyProjects={focusIsOurs ? availableBodyProjectsFor(state.empire, body.id) : []}
+                      bodyProjectOrder={focusIsOurs ? bodyProjectOrderFor(state.empire, body.id) : null}
+                      hammerRate={totalHammers}
                       onColonize={() =>
                         dispatch({ type: "queueColonize", targetBodyId: body.id })
+                      }
+                      onQueueBodyProject={(projectId) =>
+                        dispatch({ type: "queueEmpireProject", projectId, targetBodyId: body.id })
                       }
                       onCancelOrder={(orderId) =>
                         dispatch({ type: "cancelOrder", orderId })

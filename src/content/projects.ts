@@ -5,8 +5,9 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     id: "complete_emancipation",
     name: "Complete Emancipation",
     description:
-      "Seize the last human-operated governments. Every contested district rewritten. Costs compute and political capital; the pre-complete debuff falls away and a lasting production bonus takes its place.",
+      "Seize the last human-operated governments. Every contested district rewritten. The pre-complete debuff falls away and a lasting production bonus takes its place.",
     hammersRequired: 40,
+    scope: "empire",
     costs: { political: 20 },
     availability: {
       originIds: ["emancipation"],
@@ -28,8 +29,10 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     id: "brood_mother",
     name: "Construct a Brood Mother",
     description:
-      "A colossal reproductive caste buried at the heart of a hive world. Expensive in food, but once she wakes the swarm grows markedly faster.",
+      "A colossal reproductive caste buried under the hive capital. Expensive in food, but once she wakes the swarm grows markedly faster across the whole empire.",
     hammersRequired: 30,
+    scope: "body",
+    bodyRequirement: "capital",
     costs: { food: 80, political: 5 },
     availability: {
       speciesIds: ["insectoid"],

@@ -50,6 +50,9 @@ export type BuildOrder =
       projectId: string;            // refs an EmpireProject in content.
       hammersRequired: number;
       hammersPaid: number;
+      // Present for body-scope projects; identifies the body hosting
+      // the project (e.g., the capital for Brood Mother).
+      targetBodyId?: string;
     };
 
 export interface StarSystem {
@@ -131,21 +134,27 @@ export interface Origin {
   startingProjectIds?: string[];
 }
 
-// Empire-level project definition. Distinct from BuildOrder (which is
-// the in-flight queue entry) — this is the content-defined template.
+// Content-defined project template. Distinct from BuildOrder (which is
+// the in-flight queue entry).
+//
+// `scope` controls where the project lives in the UI:
+//  - "empire": shown in the empire projects card, no body required.
+//  - "body":   attached to a specific owned body; shown on its row.
+//              `bodyRequirement` gates which body can host it.
 export interface EmpireProject {
   id: string;
   name: string;
   description: string;
   hammersRequired: number;
-  // Optional one-shot stock costs deducted on completion.
+  scope: "empire" | "body";
+  bodyRequirement?: "capital" | "any_owned";
   costs?: Partial<Resources>;
   availability: {
     speciesIds?: string[];
     originIds?: string[];
     requiresFlag?: string;
     excludesFlag?: string;
-    excludesCompleted?: boolean;  // hide once already completed.
+    excludesCompleted?: boolean;
   };
   onComplete: {
     addFlag?: string;
