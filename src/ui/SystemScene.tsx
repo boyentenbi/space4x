@@ -4,12 +4,16 @@ import type { Body, HabitabilityTier, StarKind, StarSystem } from "../sim/types"
 // + phase derived from its id. Phase advances each turn so orbits actually
 // rotate.
 
+// Golden-ratio XOR-mult hash. Spreads close-input strings (body_0, body_1,
+// body_2, ...) across the full output range, which matters because bodies
+// within a system have sequential ids.
 function hashCode(s: string): number {
-  let h = 0;
+  let h = 0x9e3779b9 >>> 0;
   for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    h = Math.imul(h ^ s.charCodeAt(i), 0x85ebca6b);
+    h = (h ^ (h >>> 13)) >>> 0;
   }
-  return Math.abs(h);
+  return h >>> 0;
 }
 
 const STAR_SRC: Record<StarKind, string> = {
@@ -58,7 +62,7 @@ export function SystemScene({
 
   const placed: Placed[] = bodies.map((body, i) => {
     const rx = orbitBase + i * orbitStep;
-    const basePhase = ((hashCode(body.id) % 1000) / 1000) * Math.PI * 2;
+    const basePhase = (hashCode(body.id) / 4294967296) * Math.PI * 2;
     const orbitSpeed = 0.18 / (1 + i * 0.5);
     const phase = basePhase + turn * orbitSpeed;
     return {

@@ -66,8 +66,8 @@ function rollBodyCount(r: Rand): number {
 }
 
 function rollFlavorFlags(r: Rand): string[] {
-  // ~5% of bodies get a unique site.
-  if (r() > 0.05) return [];
+  // Unique sites are scarce — only ~2% of bodies get one.
+  if (r() > 0.02) return [];
   return [pick(r, ["precursor_ruins", "rare_crystals", "exotic_atmosphere", "ancient_monolith"])];
 }
 
@@ -94,30 +94,38 @@ export interface GenOptions {
   seed: number;
 }
 
-// Pixel-ish distance between two axial-coord hex cells (monotonic in Euclidean).
-function hexDist(a: StarSystem, b: StarSystem): number {
-  const ax = a.q + a.r / 2;
-  const bx = b.q + b.r / 2;
-  const ay = a.r;
-  const by = b.r;
-  return Math.hypot(ax - bx, ay - by);
+// Axial hex distance: 1 means immediate neighbor on the grid.
+function axialDist(a: StarSystem, b: StarSystem): number {
+  const dq = a.q - b.q;
+  const dr = a.r - b.r;
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
 }
 
-// MST + extra short edges: guarantees connectivity, produces chokepoints
-// at natural bottlenecks, and sprinkles some alternative routes so the map
-// doesn't feel linear.
+// Only connect immediate hex neighbors (axial distance 1). Within that
+// constrained graph we take an MST-ish set of edges for connectivity,
+// then sprinkle a few extras so chokepoints emerge organically.
+// Systems with no hex-neighbor system in the galaxy stay as unreachable
+// islands — that's geography, not a bug.
 function generateHyperlanes(systems: StarSystem[], rand: () => number): Hyperlane[] {
   if (systems.length < 2) return [];
-  type Edge = { a: string; b: string; d: number };
+  type Edge = { a: string; b: string };
+
+  // Build adjacency list of strictly-adjacent system pairs (distance == 1).
   const pairs: Edge[] = [];
   for (let i = 0; i < systems.length; i++) {
     for (let j = i + 1; j < systems.length; j++) {
-      pairs.push({ a: systems[i].id, b: systems[j].id, d: hexDist(systems[i], systems[j]) });
+      if (axialDist(systems[i], systems[j]) === 1) {
+        pairs.push({ a: systems[i].id, b: systems[j].id });
+      }
     }
   }
-  pairs.sort((x, y) => x.d - y.d);
+  // Randomize order so MST pick is not biased by q,r iteration order.
+  for (let i = pairs.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
+  }
 
-  // Union-find for MST.
+  // Union-find for MST across the adjacency graph.
   const parent: Record<string, string> = {};
   for (const s of systems) parent[s.id] = s.id;
   const find = (x: string): string => {
@@ -144,13 +152,10 @@ function generateHyperlanes(systems: StarSystem[], rand: () => number): Hyperlan
     }
   }
 
-  // Add extra short edges with some probability for variety.
-  // Only consider edges roughly adjacent (~2 hex radii) so the map stays legible.
-  const SHORT_THRESHOLD = 2.2;
-  const EXTRA_CHANCE = 0.35;
+  // Sprinkle additional adjacency edges for chokepoint variety.
+  const EXTRA_CHANCE = 0.4;
   for (let i = 0; i < pairs.length; i++) {
     if (inMst.has(i)) continue;
-    if (pairs[i].d > SHORT_THRESHOLD) break;
     if (rand() < EXTRA_CHANCE) {
       edges.push([pairs[i].a, pairs[i].b]);
     }

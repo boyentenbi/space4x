@@ -119,14 +119,13 @@ export function MainScreen() {
       {/* ===== Left sidebar: portrait | end turn | 2x3 resources | menu ===== */}
       <div className="sidebar">
         {species?.art && (
-          <button
+          <div
             className="portrait-card"
             style={{ borderColor: state.empire.color }}
             title={`${species.name} · ${state.empire.name}`}
-            onClick={() => setMenuOpen(true)}
           >
             <img src={species.art} alt={species.name} />
-          </button>
+          </div>
         )}
         <button
           className="endturn-card"

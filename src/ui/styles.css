@@ -86,11 +86,6 @@ button:disabled {
   border: 2px solid var(--accent);
   background: var(--bg-panel);
   padding: 0;
-  cursor: pointer;
-}
-
-.portrait-card:hover {
-  filter: brightness(1.15);
 }
 
 .portrait-card img {
