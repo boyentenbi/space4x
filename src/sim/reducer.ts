@@ -1265,6 +1265,10 @@ export function canColonizeFor(state: GameState, empire: Empire, targetBodyId: s
   const targetSys = state.galaxy.systems[target.systemId];
   if (!targetSys) return false;
   if (target.pops > 0) return false;
+  // A body with zero effective space can't hold pops — colonizing it
+  // would spend hammers + political capital and have pops clamp right
+  // back to 0 on the next tick. Gate the button out.
+  if (effectiveSpace(empire, target) <= 0) return false;
   if (colonizeOrderForTarget(state, targetBodyId)) return false;
   const claimant = systemClaimant(state, targetSys.id);
   if (claimant && claimant !== empire.id) return false;   // locked to another empire
@@ -1440,6 +1444,10 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
       // a cap-reducing modifier was removed between turns.
       if (body.pops > cap) body.pops = cap;
       if (body.pops >= cap) continue;
+      // A body with zero pops has not been colonised — it doesn't
+      // auto-populate just because the empire owns the system. Each
+      // body requires its own explicit colonise action to bootstrap.
+      if (body.pops === 0) continue;
       if (empire.resources.food < POP_GROWTH_FOOD_COST) continue;
       const headroom = (cap - body.pops) / cap;
       const chance = Math.max(0, Math.min(1, (headroom * 0.5 + growthAdd) * growthMult));
