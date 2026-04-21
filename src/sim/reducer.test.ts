@@ -710,7 +710,10 @@ describe("AI fleet routing (decision only)", () => {
         : {}),
     });
     const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
-    const targetBody = makeBody({ id: "b_target", systemId: "s_target", pops: 30 });
+    // Target body is unpopulated — with only the outpost for defence
+    // (threshold = 1) a 2-ship invader cleanly exceeds it. Keeps the
+    // test focused on AI movement, not fleet math.
+    const targetBody = makeBody({ id: "b_target", systemId: "s_target", pops: 0 });
     const player = makeEmpire({
       id: "e_player",
       capitalBodyId: "b_target",
@@ -726,7 +729,7 @@ describe("AI fleet routing (decision only)", () => {
       id: "f_ai",
       empireId: "e_ai",
       systemId: opts.aiFleetAt,
-      shipCount: 1,
+      shipCount: 2,
     };
     return makeState({
       systems: [aiHome, target],
@@ -791,13 +794,16 @@ describe("AI fleet routing (decision only)", () => {
       id: "f_def",
       empireId: "e_ai",
       systemId: "s_right",
-      shipCount: 2,
+      shipCount: 6,
     };
+    // Defense of s_left = 1 (outpost) + ceil(30/20) (pops) = 3. The
+    // invader needs to exceed 3 for the occupation to progress — a
+    // 4-ship fleet does it.
     const playerInvader: Fleet = {
       id: "f_inv",
       empireId: "e_player",
       systemId: "s_left",
-      shipCount: 1,
+      shipCount: 4,
     };
     const state = makeState({
       systems: [right, left],
@@ -991,11 +997,13 @@ describe("conquering", () => {
     });
     // Player has a fleet already sitting in the AI's system — no
     // defender present since the AI has no fleets.
+    // Defense of s_target = 1 (outpost) + ceil(20/20) (pops) = 2.
+    // The invader needs >2 ships to start the occupation counter.
     const invader: Fleet = {
       id: "f_invader",
       empireId: "e_player",
       systemId: "s_target",
-      shipCount: 1,
+      shipCount: 3,
     };
     return makeState({
       systems: [home, target],
@@ -1027,6 +1035,43 @@ describe("conquering", () => {
     expect(s.empire.systemIds).toContain("s_target");
     // AI is eliminated (lost its only system).
     expect(s.aiEmpires.find((e) => e.id === "e_ai")).toBeUndefined();
+  });
+
+  it("outpost + pops: a single invader can't start occupying a defended system", () => {
+    // Two-hex map. Player owns s_home with a populated body (30 pops).
+    // Defense threshold = 1 outpost + ceil(30/20) = 1 + 2 = 3.
+    // A single-ship invader can't exceed 3 ≥ 1, so occupation doesn't
+    // start and the system stays clear.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+    });
+    const ai = makeEmpire({ id: "e_ai", capitalBodyId: "b_ai", systemIds: [aiHome.id] });
+    const weakInvader: Fleet = {
+      id: "f_weak",
+      empireId: "e_ai",
+      systemId: "s_home",
+      shipCount: 1,
+    };
+    const state = makeState({
+      systems: [home, aiHome],
+      bodies: [cap, aiBody],
+      hyperlanes: [["s_home", "s_ai"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [weakInvader],
+      wars: [["e_ai", "e_player"].sort() as [string, string]],
+    });
+    // Run several end-turns; a 1-ship invader should never tick the counter.
+    let s = state;
+    for (let i = 0; i < 3; i++) s = reduce(s, { type: "endTurn" });
+    expect(s.galaxy.systems["s_home"]?.occupation).toBeUndefined();
+    expect(s.galaxy.systems["s_home"]?.ownerId).toBe("e_player");
   });
 
   it("doesn't start an occupation on unowned space", () => {
@@ -1070,11 +1115,13 @@ describe("conquering", () => {
       capitalBodyId: "b_ai",
       systemIds: [aiHome.id],
     });
+    // Defense of s_home = 1 outpost + ceil(30/20) pops = 3. Invader
+    // needs >3 ships.
     const invader: Fleet = {
       id: "f_ai",
       empireId: "e_ai",
       systemId: "s_home",
-      shipCount: 1,
+      shipCount: 5,
     };
     let s = makeState({
       systems: [home, aiHome],

@@ -1062,6 +1062,26 @@ function resolveCombat(draft: GameState): void {
 // Turns an unopposed enemy presence must hold before a system flips.
 export const OCCUPATION_TURNS_TO_FLIP = 3;
 
+// Defensive baseline of a claimed system: 1 for the outpost itself,
+// plus 1 per 20 pops across all bodies (rounded up). An invading fleet
+// must STRICTLY exceed this threshold for occupation to tick. A single
+// frigate wandering into a populated capital no longer accomplishes
+// anything.
+export function systemDefenseThreshold(
+  state: GameState,
+  sys: StarSystem,
+): number {
+  if (!sys.ownerId) return 0;
+  let defense = 1; // outpost baseline
+  for (const bid of sys.bodyIds) {
+    const b = state.galaxy.bodies[bid];
+    if (b && b.pops > 0) {
+      defense += Math.ceil(b.pops / 20);
+    }
+  }
+  return defense;
+}
+
 // After combat each turn, advance or clear occupation counters and
 // flip systems that crossed the threshold. Then prune any empires
 // left with zero systems.
@@ -1084,22 +1104,34 @@ function processOccupation(draft: GameState): void {
       continue;
     }
     // Which foreign empires have ships here, at war with the owner?
-    const invaderEmpireIds = new Set<string>();
+    // Also tally the invader ship count by empire so we can check
+    // whether any single invader exceeds the defensive threshold.
+    const invaderShipsByEmpire: Record<string, number> = {};
     for (const f of fleetsHere) {
       if (f.empireId !== ownerId && atWar(draft, ownerId, f.empireId)) {
-        invaderEmpireIds.add(f.empireId);
+        invaderShipsByEmpire[f.empireId] =
+          (invaderShipsByEmpire[f.empireId] ?? 0) + f.shipCount;
       }
     }
-    if (invaderEmpireIds.size === 0) {
+    const invaderEmpireIds = Object.keys(invaderShipsByEmpire);
+    if (invaderEmpireIds.length === 0) {
       sys.occupation = undefined;
       continue;
     }
-    if (invaderEmpireIds.size > 1) {
+    if (invaderEmpireIds.length > 1) {
       // Contested — nobody can occupy until one side wins out.
       sys.occupation = undefined;
       continue;
     }
-    const invaderId = Array.from(invaderEmpireIds)[0];
+    const invaderId = invaderEmpireIds[0];
+    const invaderShips = invaderShipsByEmpire[invaderId];
+    const defense = systemDefenseThreshold(draft, sys);
+    // Outpost infrastructure + pops make a system genuinely harder to
+    // take. Strict greater-than — "matching" the threshold isn't enough.
+    if (invaderShips <= defense) {
+      sys.occupation = undefined;
+      continue;
+    }
     if (sys.occupation && sys.occupation.empireId === invaderId) {
       sys.occupation.turns += 1;
     } else {
