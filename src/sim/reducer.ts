@@ -116,7 +116,7 @@ const COMPUTE_PER_POP_HAB: Partial<Record<HabitabilityTier, number>> = {
   garden: 0.25,
 };
 
-export const HAMMERS_PER_POP = 0.5;
+export const HAMMERS_PER_POP = 0.4;
 export const POP_GROWTH_FOOD_COST = 50;
 
 // Expected turns until this body grows by +1 pop, or a status string.
