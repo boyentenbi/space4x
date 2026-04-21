@@ -796,14 +796,13 @@ describe("AI fleet routing (decision only)", () => {
       systemId: "s_right",
       shipCount: 6,
     };
-    // Defense of s_left = 1 (outpost) + ceil(30/20) (pops) = 3. The
-    // invader needs to exceed 3 for the occupation to progress — a
-    // 4-ship fleet does it.
+    // Weak invader — the AI defender should clearly win the combat
+    // and choose to defend (system value > 1-ship loss).
     const playerInvader: Fleet = {
       id: "f_inv",
       empireId: "e_player",
       systemId: "s_left",
-      shipCount: 4,
+      shipCount: 1,
     };
     const state = makeState({
       systems: [right, left],

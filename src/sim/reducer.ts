@@ -1003,12 +1003,11 @@ export function availablePoliciesFor(state: GameState, empire: Empire): Array<{ 
     });
 }
 
-// Resolve contested systems: if fleets from two or more empires occupy
-// the same system, each side takes proportional losses. Simple
-// attrition: damage_in = sum(enemy_ships) * 0.3 per turn, distributed
-// across this side's fleets in that system proportional to their size.
-// Combat plays out over multiple turns; whoever hits zero first is
-// removed from the system.
+// Resolve contested systems: if fleets from two or more at-war empires
+// share a system, combat iterates 30%-attrition rounds until only one
+// side has ships left (or all have died). Happens entirely within one
+// combat call — no "fight one round and retreat" — so the outcome
+// feels decisive.
 function resolveCombat(draft: GameState): void {
   const bySystem: Record<string, Fleet[]> = {};
   for (const f of Object.values(draft.fleets)) {
@@ -1018,51 +1017,64 @@ function resolveCombat(draft: GameState): void {
     const empires = Array.from(new Set(fleets.map((f) => f.empireId)));
     if (empires.length < 2) continue;
 
-    // For each empire here, incoming damage = 0.3 * (sum of ships
-    // belonging to empires we're AT WAR with in this system). Fleets
-    // of non-warring empires coexist peacefully.
-    const empireShips: Record<string, number> = {};
-    for (const f of fleets) empireShips[f.empireId] = (empireShips[f.empireId] ?? 0) + f.shipCount;
+    // Snapshot before-counts for the chronicle entry (BEFORE the loop).
+    const before: Record<string, number> = {};
+    for (const f of fleets) {
+      before[f.empireId] = (before[f.empireId] ?? 0) + f.shipCount;
+    }
 
-    // Damage DEALT is gated on positive energy — an empire in deficit
-    // deals zero, so its ships are present but harmless this turn.
-    // This is how "target their energy → kneecap their military"
-    // reads in combat: their attack damage vanishes, ours lands.
+    // Energy deficit → zero outgoing damage this combat (their ships
+    // are present but harmless). Sampled once at the start; it doesn't
+    // fluctuate mid-combat.
     const damageOutMult: Record<string, number> = {};
     for (const empId of empires) {
       const emp = empireById(draft, empId);
       damageOutMult[empId] = !emp || emp.resources.energy <= 0 ? 0 : 1;
     }
 
-    const damageIn: Record<string, number> = {};
-    let anyFight = false;
-    for (const empId of empires) {
-      let enemyDamage = 0;
-      for (const otherId of empires) {
-        if (otherId === empId) continue;
-        if (atWar(draft, empId, otherId)) {
-          enemyDamage += empireShips[otherId] * damageOutMult[otherId];
+    // Iterate attrition rounds until only one side (or none) remains
+    // with ships. Bounded loop so a pathological zero-damage state
+    // can't hang (e.g., if all sides have energy deficit).
+    let anyFightHappened = false;
+    for (let round = 0; round < 100; round++) {
+      const empireShips: Record<string, number> = {};
+      for (const f of fleets) {
+        if (f.shipCount > 0) {
+          empireShips[f.empireId] = (empireShips[f.empireId] ?? 0) + f.shipCount;
         }
       }
-      damageIn[empId] = enemyDamage * 0.3;
-      if (enemyDamage > 0) anyFight = true;
-    }
-    if (!anyFight) continue;
+      const liveEmpires = Object.keys(empireShips);
+      if (liveEmpires.length < 2) break;
 
-    // Snapshot before-counts for the chronicle entry.
-    const before: Record<string, number> = { ...empireShips };
+      const damageIn: Record<string, number> = {};
+      let totalDamage = 0;
+      for (const empId of liveEmpires) {
+        let enemyDamage = 0;
+        for (const otherId of liveEmpires) {
+          if (otherId === empId) continue;
+          if (atWar(draft, empId, otherId)) {
+            enemyDamage += empireShips[otherId] * damageOutMult[otherId];
+          }
+        }
+        damageIn[empId] = enemyDamage * 0.3;
+        totalDamage += enemyDamage;
+      }
+      if (totalDamage === 0) break; // nobody can hurt anybody
+      anyFightHappened = true;
 
-    // Apply losses proportionally across each empire's fleets.
-    for (const f of fleets) {
-      if (f.shipCount <= 0) continue;
-      const empTotal = empireShips[f.empireId];
-      if (empTotal === 0) continue;
-      if (damageIn[f.empireId] <= 0) continue;
-      const share = f.shipCount / empTotal;
-      const losses = Math.max(1, Math.ceil(damageIn[f.empireId] * share));
-      f.shipCount = Math.max(0, f.shipCount - losses);
+      for (const f of fleets) {
+        if (f.shipCount <= 0) continue;
+        if ((damageIn[f.empireId] ?? 0) <= 0) continue;
+        const empTotal = empireShips[f.empireId];
+        if (empTotal === 0) continue;
+        const share = f.shipCount / empTotal;
+        const losses = Math.max(1, Math.ceil(damageIn[f.empireId] * share));
+        f.shipCount = Math.max(0, f.shipCount - losses);
+      }
     }
-    // Sum survivors per empire for the chronicle; then clear empties.
+    if (!anyFightHappened) continue;
+
+    // After-counts per empire; then drop empty fleets.
     const after: Record<string, number> = {};
     for (const f of fleets) {
       if (f.shipCount > 0) after[f.empireId] = (after[f.empireId] ?? 0) + f.shipCount;
@@ -1892,17 +1904,6 @@ function processFleetOrders(draft: GameState, onlyEmpireId?: string): void {
     // set; the fleet just doesn't step this turn.
     const fleetOwner = empireById(draft, fleet.empireId);
     if (!fleetOwner || fleetOwner.resources.energy <= 0) continue;
-    // No fleeing under fire. If there's an at-war enemy fleet sharing
-    // this system, the fight has to resolve before anyone moves.
-    const engaged = Object.values(draft.fleets).some(
-      (other) =>
-        other.id !== fleet.id &&
-        other.systemId === fleet.systemId &&
-        other.shipCount > 0 &&
-        other.empireId !== fleet.empireId &&
-        atWar(draft, fleet.empireId, other.empireId),
-    );
-    if (engaged) continue;
     if (fleet.systemId === fleet.destinationSystemId) {
       fleet.destinationSystemId = undefined;
       continue;
