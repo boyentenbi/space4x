@@ -34,6 +34,10 @@ export interface Fleet {
   shipCount: number;
   // Turn this fleet last moved. A fleet can only move once per turn.
   movedTurn?: number;
+  // Multi-turn route: if set, the fleet auto-steps one hop toward this
+  // system at end of turn until it either arrives or becomes stranded
+  // (no legal path remains).
+  destinationSystemId?: string;
 }
 
 export interface Body {

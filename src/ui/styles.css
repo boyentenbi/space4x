@@ -1306,6 +1306,13 @@ button.res-cell:hover:not(:disabled) {
   animation: fleet-pill-pulse 1.6s ease-in-out infinite;
 }
 
+.fleet-pill-route {
+  margin-left: 4px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
 @keyframes fleet-pill-pulse {
   0%, 100% { filter: brightness(1); }
   50%      { filter: brightness(1.35); }
@@ -1463,23 +1470,31 @@ button.res-cell:hover:not(:disabled) {
   font-style: italic;
 }
 
-/* SVG pulse on destination hexes and the hyperlanes leading there. */
-.galaxy-map .move-dest-fill {
-  animation: move-dest-pulse 1.3s ease-in-out infinite;
+.move-bar-route {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
-@keyframes move-dest-pulse {
-  0%, 100% { fill-opacity: 0.14; stroke-opacity: 0.7; }
-  50%      { fill-opacity: 0.32; stroke-opacity: 1.0; }
+.move-bar-clear {
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  background: transparent;
+  border: 1px solid rgba(255, 138, 138, 0.5);
+  border-radius: 4px;
+  color: #ff8a8a;
+  cursor: pointer;
 }
 
-.galaxy-map .move-lane {
-  animation: move-lane-pulse 1.3s ease-in-out infinite;
-}
-
-@keyframes move-lane-pulse {
-  0%, 100% { opacity: 0.75; }
-  50%      { opacity: 1.0; }
+.move-bar-clear:hover {
+  background: rgba(255, 138, 138, 0.08);
 }
 
 .chooser .desc {

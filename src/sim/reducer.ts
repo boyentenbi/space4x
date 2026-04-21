@@ -36,6 +36,7 @@ export type Action =
   | { type: "cancelOrder"; orderId: string }
   | { type: "adoptPolicy"; policyId: string }
   | { type: "moveFleet"; fleetId: string; toSystemId: string; count?: number }
+  | { type: "cancelFleetOrder"; fleetId: string }
   | { type: "declareWar"; againstEmpireId: string }
   | { type: "makePeace"; withEmpireId: string }
   | { type: "dismissProjectCompletion" };
@@ -975,6 +976,53 @@ export function canEnterSystem(
   return atWar(state, moverEmpireId, sys.ownerId);
 }
 
+// BFS shortest path between systems, respecting canEnterSystem for
+// every node after the start. Returns the list of system ids AFTER
+// `fromSystemId` up to and including `toSystemId`, or null if no legal
+// path exists. The origin is always traversable regardless of current
+// ownership (fleets can always leave where they currently sit).
+export function shortestPathFor(
+  state: GameState,
+  empireId: string,
+  fromSystemId: string,
+  toSystemId: string,
+): string[] | null {
+  if (fromSystemId === toSystemId) return [];
+  const adj = new Map<string, string[]>();
+  for (const [a, b] of state.galaxy.hyperlanes) {
+    if (!adj.has(a)) adj.set(a, []);
+    if (!adj.has(b)) adj.set(b, []);
+    adj.get(a)!.push(b);
+    adj.get(b)!.push(a);
+  }
+  const prev = new Map<string, string>();
+  const visited = new Set<string>([fromSystemId]);
+  const queue: string[] = [fromSystemId];
+  let found = false;
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    if (id === toSystemId) { found = true; break; }
+    for (const n of adj.get(id) ?? []) {
+      if (visited.has(n)) continue;
+      if (!canEnterSystem(state, empireId, n)) continue;
+      visited.add(n);
+      prev.set(n, id);
+      queue.push(n);
+    }
+  }
+  if (!found) return null;
+  const out: string[] = [];
+  let cur = toSystemId;
+  while (cur !== fromSystemId) {
+    out.push(cur);
+    const p = prev.get(cur);
+    if (!p) return null;
+    cur = p;
+  }
+  out.reverse();
+  return out;
+}
+
 export function totalFleetShipsFor(state: GameState, empire: Empire): number {
   let total = 0;
   for (const f of Object.values(state.fleets)) {
@@ -1239,6 +1287,67 @@ function aiPlan(state: GameState, empire: Empire): BuildOrder | null {
     hammersPaid: 0,
     politicalCost: effPolitical,
   };
+}
+
+// Auto-step every fleet carrying a destinationSystemId: recompute the
+// legal-path BFS, walk one hop, and clear the order on arrival. Fleets
+// that moved manually this turn skip; fleets whose route is now blocked
+// are stranded (destination cleared, chronicled for the player).
+function processFleetOrders(draft: GameState): void {
+  const fleetIds = Object.keys(draft.fleets);
+  for (const fid of fleetIds) {
+    const fleet = draft.fleets[fid];
+    if (!fleet) continue;
+    if (!fleet.destinationSystemId) continue;
+    if (fleet.movedTurn === draft.turn) continue;
+    if (fleet.shipCount <= 0) continue;
+    if (fleet.systemId === fleet.destinationSystemId) {
+      fleet.destinationSystemId = undefined;
+      continue;
+    }
+    const path = shortestPathFor(
+      draft,
+      fleet.empireId,
+      fleet.systemId,
+      fleet.destinationSystemId,
+    );
+    if (!path || path.length === 0) {
+      if (fleet.empireId === draft.empire.id) {
+        const here = draft.galaxy.systems[fleet.systemId];
+        const target = draft.galaxy.systems[fleet.destinationSystemId];
+        draft.eventLog.push({
+          turn: draft.turn,
+          eventId: "fleet_stranded",
+          choiceId: null,
+          text: `Fleet stranded at ${here?.name ?? "a system"} — no route to ${target?.name ?? "destination"}.`,
+        });
+      }
+      fleet.destinationSystemId = undefined;
+      continue;
+    }
+    const nextHop = path[0];
+    const final = fleet.destinationSystemId;
+    const moveCount = fleet.shipCount;
+
+    // Merge into an existing friendly fleet at the next hop, if any.
+    let destFleet: Fleet | undefined;
+    for (const f of Object.values(draft.fleets)) {
+      if (f.id !== fleet.id && f.empireId === fleet.empireId && f.systemId === nextHop) {
+        destFleet = f;
+        break;
+      }
+    }
+    if (destFleet) {
+      destFleet.shipCount += moveCount;
+      destFleet.movedTurn = draft.turn;
+      destFleet.destinationSystemId = nextHop === final ? undefined : final;
+      delete draft.fleets[fid];
+    } else {
+      fleet.systemId = nextHop;
+      fleet.movedTurn = draft.turn;
+      if (nextHop === final) fleet.destinationSystemId = undefined;
+    }
+  }
 }
 
 // Build adjacency from the hyperlane list. Repeated on every turn's
@@ -1733,25 +1842,21 @@ export function reduce(state: GameState, action: Action): GameState {
       const moveCount = Math.min(fleet.shipCount, action.count ?? fleet.shipCount);
       if (moveCount <= 0) return state;
 
-      // Destination must be reachable via one hyperlane hop.
-      const adjacent = state.galaxy.hyperlanes.some(
-        ([a, b]) =>
-          (a === fleet.systemId && b === action.toSystemId) ||
-          (b === fleet.systemId && a === action.toSystemId),
-      );
-      if (!adjacent) return state;
-
-      // Can't cross into another empire's space without being at war.
-      if (!canEnterSystem(state, fleet.empireId, action.toSystemId)) return state;
+      // Full path to the final destination through legal territory.
+      const path = shortestPathFor(state, fleet.empireId, fleet.systemId, action.toSystemId);
+      if (!path || path.length === 0) return state;
+      const nextHop = path[0];
+      const finalDest = action.toSystemId;
+      const hasMultiHop = path.length > 1;
 
       return produce(state, (draft) => {
         const src = draft.fleets[action.fleetId]!;
         src.shipCount -= moveCount;
 
-        // Find an existing same-empire fleet at the destination to merge into.
+        // Merge into a same-empire fleet at the next hop, if one exists.
         let destFleet: Fleet | undefined;
         for (const f of Object.values(draft.fleets)) {
-          if (f.empireId === src.empireId && f.systemId === action.toSystemId) {
+          if (f.empireId === src.empireId && f.systemId === nextHop) {
             destFleet = f;
             break;
           }
@@ -1759,24 +1864,36 @@ export function reduce(state: GameState, action: Action): GameState {
         if (destFleet) {
           destFleet.shipCount += moveCount;
           destFleet.movedTurn = state.turn;
+          // Merging pre-empts whatever route the destination fleet had;
+          // the combined fleet takes the new order.
+          destFleet.destinationSystemId = hasMultiHop ? finalDest : undefined;
         } else {
           const id = nextFleetId();
           draft.fleets[id] = {
             id,
             empireId: src.empireId,
-            systemId: action.toSystemId,
+            systemId: nextHop,
             shipCount: moveCount,
             movedTurn: state.turn,
+            destinationSystemId: hasMultiHop ? finalDest : undefined,
           };
         }
-        // If the source fleet emptied (move-all), delete it.
         if (src.shipCount <= 0) {
           delete draft.fleets[action.fleetId];
         } else {
-          // Partial split still counts as the source having "moved" —
-          // you can't split again until next turn.
           src.movedTurn = state.turn;
         }
+      });
+    }
+
+    case "cancelFleetOrder": {
+      const fleet = state.fleets[action.fleetId];
+      if (!fleet) return state;
+      if (fleet.empireId !== state.empire.id) return state;
+      if (!fleet.destinationSystemId) return state;
+      return produce(state, (draft) => {
+        const f = draft.fleets[action.fleetId];
+        if (f) f.destinationSystemId = undefined;
       });
     }
 
@@ -1810,6 +1927,11 @@ export function reduce(state: GameState, action: Action): GameState {
         for (const ai of draft.aiEmpires) {
           aiPlanMoves(draft, ai);
         }
+
+        // Auto-step any fleet carrying a multi-turn route. Player-set
+        // routes live here; AI fleets use immediate-target logic above
+        // but can also follow routes if one is ever assigned.
+        processFleetOrders(draft);
 
         // Combat in contested systems runs after all empires have
         // ticked and fleets have moved.
