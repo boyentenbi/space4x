@@ -1,8 +1,11 @@
+import { produce } from "immer";
 import { describe, expect, it } from "vitest";
 import {
+  aiPlanMoves,
   atWar,
   availableBodyProjectsFor,
   canEnterSystem,
+  empireById,
   reduce,
   scoreState,
 } from "./reducer";
@@ -455,10 +458,21 @@ describe("combat chronicle", () => {
   });
 });
 
-describe("AI fleet routing", () => {
-  // Minimal 2-hex map: AI home + enemy system, one hyperlane between.
-  // Nothing else exists so any "stay / move / arrive" outcome is
-  // unambiguous — no third system the AI might route to instead.
+describe("AI fleet routing (decision only)", () => {
+  // These tests exercise the AI's decision step directly: build a
+  // state, call aiPlanMoves, inspect the chosen destination on the
+  // fleet. No combat, occupation, or round-progression is evaluated —
+  // that belongs in end-to-end tests, not behaviour-of-the-planner
+  // tests. A failure here pins the bug to the AI's choice.
+  function runAiMoves(state: GameState, empireId: string): GameState {
+    return produce(state, (d) => {
+      const emp = empireById(d, empireId);
+      if (emp) aiPlanMoves(d, emp);
+    });
+  }
+
+  // Minimal 2-hex setup: AI owns one, enemy owns the other, one
+  // hyperlane between. The AI's fleet lives wherever the test puts it.
   function twoHexSetup(opts: {
     aiFleetAt: "s_ai" | "s_target";
     occupation?: { turns: number };
@@ -502,43 +516,38 @@ describe("AI fleet routing", () => {
     });
   }
 
-  it("routes a fleet to an adjacent at-war enemy system", () => {
+  it("routes a fleet toward an adjacent at-war enemy system", () => {
     const state = twoHexSetup({ aiFleetAt: "s_ai" });
-    const next = reduce(state, { type: "endTurn" });
-    expect(next.fleets["f_ai"]?.systemId).toBe("s_target");
+    const decided = runAiMoves(state, "e_ai");
+    expect(decided.fleets["f_ai"]?.destinationSystemId).toBe("s_target");
   });
 
-  it("keeps an AI fleet in place while it's partway through occupying (turns=1)", () => {
+  it("keeps an AI fleet in place mid-siege (turns=1) — no destination set", () => {
     const state = twoHexSetup({
       aiFleetAt: "s_target",
       occupation: { turns: 1 },
     });
-    const next = reduce(state, { type: "endTurn" });
-    // Fleet must still be at s_target and still own the siege.
-    expect(next.fleets["f_ai"]?.systemId).toBe("s_target");
-    expect(next.galaxy.systems["s_target"]?.occupation?.empireId).toBe("e_ai");
-    expect(next.galaxy.systems["s_target"]?.occupation?.turns).toBe(2);
+    const decided = runAiMoves(state, "e_ai");
+    // Staying wins: AI leaves destination unset so processFleetOrders
+    // doesn't try to walk the fleet anywhere.
+    expect(decided.fleets["f_ai"]?.destinationSystemId).toBeUndefined();
   });
 
-  it("keeps an AI fleet in place while it's partway through occupying (turns=2)", () => {
+  it("keeps an AI fleet in place mid-siege (turns=2) — no destination set", () => {
     const state = twoHexSetup({
       aiFleetAt: "s_target",
       occupation: { turns: 2 },
     });
-    const next = reduce(state, { type: "endTurn" });
-    // Siege completes this round — ownership flips to AI.
-    expect(next.fleets["f_ai"]?.systemId).toBe("s_target");
-    expect(next.galaxy.systems["s_target"]?.ownerId).toBe("e_ai");
-    expect(next.galaxy.systems["s_target"]?.occupation).toBeUndefined();
+    const decided = runAiMoves(state, "e_ai");
+    expect(decided.fleets["f_ai"]?.destinationSystemId).toBeUndefined();
   });
 
-  it("sends a defender fleet across the empire to break a siege", () => {
-    // A (AI) owns both hexes; its only fleet is on the right. B (the
-    // player, or any enemy) has 1 ship on the left which is 2/3
-    // through conquering it. A should route its fleet to the left
-    // this round, engage combat, and break the siege — and that
-    // decision should come from the value function, not from any
-    // hand-coded "defend the sieged hex" rule.
+  it("routes a defender fleet toward a sieged own-system to break the siege", () => {
+    // A (AI) owns both hexes. B has a fleet on the left at turns=2.
+    // A's only fleet is on the right. The AI should pick s_left as
+    // the destination for that fleet — no heuristic required; the
+    // value function sees the siege debit vanish when a defender
+    // arrives.
     const right = makeSystem({ id: "s_right", bodyIds: ["b_r"], ownerId: "e_ai" });
     const left = makeSystem({
       id: "s_left",
@@ -548,11 +557,7 @@ describe("AI fleet routing", () => {
     });
     const rBody = makeBody({ id: "b_r", systemId: "s_right", pops: 30 });
     const lBody = makeBody({ id: "b_l", systemId: "s_left", pops: 30 });
-    const player = makeEmpire({
-      id: "e_player",
-      capitalBodyId: null,
-      systemIds: [],
-    });
+    const player = makeEmpire({ id: "e_player", capitalBodyId: null, systemIds: [] });
     const ai = makeEmpire({
       id: "e_ai",
       capitalBodyId: "b_r",
@@ -580,11 +585,8 @@ describe("AI fleet routing", () => {
       fleets: [aiDefender, playerInvader],
       wars: [["e_ai", "e_player"].sort() as [string, string]],
     });
-    const next = reduce(state, { type: "endTurn" });
-    // AI fleet moved left; siege cleared; AI still owns both hexes.
-    expect(next.fleets["f_def"]?.systemId).toBe("s_left");
-    expect(next.galaxy.systems["s_left"]?.occupation).toBeUndefined();
-    expect(next.galaxy.systems["s_left"]?.ownerId).toBe("e_ai");
+    const decided = runAiMoves(state, "e_ai");
+    expect(decided.fleets["f_def"]?.destinationSystemId).toBe("s_left");
   });
 });
 

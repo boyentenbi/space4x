@@ -1779,7 +1779,7 @@ function buildHyperlaneAdj(draft: GameState): Map<string, string[]> {
 // Pick the best. "Don't abandon a siege", "defend a sieged system",
 // "press the attack", etc. all emerge from scoreState via this search,
 // not from hand-coded rules.
-function aiPlanMoves(draft: GameState, empire: Empire): void {
+export function aiPlanMoves(draft: GameState, empire: Empire): void {
   const baseline = current(draft);
   const ourFleets = Object.values(baseline.fleets).filter(
     (f) => f.empireId === empire.id && f.shipCount > 0,
