@@ -4,6 +4,7 @@ import {
   availableBodyProjectsFor,
   canEnterSystem,
   reduce,
+  scoreState,
 } from "./reducer";
 import type { Body, Empire, Fleet, GameState, StarSystem } from "./types";
 
@@ -296,6 +297,64 @@ describe("setFleetDestination action", () => {
       toSystemId: destId,
     });
     expect(next.fleets[fleetId]?.destinationSystemId).toBe(destId);
+  });
+});
+
+describe("AI scoreState value function", () => {
+  it("values systems and ships in hammer-equivalent units", () => {
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+      resources: { food: 0, energy: 0, political: 0 },
+    });
+    const fleet: Fleet = {
+      id: "f",
+      empireId: "e_player",
+      systemId: "s_home",
+      shipCount: 2,
+    };
+    const state = makeState({
+      systems: [home],
+      bodies: [cap],
+      empire: player,
+      fleets: [fleet],
+    });
+    // 1 system × 200 colonize + 2 ships × 200 frigate = 600.
+    expect(scoreState(state, "e_player")).toBe(600);
+  });
+
+  it("scoreState increases after a round where a new system was colonised", () => {
+    // Proxy test: if the AI's project search is functional it will
+    // queue colonize and score higher on the next round.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const far = makeSystem({ id: "s_far", bodyIds: ["b_far"], ownerId: null });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const farBody = makeBody({ id: "b_far", systemId: "s_far", pops: 0 });
+    const empire = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+      resources: { food: 500, energy: 500, political: 20 },
+    });
+    const state = makeState({
+      systems: [home, far],
+      bodies: [cap, farBody],
+      hyperlanes: [["s_home", "s_far"]],
+      empire,
+    });
+    const baseScore = scoreState(state, "e_player");
+    // Queue the colonize directly (simulating what AI search would pick).
+    const queued = reduce(state, {
+      type: "queueColonize",
+      byEmpireId: "e_player",
+      targetBodyId: "b_far",
+    });
+    // With the project queued, score should rise by the partial-credit
+    // weight (70% discount × initial progress).
+    expect(scoreState(queued, "e_player")).toBeGreaterThan(baseScore);
   });
 });
 

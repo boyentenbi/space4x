@@ -1,4 +1,4 @@
-import { produce } from "immer";
+import { current, produce } from "immer";
 import { LEADERS, POLICIES, originById, policyById, projectById, speciesById, traitById, EMPIRE_PROJECTS } from "./content";
 import { pickRandomEvent, resolveEventChoice, RESOURCE_KEYS } from "./events";
 import { generateGalaxy } from "./galaxy";
@@ -89,13 +89,6 @@ const PER_POP_BY_HAB: Record<HabitabilityTier, Partial<Record<ResourceKey, numbe
   temperate: { food: 2, energy: 1 },
   harsh:     { food: 0, energy: 1 },
   hellscape: { food: 0, energy: 1 },
-};
-
-const HAB_COLONIZE_SCORE: Record<HabitabilityTier, number> = {
-  garden: 4,
-  temperate: 3,
-  harsh: 2,
-  hellscape: 1,
 };
 
 export const HAMMERS_PER_POP = 1;
@@ -1484,41 +1477,147 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
 // Pick and apply at most one project action per AI empire per turn.
 // Prefers colonizing the best available body; falls back to queuing a
 // frigate if fleet target isn't met; else no-op.
+// ===================================================================
+// AI value function + action search.
+//
+// scoreState values a game state for a given empire in hammer-equivalent
+// units: every system is "worth" what it cost to colonize, every ship
+// is worth what it cost to build, and stockpiled political capital has
+// a rough hammer exchange rate. In-flight projects contribute partial
+// credit proportional to completion, discounted so the AI still prefers
+// things that are actually built.
+// ===================================================================
+export function scoreState(state: GameState, empireId: string): number {
+  const empire = empireById(state, empireId);
+  if (!empire) return -Infinity;
+  let score = 0;
+  // Hard assets.
+  score += empire.systemIds.length * COLONIZE_HAMMERS;
+  score += totalFleetShipsFor(state, empire) * 200; // frigate hammer cost
+  // Political capital is expensive to regenerate — rough exchange rate.
+  score += empire.resources.political * 15;
+  // In-flight projects: completion × cost, with a 30% discount so done
+  // beats in-progress if we're otherwise indifferent.
+  for (const order of empire.projects) {
+    const progress =
+      order.hammersRequired > 0
+        ? Math.min(1, order.hammersPaid / order.hammersRequired)
+        : 0;
+    const potential = order.hammersRequired * 0.7 * (0.3 + 0.7 * progress);
+    score += potential;
+  }
+  return score;
+}
+
+// Enumerate every legal project-queue action this empire could take
+// right now — includes a null/no-op so search can choose to do nothing.
+function aiEnumerateProjectActions(state: GameState, empire: Empire): Action[] {
+  const actions: Action[] = [];
+  // Colonize each candidate body.
+  for (const body of Object.values(state.galaxy.bodies)) {
+    if (!canColonizeFor(state, empire, body.id)) continue;
+    // Isolationists still refuse to claim fresh systems — preserve character.
+    if (empire.expansionism === "isolationist") {
+      const sys = state.galaxy.systems[body.systemId];
+      if (!sys || sys.ownerId !== empire.id) continue;
+    }
+    actions.push({
+      type: "queueColonize",
+      byEmpireId: empire.id,
+      targetBodyId: body.id,
+    });
+  }
+  // Body-scope projects (e.g. build_frigate) on each of our bodies.
+  for (const sid of empire.systemIds) {
+    const sys = state.galaxy.systems[sid];
+    if (!sys) continue;
+    for (const bid of sys.bodyIds) {
+      for (const proj of EMPIRE_PROJECTS) {
+        if (proj.scope !== "body") continue;
+        if (!canQueueProjectFor(state, empire, proj.id, bid)) continue;
+        actions.push({
+          type: "queueEmpireProject",
+          byEmpireId: empire.id,
+          projectId: proj.id,
+          targetBodyId: bid,
+        });
+      }
+    }
+  }
+  // Empire-scope projects (no valid ones today, but enumerate for
+  // forward-compatibility).
+  for (const proj of EMPIRE_PROJECTS) {
+    if (proj.scope !== "empire") continue;
+    if (!canQueueProjectFor(state, empire, proj.id)) continue;
+    actions.push({
+      type: "queueEmpireProject",
+      byEmpireId: empire.id,
+      projectId: proj.id,
+    });
+  }
+  return actions;
+}
+
+// Dispatch an Action against a draft via the same apply* paths the
+// reducer uses. Kept local to the AI search so we can score hypothetical
+// futures without going through the public reducer.
+function applyActionToDraft(draft: GameState, action: Action): void {
+  switch (action.type) {
+    case "queueColonize":
+      applyQueueColonize(draft, action);
+      return;
+    case "queueEmpireProject":
+      applyQueueEmpireProject(draft, action);
+      return;
+    case "declareWar":
+      applyDeclareWar(draft, action);
+      return;
+    case "makePeace":
+      applyMakePeace(draft, action);
+      return;
+    case "setFleetDestination":
+      applySetFleetDestination(draft, action);
+      return;
+    case "splitFleet":
+      applySplitFleet(draft, action);
+      return;
+    case "adoptPolicy":
+      applyAdoptPolicy(draft, action);
+      return;
+    case "cancelOrder":
+      applyCancelOrder(draft, action);
+      return;
+    default:
+      // No search-driven dispatch for round-level actions (endTurn,
+      // beginRound, runPhase, resolveEvent, newGame, dismissProjectCompletion).
+      return;
+  }
+}
+
+// Pick the project action that maximises scoreState, or none if
+// doing nothing scores as well as any move.
 function aiPlanProject(draft: GameState, empire: Empire): void {
   if (empire.projects.length > 0) return;
 
-  const effPolitical = effectiveColonizePolitical(empire);
-  const buffer = (() => {
-    switch (empire.expansionism) {
-      case "conqueror":    return 0;
-      case "pragmatist":   return 5;
-      case "isolationist": return 15;
-    }
-  })();
-  const canAffordColonize = empire.resources.political >= effPolitical + buffer;
+  const baseline = current(draft);
+  const baselineScore = scoreState(baseline, empire.id);
+  const candidates = aiEnumerateProjectActions(baseline, empire);
 
-  if (canAffordColonize) {
-    let bestBodyId: string | null = null;
-    let bestScore = -1;
-    for (const body of Object.values(draft.galaxy.bodies)) {
-      if (!canColonizeFor(draft, empire, body.id)) continue;
-      if (empire.expansionism === "isolationist") {
-        const targetSys = draft.galaxy.systems[body.systemId];
-        if (!targetSys || targetSys.ownerId !== empire.id) continue;
-      }
-      const score = HAB_COLONIZE_SCORE[body.habitability] ?? 0;
-      if (score > bestScore) {
-        bestScore = score;
-        bestBodyId = body.id;
-      }
-    }
-    if (bestBodyId) {
-      applyQueueColonize(draft, { byEmpireId: empire.id, targetBodyId: bestBodyId });
-      return;
+  let bestAction: Action | null = null;
+  let bestScore = baselineScore;
+  for (const action of candidates) {
+    const projected = produce(baseline, (d) => {
+      applyActionToDraft(d, action);
+    });
+    const score = scoreState(projected, empire.id);
+    if (score > bestScore) {
+      bestScore = score;
+      bestAction = action;
     }
   }
-
-  aiPlanBuildShip(draft, empire);
+  if (bestAction) {
+    applyActionToDraft(draft, bestAction);
+  }
 }
 
 // Auto-step every fleet carrying a destinationSystemId: recompute the
@@ -1707,25 +1806,6 @@ function aiPlanDiplomacy(draft: GameState, empire: Empire, rand: () => number): 
   applyDeclareWar(draft, {
     byEmpireId: empire.id,
     targetEmpireId: pick,
-  });
-}
-
-// Simple AI fleet goal: keep roughly 2 ships per owned system, plus a
-// minimum floor of 2. When under target, queue a Build Frigate on the
-// capital through the same dispatch path the player uses.
-function aiPlanBuildShip(draft: GameState, empire: Empire): void {
-  if (!empire.capitalBodyId) return;
-  const currentShips = totalFleetShipsFor(draft, empire);
-  const target = Math.max(2, empire.systemIds.length * 2);
-  if (currentShips >= target) return;
-  const proj = projectById("build_frigate");
-  if (!proj) return;
-  const pcCost = proj.costs?.political ?? 0;
-  if (empire.resources.political < pcCost) return;
-  applyQueueEmpireProject(draft, {
-    byEmpireId: empire.id,
-    projectId: proj.id,
-    targetBodyId: empire.capitalBodyId,
   });
 }
 
