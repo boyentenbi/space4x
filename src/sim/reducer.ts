@@ -1782,6 +1782,11 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
 // per-resource) keeps the search simple.
 export const FLOW_HORIZON = 5;
 
+// Flat per-body credit for any tile in an owned system — even a star
+// or a zero-space moon is worth something (project surface, denial,
+// flavour). Small on purpose: a lush temperate should still blow a
+// rock out of the water, which MAX_POPS_VALUE handles.
+export const TILE_VALUE = 10;
 // Per unit of effective pop-space in an owned system (or a system with
 // an outpost under way, scaled by progress). Values "room to grow" so
 // a lush system outscores a rocky one even before colonies land.
@@ -1807,17 +1812,18 @@ export function scoreState(state: GameState, empireId: string): number {
   let score = 0;
   // Hard assets (raw hammer-cost equivalent).
   score += empire.systemIds.length * COLONIZE_HAMMERS;
-  // Max-pops potential: for every body in an owned system, credit its
-  // effective space. This is the "room to grow" that differentiates a
-  // lush system from a rocky one, and it's what in-flight outposts
-  // contribute progress toward.
+  // Per-body value: a small flat for every tile, plus a scaling bonus
+  // for effective pop-space. Together these replace the old flat
+  // "system claim = 200" heuristic with something that prefers lush
+  // systems while still valuing barren ones. In-flight outposts
+  // contribute progress toward both components.
   for (const sysId of empire.systemIds) {
     const sys = state.galaxy.systems[sysId];
     if (!sys) continue;
     for (const bid of sys.bodyIds) {
       const body = state.galaxy.bodies[bid];
       if (!body) continue;
-      score += effectiveSpace(empire, body) * MAX_POPS_VALUE;
+      score += TILE_VALUE + effectiveSpace(empire, body) * MAX_POPS_VALUE;
     }
   }
   // Ships: archetype-weighted × at-war premium, with diminishing
@@ -1893,23 +1899,21 @@ export function scoreState(state: GameState, empireId: string): number {
       order.kind === "empire_project" &&
       order.projectId === "build_outpost"
     ) {
-      // A finished outpost claims its system (COLONIZE_HAMMERS),
-      // unlocks its pop-potential (MAX_POPS_VALUE per space), and
-      // gains a small flat frontier value for the transit/denial
-      // benefits that every claimed system provides (even a star-
-      // only one). All three credit progress-weighted so starting
-      // work on an outpost pulls some of that reward forward.
-      const FRONTIER_PREMIUM = 50;
+      // A finished outpost claims its system (COLONIZE_HAMMERS) and
+      // adds every body in it to our per-body credits (TILE_VALUE +
+      // space × MAX_POPS_VALUE). Everything credits progress-weighted,
+      // so starting work on an outpost pulls some of that reward
+      // forward even before it lands.
       const hostBody = order.targetBodyId ? state.galaxy.bodies[order.targetBodyId] : null;
       const targetSys = hostBody ? state.galaxy.systems[hostBody.systemId] : null;
-      let sysMaxPops = 0;
+      let sysBodyValue = 0;
       if (targetSys) {
         for (const bid of targetSys.bodyIds) {
           const b = state.galaxy.bodies[bid];
-          if (b) sysMaxPops += effectiveSpace(empire, b);
+          if (b) sysBodyValue += TILE_VALUE + effectiveSpace(empire, b) * MAX_POPS_VALUE;
         }
       }
-      score += (COLONIZE_HAMMERS + FRONTIER_PREMIUM + sysMaxPops * MAX_POPS_VALUE) * progressWeight;
+      score += (COLONIZE_HAMMERS + sysBodyValue) * progressWeight;
     } else {
       // Generic empire_project — fall back to 70% of raw hammer cost.
       score += order.hammersRequired * 0.7 * progressWeight;

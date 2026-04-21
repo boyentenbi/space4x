@@ -361,17 +361,18 @@ describe("AI scoreState value function", () => {
       fleets: [siegeFleet],
       wars: [["e_ai", "e_player"].sort() as [string, string]],
     });
-    // Player = 1 × 200 system + 10 space × 8 max-pops − 200 × 2/3
-    // occupation debit + 15 political − 5 outpost upkeep ≈ 157.
+    // Player = 1 × 200 system + (10 tile + 10 space × 8 max-pops)
+    // − 200 × 2/3 occupation debit + 15 political − 5 outpost upkeep
+    // ≈ 167.
     const playerScore = scoreState(state, "e_player");
-    expect(playerScore).toBeGreaterThan(150);
-    expect(playerScore).toBeLessThan(170);
-    // AI = 1 × 200 system + 10 space × 8 max-pops + stuck 1-ship
-    // @ at-war (300 × 0.2) = 60 + 200 × 2/3 occupation credit
-    // + 15 political − 10 upkeep ≈ 478.
+    expect(playerScore).toBeGreaterThan(160);
+    expect(playerScore).toBeLessThan(180);
+    // AI = 1 × 200 system + (10 tile + 10 space × 8 max-pops)
+    // + stuck 1-ship @ at-war (300 × 0.2) = 60
+    // + 200 × 2/3 occupation credit + 15 political − 10 upkeep ≈ 488.
     const aiScore = scoreState(state, "e_ai");
-    expect(aiScore).toBeGreaterThan(470);
-    expect(aiScore).toBeLessThan(490);
+    expect(aiScore).toBeGreaterThan(480);
+    expect(aiScore).toBeLessThan(500);
   });
 
   it("values systems and ships in hammer-equivalent units", () => {
@@ -398,12 +399,12 @@ describe("AI scoreState value function", () => {
       fleets: [fleet],
     });
     // 1 system × 200 (COLONIZE_HAMMERS) = 200 assets.
-    // + Max-pops potential: body space 10 × 8 (MAX_POPS_VALUE) = 80.
+    // + Per-body: 1 × 10 (TILE_VALUE) + 10 space × 8 (MAX_POPS_VALUE) = 90.
     // Ships: 2 × 200 × (no-war 1.0) × stuck 20% (cap=0) = 80.
     // + political/turn baseline × 15 = 15.
     // − energy upkeep (2 ships + 1 outpost = 3) × 5 horizon = −15.
-    // Total = 360.
-    expect(scoreState(state, "e_player")).toBe(360);
+    // Total = 370.
+    expect(scoreState(state, "e_player")).toBe(370);
   });
 
   it("queueing colonize deducts COLONIZE_POP_COST from the capital", () => {
