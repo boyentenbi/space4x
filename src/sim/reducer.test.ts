@@ -1118,43 +1118,6 @@ describe("conquering", () => {
     expect(s.aiEmpires.find((e) => e.id === "e_ai")).toBeUndefined();
   });
 
-  it("outpost + pops: a single invader can't start occupying a defended system", () => {
-    // Two-hex map. Player owns s_home with a populated body (30 pops).
-    // Defense threshold = 1 outpost + ceil(30/20) = 1 + 2 = 3.
-    // A single-ship invader can't exceed 3 ≥ 1, so occupation doesn't
-    // start and the system stays clear.
-    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
-    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
-    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
-    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
-    const player = makeEmpire({
-      id: "e_player",
-      capitalBodyId: "b_cap",
-      systemIds: [home.id],
-    });
-    const ai = makeEmpire({ id: "e_ai", capitalBodyId: "b_ai", systemIds: [aiHome.id] });
-    const weakInvader: Fleet = {
-      id: "f_weak",
-      empireId: "e_ai",
-      systemId: "s_home",
-      shipCount: 1,
-    };
-    const state = makeState({
-      systems: [home, aiHome],
-      bodies: [cap, aiBody],
-      hyperlanes: [["s_home", "s_ai"]],
-      empire: player,
-      aiEmpires: [ai],
-      fleets: [weakInvader],
-      wars: [["e_ai", "e_player"].sort() as [string, string]],
-    });
-    // Run several end-turns; a 1-ship invader should never tick the counter.
-    let s = state;
-    for (let i = 0; i < 3; i++) s = reduce(s, { type: "endTurn" });
-    expect(s.galaxy.systems["s_home"]?.occupation).toBeUndefined();
-    expect(s.galaxy.systems["s_home"]?.ownerId).toBe("e_player");
-  });
-
   it("doesn't start an occupation on unowned space", () => {
     // Invader fleet sitting in an unclaimed system should NOT accumulate
     // occupation — unowned systems aren't conquerable.

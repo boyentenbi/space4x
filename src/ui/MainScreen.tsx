@@ -240,42 +240,8 @@ function BodyRow({
           <span className="hab stellar">star</span>
         </div>
 
-        {/* In-flight outpost project (if any). */}
-        {bodyProjectOrder && (() => {
-          const proj = projectById(bodyProjectOrder.projectId);
-          if (!proj) return null;
-          const pct = Math.min(
-            100,
-            (bodyProjectOrder.hammersPaid / bodyProjectOrder.hammersRequired) * 100,
-          );
-          const remaining = Math.max(
-            0,
-            bodyProjectOrder.hammersRequired - bodyProjectOrder.hammersPaid,
-          );
-          const turns = hammerRate > 0 ? Math.ceil(remaining / hammerRate) : "—";
-          return (
-            <div className="project-progress body-project">
-              <div className="project-head">
-                <span>{proj.name}</span>
-                <button
-                  className="project-cancel"
-                  onClick={() => onCancelOrder(bodyProjectOrder.id)}
-                  title="Cancel"
-                >
-                  ×
-                </button>
-              </div>
-              <div className="project-bar">
-                <div className="project-bar-fill" style={{ width: `${pct}%` }} />
-              </div>
-              <div className="project-stats">
-                {bodyProjectOrder.hammersPaid}/{bodyProjectOrder.hammersRequired} · ~{turns}T
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Offer Build Outpost when available and nothing in flight. */}
+        {/* Offer Build Outpost when available. In-flight progress is
+            shown in the empire-wide Build Queue card, not here. */}
         {!bodyProjectOrder && bodyProjects.map((proj) => {
           const turns = hammerRate > 0 ? Math.ceil(proj.hammersRequired / hammerRate) : "—";
           return (
@@ -422,41 +388,6 @@ function BodyRow({
           </span>
         </button>
       ) : null}
-
-      {/* Body-scope empire projects (e.g., Brood Mother at the capital). */}
-      {owned && bodyProjectOrder && (() => {
-        const proj = projectById(bodyProjectOrder.projectId);
-        if (!proj) return null;
-        const pct = Math.min(
-          100,
-          (bodyProjectOrder.hammersPaid / bodyProjectOrder.hammersRequired) * 100,
-        );
-        const remaining = Math.max(
-          0,
-          bodyProjectOrder.hammersRequired - bodyProjectOrder.hammersPaid,
-        );
-        const turns = hammerRate > 0 ? Math.ceil(remaining / hammerRate) : "—";
-        return (
-          <div className="project-progress body-project">
-            <div className="project-head">
-              <span>{proj.name}</span>
-              <button
-                className="project-cancel"
-                onClick={() => onCancelOrder(bodyProjectOrder.id)}
-                title="Cancel"
-              >
-                ×
-              </button>
-            </div>
-            <div className="project-bar">
-              <div className="project-bar-fill" style={{ width: `${pct}%` }} />
-            </div>
-            <div className="project-stats">
-              {bodyProjectOrder.hammersPaid}/{bodyProjectOrder.hammersRequired} · ~{turns}T
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Offer any body projects canQueueProjectFor says are legal.
           For repeatable projects (e.g. build_frigate) the button keeps
