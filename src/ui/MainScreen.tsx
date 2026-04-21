@@ -474,6 +474,7 @@ export function MainScreen() {
       if (path && path.length > 0) {
         dispatch({
           type: "moveFleet",
+          byEmpireId: state.empire.id,
           fleetId: moveMode.fleetId,
           toSystemId: id,
           ...(count !== undefined ? { count } : {}),
@@ -702,13 +703,26 @@ export function MainScreen() {
                       bodyProjectOrder={focusIsOurs ? bodyProjectOrderFor(state.empire, body.id) : null}
                       hammerRate={totalHammers}
                       onColonize={() =>
-                        dispatch({ type: "queueColonize", targetBodyId: body.id })
+                        dispatch({
+                          type: "queueColonize",
+                          byEmpireId: state.empire.id,
+                          targetBodyId: body.id,
+                        })
                       }
                       onQueueBodyProject={(projectId) =>
-                        dispatch({ type: "queueEmpireProject", projectId, targetBodyId: body.id })
+                        dispatch({
+                          type: "queueEmpireProject",
+                          byEmpireId: state.empire.id,
+                          projectId,
+                          targetBodyId: body.id,
+                        })
                       }
                       onCancelOrder={(orderId) =>
-                        dispatch({ type: "cancelOrder", orderId })
+                        dispatch({
+                          type: "cancelOrder",
+                          byEmpireId: state.empire.id,
+                          orderId,
+                        })
                       }
                     />
                   );
@@ -727,8 +741,20 @@ export function MainScreen() {
               projects={state.empire.projects}
               available={availableProjectsFor(state.empire)}
               hammerRate={totalHammers}
-              onQueue={(pid) => dispatch({ type: "queueEmpireProject", projectId: pid })}
-              onCancel={(oid) => dispatch({ type: "cancelOrder", orderId: oid })}
+              onQueue={(pid) =>
+                dispatch({
+                  type: "queueEmpireProject",
+                  byEmpireId: state.empire.id,
+                  projectId: pid,
+                })
+              }
+              onCancel={(oid) =>
+                dispatch({
+                  type: "cancelOrder",
+                  byEmpireId: state.empire.id,
+                  orderId: oid,
+                })
+              }
             />
           </div>
         </div>
@@ -822,7 +848,11 @@ export function MainScreen() {
                         type="button"
                         className="move-bar-clear"
                         onClick={() =>
-                          dispatch({ type: "cancelFleetOrder", fleetId: moveFleet.id })
+                          dispatch({
+                            type: "cancelFleetOrder",
+                            byEmpireId: state.empire.id,
+                            fleetId: moveFleet.id,
+                          })
                         }
                       >
                         cancel route

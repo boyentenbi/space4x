@@ -57,7 +57,13 @@ export function PoliciesModal({ onClose }: { onClose: () => void }) {
                   <button
                     className="policy-adopt"
                     disabled={!affordable}
-                    onClick={() => dispatch({ type: "adoptPolicy", policyId: p.id })}
+                    onClick={() =>
+                      dispatch({
+                        type: "adoptPolicy",
+                        byEmpireId: empire.id,
+                        policyId: p.id,
+                      })
+                    }
                     title={
                       !affordable
                         ? `Requires ${cost} political capital (you have ${Math.round(empire.resources.political)}).`

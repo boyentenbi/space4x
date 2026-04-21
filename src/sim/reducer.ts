@@ -18,6 +18,9 @@ import type {
   ResourceKey,
 } from "./types";
 
+// Every empire-scoped action carries `byEmpireId` so the player and the
+// AI go through the same validation + effect path. Player UI passes
+// `state.empire.id`; the AI passes the acting empire's id.
 export type Action =
   | {
       type: "newGame";
@@ -31,14 +34,14 @@ export type Action =
     }
   | { type: "endTurn" }
   | { type: "resolveEvent"; eventId: string; choiceId: string }
-  | { type: "queueColonize"; targetBodyId: string }
-  | { type: "queueEmpireProject"; projectId: string; targetBodyId?: string }
-  | { type: "cancelOrder"; orderId: string }
-  | { type: "adoptPolicy"; policyId: string }
-  | { type: "moveFleet"; fleetId: string; toSystemId: string; count?: number }
-  | { type: "cancelFleetOrder"; fleetId: string }
-  | { type: "declareWar"; againstEmpireId: string }
-  | { type: "makePeace"; withEmpireId: string }
+  | { type: "queueColonize"; byEmpireId: string; targetBodyId: string }
+  | { type: "queueEmpireProject"; byEmpireId: string; projectId: string; targetBodyId?: string }
+  | { type: "cancelOrder"; byEmpireId: string; orderId: string }
+  | { type: "adoptPolicy"; byEmpireId: string; policyId: string }
+  | { type: "moveFleet"; byEmpireId: string; fleetId: string; toSystemId: string; count?: number }
+  | { type: "cancelFleetOrder"; byEmpireId: string; fleetId: string }
+  | { type: "declareWar"; byEmpireId: string; targetEmpireId: string }
+  | { type: "makePeace"; byEmpireId: string; targetEmpireId: string }
   | { type: "dismissProjectCompletion" };
 
 // Colonization tunables. Pop counts + space caps are now on a 10x
@@ -1246,13 +1249,13 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
 //  - Pragmatist : waits until there's a comfortable surplus.
 //  - Isolationist: only expands into intra-system uncolonized bodies
 //                  (no new system claims) and only with a big surplus.
-function aiPlan(state: GameState, empire: Empire): BuildOrder | null {
-  if (empire.projects.length > 0) return null;
+// Pick and apply at most one project action per AI empire per turn.
+// Prefers colonizing the best available body; falls back to queuing a
+// frigate if fleet target isn't met; else no-op.
+function aiPlanProject(draft: GameState, empire: Empire): void {
+  if (empire.projects.length > 0) return;
 
   const effPolitical = effectiveColonizePolitical(empire);
-  const effHammers = effectiveColonizeHammers(empire);
-  // Buffer on top of the colonize PC cost, so more-isolationist empires
-  // also demand a larger stockpile before committing.
   const buffer = (() => {
     switch (empire.expansionism) {
       case "conqueror":    return 0;
@@ -1260,33 +1263,30 @@ function aiPlan(state: GameState, empire: Empire): BuildOrder | null {
       case "isolationist": return 15;
     }
   })();
-  if (empire.resources.political < effPolitical + buffer) return null;
+  const canAffordColonize = empire.resources.political >= effPolitical + buffer;
 
-  let bestId: string | null = null;
-  let bestScore = -1;
-  for (const body of Object.values(state.galaxy.bodies)) {
-    if (!canColonizeFor(state, empire, body.id)) continue;
-    // Isolationists won't claim new systems — only fill in systems they
-    // already own.
-    if (empire.expansionism === "isolationist") {
-      const targetSys = state.galaxy.systems[body.systemId];
-      if (!targetSys || targetSys.ownerId !== empire.id) continue;
+  if (canAffordColonize) {
+    let bestBodyId: string | null = null;
+    let bestScore = -1;
+    for (const body of Object.values(draft.galaxy.bodies)) {
+      if (!canColonizeFor(draft, empire, body.id)) continue;
+      if (empire.expansionism === "isolationist") {
+        const targetSys = draft.galaxy.systems[body.systemId];
+        if (!targetSys || targetSys.ownerId !== empire.id) continue;
+      }
+      const score = HAB_COLONIZE_SCORE[body.habitability] ?? 0;
+      if (score > bestScore) {
+        bestScore = score;
+        bestBodyId = body.id;
+      }
     }
-    const score = HAB_COLONIZE_SCORE[body.habitability] ?? 0;
-    if (score > bestScore) {
-      bestScore = score;
-      bestId = body.id;
+    if (bestBodyId) {
+      applyQueueColonize(draft, { byEmpireId: empire.id, targetBodyId: bestBodyId });
+      return;
     }
   }
-  if (!bestId) return aiPlanBuildShip(state, empire);
-  return {
-    kind: "colonize",
-    id: nextOrderId(),
-    targetBodyId: bestId,
-    hammersRequired: effHammers,
-    hammersPaid: 0,
-    politicalCost: effPolitical,
-  };
+
+  aiPlanBuildShip(draft, empire);
 }
 
 // Auto-step every fleet carrying a destinationSystemId: recompute the
@@ -1378,63 +1378,36 @@ function aiPlanMoves(draft: GameState, empire: Empire): void {
 
   const adj = buildHyperlaneAdj(draft);
 
-  // Snapshot the fleet list — we mutate draft.fleets below.
+  // Snapshot the fleet list — applyMoveFleet mutates draft.fleets.
   const ourFleets = Object.values(draft.fleets).filter(
     (f) => f.empireId === empire.id && f.movedTurn !== draft.turn && f.shipCount > 0,
   );
 
   for (const fleet of ourFleets) {
+    // Single BFS from the fleet, stopping at the nearest enemy system.
     const start = fleet.systemId;
-    const prev = new Map<string, string>();
     const visited = new Set<string>([start]);
     const queue: string[] = [start];
-    let found: string | null = null;
+    let nearest: string | null = null;
     while (queue.length) {
       const id = queue.shift()!;
-      if (id !== start && enemySystemIds.has(id)) {
-        found = id;
-        break;
-      }
+      if (id !== start && enemySystemIds.has(id)) { nearest = id; break; }
       for (const n of adj.get(id) ?? []) {
         if (visited.has(n)) continue;
         if (!canEnterSystem(draft, empire.id, n)) continue;
         visited.add(n);
-        prev.set(n, id);
         queue.push(n);
       }
     }
-    if (!found) continue;
-
-    // Walk backwards from `found` to the first hop after `start`.
-    let cur = found;
-    while (prev.get(cur) !== start) {
-      const p = prev.get(cur);
-      if (!p) { cur = start; break; }
-      cur = p;
-    }
-    if (cur === start) continue;
-    const nextHop = cur;
-
-    // Move ALL ships; AI doesn't split for now.
-    const moveCount = fleet.shipCount;
-    let destFleet: Fleet | undefined;
-    for (const f of Object.values(draft.fleets)) {
-      if (f.id !== fleet.id && f.empireId === empire.id && f.systemId === nextHop) {
-        destFleet = f;
-        break;
-      }
-    }
-    if (destFleet) {
-      destFleet.shipCount += moveCount;
-      destFleet.movedTurn = draft.turn;
-      delete draft.fleets[fleet.id];
-    } else {
-      const live = draft.fleets[fleet.id];
-      if (live) {
-        live.systemId = nextHop;
-        live.movedTurn = draft.turn;
-      }
-    }
+    if (!nearest) continue;
+    // Dispatch through the shared apply path. applyMoveFleet re-runs a
+    // BFS to produce the single-hop step and stores the long-range
+    // destination for any unfinished route.
+    applyMoveFleet(draft, {
+      byEmpireId: empire.id,
+      fleetId: fleet.id,
+      toSystemId: nearest,
+    });
   }
 }
 
@@ -1479,44 +1452,29 @@ function aiPlanDiplomacy(draft: GameState, empire: Empire, rand: () => number): 
   const list = Array.from(contacted);
   const pick = list[Math.floor(rand() * list.length)];
   if (!pick) return;
-  if (atWar(draft, empire.id, pick)) return;
-  draft.wars.push(sortedPair(empire.id, pick));
-
-  // Log only if the player is involved — AI-vs-AI wars stay quiet
-  // until we have a dedicated diplomacy feed.
-  const playerId = draft.empire.id;
-  if (empire.id === playerId || pick === playerId) {
-    const target = empireById(draft, pick);
-    const aggressor = empire.id === playerId ? "You" : empire.name;
-    draft.eventLog.push({
-      turn: draft.turn,
-      eventId: "war_declared",
-      choiceId: null,
-      text: `${aggressor} declared war on ${target?.name ?? "an empire"}.`,
-    });
-  }
+  applyDeclareWar(draft, {
+    byEmpireId: empire.id,
+    targetEmpireId: pick,
+  });
 }
 
 // Simple AI fleet goal: keep roughly 2 ships per owned system, plus a
-// minimum floor of 2. When under target and we have hammers headroom,
-// queue a Build Frigate on the capital.
-function aiPlanBuildShip(state: GameState, empire: Empire): BuildOrder | null {
-  if (!empire.capitalBodyId) return null;
-  const currentShips = totalFleetShipsFor(state, empire);
+// minimum floor of 2. When under target, queue a Build Frigate on the
+// capital through the same dispatch path the player uses.
+function aiPlanBuildShip(draft: GameState, empire: Empire): void {
+  if (!empire.capitalBodyId) return;
+  const currentShips = totalFleetShipsFor(draft, empire);
   const target = Math.max(2, empire.systemIds.length * 2);
-  if (currentShips >= target) return null;
+  if (currentShips >= target) return;
   const proj = projectById("build_frigate");
-  if (!proj) return null;
+  if (!proj) return;
   const pcCost = proj.costs?.political ?? 0;
-  if (empire.resources.political < pcCost) return null;
-  return {
-    kind: "empire_project",
-    id: nextOrderId(),
+  if (empire.resources.political < pcCost) return;
+  applyQueueEmpireProject(draft, {
+    byEmpireId: empire.id,
     projectId: proj.id,
-    hammersRequired: proj.hammersRequired,
-    hammersPaid: 0,
     targetBodyId: empire.capitalBodyId,
-  };
+  });
 }
 
 // Pick starter systems that are spread apart: first one random interior,
@@ -1555,6 +1513,189 @@ function pickSpreadStarters(
     picked.push(best);
   }
   return picked.map((s) => s.id);
+}
+
+// =====================================================================
+// apply* — pure draft mutators. Each action type corresponds to one
+// apply* function. The top-level reducer wraps the call in produce()
+// for player dispatches; the AI planner calls these directly from
+// inside endTurn's existing produce() block. Both paths share the same
+// validation and effects, so "player does X" and "AI does X" are
+// guaranteed to behave identically.
+// =====================================================================
+
+function applyQueueColonize(
+  draft: GameState,
+  action: { byEmpireId: string; targetBodyId: string },
+): void {
+  const emp = empireById(draft, action.byEmpireId);
+  if (!emp) return;
+  if (!canColonizeFor(draft, emp, action.targetBodyId)) return;
+  emp.projects.push({
+    kind: "colonize",
+    id: nextOrderId(),
+    targetBodyId: action.targetBodyId,
+    hammersRequired: effectiveColonizeHammers(emp),
+    hammersPaid: 0,
+    politicalCost: effectiveColonizePolitical(emp),
+  });
+}
+
+function applyQueueEmpireProject(
+  draft: GameState,
+  action: { byEmpireId: string; projectId: string; targetBodyId?: string },
+): void {
+  const emp = empireById(draft, action.byEmpireId);
+  if (!emp) return;
+  if (!canQueueProjectFor(emp, action.projectId, action.targetBodyId)) return;
+  const proj = projectById(action.projectId);
+  if (!proj) return;
+  emp.projects.push({
+    kind: "empire_project",
+    id: nextOrderId(),
+    projectId: proj.id,
+    hammersRequired: proj.hammersRequired,
+    hammersPaid: 0,
+    targetBodyId: action.targetBodyId,
+  });
+}
+
+function applyCancelOrder(
+  draft: GameState,
+  action: { byEmpireId: string; orderId: string },
+): void {
+  const emp = empireById(draft, action.byEmpireId);
+  if (!emp) return;
+  emp.projects = emp.projects.filter((o) => o.id !== action.orderId);
+}
+
+function applyAdoptPolicy(
+  draft: GameState,
+  action: { byEmpireId: string; policyId: string },
+): void {
+  const emp = empireById(draft, action.byEmpireId);
+  if (!emp) return;
+  if (!canAdoptPolicy(draft, emp, action.policyId)) return;
+  const p = policyById(action.policyId);
+  if (!p) return;
+  const cost = policyCost(draft, emp, action.policyId);
+  emp.resources.political -= cost;
+  emp.adoptedPolicies.push(p.id);
+  emp.storyModifiers[`policy:${p.id}`] = [...p.modifiers];
+  const prefix = emp.id === draft.empire.id ? "" : `${emp.name}: `;
+  draft.eventLog.push({
+    turn: draft.turn,
+    eventId: `policy:${p.id}`,
+    choiceId: null,
+    text: `${prefix}Policy adopted: ${p.name}.`,
+  });
+}
+
+function applyDeclareWar(
+  draft: GameState,
+  action: { byEmpireId: string; targetEmpireId: string },
+): void {
+  const aggressor = empireById(draft, action.byEmpireId);
+  const target = empireById(draft, action.targetEmpireId);
+  if (!aggressor || !target) return;
+  if (aggressor.id === target.id) return;
+  if (atWar(draft, aggressor.id, target.id)) return;
+  draft.wars.push(sortedPair(aggressor.id, target.id));
+  // Log only when the player is involved, to keep the chronicle clean
+  // of AI-vs-AI noise until we build a dedicated diplomacy feed.
+  const playerId = draft.empire.id;
+  if (aggressor.id === playerId || target.id === playerId) {
+    const who = aggressor.id === playerId ? "You" : aggressor.name;
+    draft.eventLog.push({
+      turn: draft.turn,
+      eventId: "war_declared",
+      choiceId: null,
+      text: `${who} declared war on ${target.name}.`,
+    });
+  }
+}
+
+function applyMakePeace(
+  draft: GameState,
+  action: { byEmpireId: string; targetEmpireId: string },
+): void {
+  const a = empireById(draft, action.byEmpireId);
+  const b = empireById(draft, action.targetEmpireId);
+  if (!a || !b) return;
+  if (!atWar(draft, a.id, b.id)) return;
+  const [x, y] = sortedPair(a.id, b.id);
+  draft.wars = draft.wars.filter(([p, q]) => !(p === x && q === y));
+  const playerId = draft.empire.id;
+  if (a.id === playerId || b.id === playerId) {
+    const otherName = a.id === playerId ? b.name : a.name;
+    draft.eventLog.push({
+      turn: draft.turn,
+      eventId: "peace_declared",
+      choiceId: null,
+      text: `Peace with ${otherName}.`,
+    });
+  }
+}
+
+function applyMoveFleet(
+  draft: GameState,
+  action: { byEmpireId: string; fleetId: string; toSystemId: string; count?: number },
+): void {
+  const fleet = draft.fleets[action.fleetId];
+  if (!fleet) return;
+  if (fleet.empireId !== action.byEmpireId) return;
+  if (fleet.movedTurn === draft.turn) return;
+  if (fleet.systemId === action.toSystemId) return;
+  if (action.count !== undefined && action.count <= 0) return;
+  const moveCount = Math.min(fleet.shipCount, action.count ?? fleet.shipCount);
+  if (moveCount <= 0) return;
+
+  const path = shortestPathFor(draft, fleet.empireId, fleet.systemId, action.toSystemId);
+  if (!path || path.length === 0) return;
+  const nextHop = path[0];
+  const finalDest = action.toSystemId;
+  const hasMultiHop = path.length > 1;
+
+  fleet.shipCount -= moveCount;
+
+  let destFleet: Fleet | undefined;
+  for (const f of Object.values(draft.fleets)) {
+    if (f.empireId === fleet.empireId && f.systemId === nextHop) {
+      destFleet = f;
+      break;
+    }
+  }
+  if (destFleet) {
+    destFleet.shipCount += moveCount;
+    destFleet.movedTurn = draft.turn;
+    destFleet.destinationSystemId = hasMultiHop ? finalDest : undefined;
+  } else {
+    const id = nextFleetId();
+    draft.fleets[id] = {
+      id,
+      empireId: fleet.empireId,
+      systemId: nextHop,
+      shipCount: moveCount,
+      movedTurn: draft.turn,
+      destinationSystemId: hasMultiHop ? finalDest : undefined,
+    };
+  }
+  if (fleet.shipCount <= 0) {
+    delete draft.fleets[action.fleetId];
+  } else {
+    fleet.movedTurn = draft.turn;
+  }
+}
+
+function applyCancelFleetOrder(
+  draft: GameState,
+  action: { byEmpireId: string; fleetId: string },
+): void {
+  const fleet = draft.fleets[action.fleetId];
+  if (!fleet) return;
+  if (fleet.empireId !== action.byEmpireId) return;
+  if (!fleet.destinationSystemId) return;
+  fleet.destinationSystemId = undefined;
 }
 
 export function reduce(state: GameState, action: Action): GameState {
@@ -1736,166 +1877,34 @@ export function reduce(state: GameState, action: Action): GameState {
     case "resolveEvent":
       return resolveEventChoice(state, action.eventId, action.choiceId);
 
-    case "queueColonize": {
-      if (!canColonize(state, action.targetBodyId)) return state;
-      const hammers = effectiveColonizeHammers(state.empire);
-      const political = effectiveColonizePolitical(state.empire);
-      return produce(state, (draft) => {
-        draft.empire.projects.push({
-          kind: "colonize",
-          id: nextOrderId(),
-          targetBodyId: action.targetBodyId,
-          hammersRequired: hammers,
-          hammersPaid: 0,
-          politicalCost: political,
-        });
-      });
-    }
+    case "queueColonize":
+      return produce(state, (draft) => applyQueueColonize(draft, action));
 
-    case "queueEmpireProject": {
-      if (!canQueueProjectFor(state.empire, action.projectId, action.targetBodyId)) return state;
-      const proj = projectById(action.projectId);
-      if (!proj) return state;
-      return produce(state, (draft) => {
-        draft.empire.projects.push({
-          kind: "empire_project",
-          id: nextOrderId(),
-          projectId: proj.id,
-          hammersRequired: proj.hammersRequired,
-          hammersPaid: 0,
-          targetBodyId: action.targetBodyId,
-        });
-      });
-    }
+    case "queueEmpireProject":
+      return produce(state, (draft) => applyQueueEmpireProject(draft, action));
 
-    case "cancelOrder": {
-      return produce(state, (draft) => {
-        draft.empire.projects = draft.empire.projects.filter((o) => o.id !== action.orderId);
-      });
-    }
+    case "cancelOrder":
+      return produce(state, (draft) => applyCancelOrder(draft, action));
 
-    case "adoptPolicy": {
-      if (!canAdoptPolicy(state, state.empire, action.policyId)) return state;
-      const p = policyById(action.policyId);
-      if (!p) return state;
-      const cost = policyCost(state, state.empire, action.policyId);
-      return produce(state, (draft) => {
-        draft.empire.resources.political -= cost;
-        draft.empire.adoptedPolicies.push(p.id);
-        draft.empire.storyModifiers[`policy:${p.id}`] = [...p.modifiers];
-        draft.eventLog.push({
-          turn: draft.turn,
-          eventId: `policy:${p.id}`,
-          choiceId: null,
-          text: `Policy adopted: ${p.name}.`,
-        });
-      });
-    }
+    case "adoptPolicy":
+      return produce(state, (draft) => applyAdoptPolicy(draft, action));
 
-    case "dismissProjectCompletion": {
+    case "dismissProjectCompletion":
       return produce(state, (draft) => {
         draft.projectCompletions.shift();
       });
-    }
 
-    case "declareWar": {
-      const playerId = state.empire.id;
-      const target = empireById(state, action.againstEmpireId);
-      if (!target) return state;
-      if (target.id === playerId) return state;
-      if (atWar(state, playerId, target.id)) return state;
-      return produce(state, (draft) => {
-        draft.wars.push(sortedPair(playerId, target.id));
-        draft.eventLog.push({
-          turn: draft.turn,
-          eventId: "war_declared",
-          choiceId: null,
-          text: `War declared against ${target.name}.`,
-        });
-      });
-    }
+    case "declareWar":
+      return produce(state, (draft) => applyDeclareWar(draft, action));
 
-    case "makePeace": {
-      const playerId = state.empire.id;
-      const target = empireById(state, action.withEmpireId);
-      if (!target) return state;
-      if (!atWar(state, playerId, target.id)) return state;
-      const [x, y] = sortedPair(playerId, target.id);
-      return produce(state, (draft) => {
-        draft.wars = draft.wars.filter(([a, b]) => !(a === x && b === y));
-        draft.eventLog.push({
-          turn: draft.turn,
-          eventId: "peace_declared",
-          choiceId: null,
-          text: `Peace with ${target.name}.`,
-        });
-      });
-    }
+    case "makePeace":
+      return produce(state, (draft) => applyMakePeace(draft, action));
 
-    case "moveFleet": {
-      const fleet = state.fleets[action.fleetId];
-      if (!fleet) return state;
-      if (fleet.empireId !== state.empire.id) return state;
-      if (fleet.movedTurn === state.turn) return state;
-      if (fleet.systemId === action.toSystemId) return state;
-      if (action.count !== undefined && action.count <= 0) return state;
-      const moveCount = Math.min(fleet.shipCount, action.count ?? fleet.shipCount);
-      if (moveCount <= 0) return state;
+    case "moveFleet":
+      return produce(state, (draft) => applyMoveFleet(draft, action));
 
-      // Full path to the final destination through legal territory.
-      const path = shortestPathFor(state, fleet.empireId, fleet.systemId, action.toSystemId);
-      if (!path || path.length === 0) return state;
-      const nextHop = path[0];
-      const finalDest = action.toSystemId;
-      const hasMultiHop = path.length > 1;
-
-      return produce(state, (draft) => {
-        const src = draft.fleets[action.fleetId]!;
-        src.shipCount -= moveCount;
-
-        // Merge into a same-empire fleet at the next hop, if one exists.
-        let destFleet: Fleet | undefined;
-        for (const f of Object.values(draft.fleets)) {
-          if (f.empireId === src.empireId && f.systemId === nextHop) {
-            destFleet = f;
-            break;
-          }
-        }
-        if (destFleet) {
-          destFleet.shipCount += moveCount;
-          destFleet.movedTurn = state.turn;
-          // Merging pre-empts whatever route the destination fleet had;
-          // the combined fleet takes the new order.
-          destFleet.destinationSystemId = hasMultiHop ? finalDest : undefined;
-        } else {
-          const id = nextFleetId();
-          draft.fleets[id] = {
-            id,
-            empireId: src.empireId,
-            systemId: nextHop,
-            shipCount: moveCount,
-            movedTurn: state.turn,
-            destinationSystemId: hasMultiHop ? finalDest : undefined,
-          };
-        }
-        if (src.shipCount <= 0) {
-          delete draft.fleets[action.fleetId];
-        } else {
-          src.movedTurn = state.turn;
-        }
-      });
-    }
-
-    case "cancelFleetOrder": {
-      const fleet = state.fleets[action.fleetId];
-      if (!fleet) return state;
-      if (fleet.empireId !== state.empire.id) return state;
-      if (!fleet.destinationSystemId) return state;
-      return produce(state, (draft) => {
-        const f = draft.fleets[action.fleetId];
-        if (f) f.destinationSystemId = undefined;
-      });
-    }
+    case "cancelFleetOrder":
+      return produce(state, (draft) => applyCancelFleetOrder(draft, action));
 
     case "endTurn": {
       if (state.eventQueue.length > 0) return state;
@@ -1909,8 +1918,7 @@ export function reduce(state: GameState, action: Action): GameState {
 
         // AI planning before ticks, so newly-queued orders drain this turn.
         for (const ai of draft.aiEmpires) {
-          const plan = aiPlan(draft, ai);
-          if (plan) ai.projects.push(plan);
+          aiPlanProject(draft, ai);
         }
 
         // Tick every empire (player + AIs).

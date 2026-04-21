@@ -118,7 +118,11 @@ export function EmpireProfileModal({
                 <button
                   className="diplomacy-btn peace-btn"
                   onClick={() => {
-                    dispatch({ type: "makePeace", withEmpireId: empire.id });
+                    dispatch({
+                      type: "makePeace",
+                      byEmpireId: state.empire.id,
+                      targetEmpireId: empire.id,
+                    });
                     onClose();
                   }}
                 >
@@ -128,7 +132,11 @@ export function EmpireProfileModal({
                 <button
                   className="diplomacy-btn war-btn"
                   onClick={() => {
-                    dispatch({ type: "declareWar", againstEmpireId: empire.id });
+                    dispatch({
+                      type: "declareWar",
+                      byEmpireId: state.empire.id,
+                      targetEmpireId: empire.id,
+                    });
                     onClose();
                   }}
                 >
