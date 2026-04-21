@@ -56,7 +56,8 @@ export type Action =
     }
   | { type: "declareWar"; byEmpireId: string; targetEmpireId: string }
   | { type: "makePeace"; byEmpireId: string; targetEmpireId: string }
-  | { type: "dismissProjectCompletion" };
+  | { type: "dismissProjectCompletion" }
+  | { type: "dismissFirstContact" };
 
 // Colonization tunables. Pop counts + space caps are now on a 10x
 // scale (so a starter temperate world runs ~40 pops instead of 4),
@@ -220,7 +221,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 16,
+    schemaVersion: 17,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -249,6 +250,7 @@ export function initialState(): GameState {
     eventQueue: [],
     eventLog: [],
     projectCompletions: [],
+    pendingFirstContacts: [],
     gameOver: false,
   };
 }
@@ -1309,8 +1311,70 @@ function flipSystem(
 // Remove empires that hold zero systems. Player elimination flips the
 // gameOver flag; AI elimination drops them from the roster and cleans
 // up their fleets + wars.
+// First-contact detection: fires when two empires' territories first
+// become hyperlane-adjacent (any system of A touches any system of B
+// via one hyperlane hop). Each side gets a "met:<otherId>" flag so it
+// only fires once per pair, and the player side gets a chronicle entry
+// plus a pendingFirstContacts entry for the UI modal.
+function detectFirstContacts(draft: GameState): void {
+  const ownerOf: Record<string, string> = {};
+  for (const sys of Object.values(draft.galaxy.systems)) {
+    if (sys.ownerId) ownerOf[sys.id] = sys.ownerId;
+  }
+  // Build adjacency pairs between different empires.
+  const contactPairs = new Set<string>();
+  for (const [a, b] of draft.galaxy.hyperlanes) {
+    const oa = ownerOf[a];
+    const ob = ownerOf[b];
+    if (!oa || !ob || oa === ob) continue;
+    const key = oa < ob ? `${oa}|${ob}` : `${ob}|${oa}`;
+    contactPairs.add(key);
+  }
+  const playerId = draft.empire.id;
+  for (const key of contactPairs) {
+    const [idA, idB] = key.split("|");
+    const flagA = `met:${idB}`;
+    const flagB = `met:${idA}`;
+    const empA = empireById(draft, idA);
+    const empB = empireById(draft, idB);
+    if (!empA || !empB) continue;
+    const alreadyMet =
+      empA.flags.includes(flagA) || empB.flags.includes(flagB);
+    if (alreadyMet) continue;
+    if (!empA.flags.includes(flagA)) empA.flags.push(flagA);
+    if (!empB.flags.includes(flagB)) empB.flags.push(flagB);
+    // Chronicle + UI hook only when the player's involved.
+    if (idA === playerId || idB === playerId) {
+      const other = idA === playerId ? empB : empA;
+      draft.eventLog.push({
+        turn: draft.turn,
+        eventId: "first_contact",
+        choiceId: null,
+        text: `First contact: ${other.name} — ${other.expansionism} ${other.politic}.`,
+      });
+      draft.pendingFirstContacts.push({
+        otherEmpireId: other.id,
+        turn: draft.turn,
+      });
+    }
+  }
+}
+
 function checkEliminations(draft: GameState): void {
-  if (draft.empire.systemIds.length === 0 && !draft.gameOver) {
+  // An empire is eliminated only when it has no systems AND no ships.
+  // Lose your last planet but keep a fleet? You're a wandering ghost
+  // empire until that fleet dies. Same rule for player + AIs.
+  function hasShips(empireId: string): boolean {
+    for (const f of Object.values(draft.fleets)) {
+      if (f.empireId === empireId && f.shipCount > 0) return true;
+    }
+    return false;
+  }
+  if (
+    draft.empire.systemIds.length === 0 &&
+    !hasShips(draft.empire.id) &&
+    !draft.gameOver
+  ) {
     draft.gameOver = true;
     draft.eventLog.push({
       turn: draft.turn,
@@ -1321,13 +1385,10 @@ function checkEliminations(draft: GameState): void {
   }
   const survivors: Empire[] = [];
   for (const ai of draft.aiEmpires) {
-    if (ai.systemIds.length > 0) {
+    if (ai.systemIds.length > 0 || hasShips(ai.id)) {
       survivors.push(ai);
     } else {
-      // Clean up fleets + wars.
-      for (const fid of Object.keys(draft.fleets)) {
-        if (draft.fleets[fid]?.empireId === ai.id) delete draft.fleets[fid];
-      }
+      // Clean up wars (they have no fleets left either).
       draft.wars = draft.wars.filter(([a, b]) => a !== ai.id && b !== ai.id);
       draft.eventLog.push({
         turn: draft.turn,
@@ -2618,6 +2679,11 @@ export function reduce(state: GameState, action: Action): GameState {
         draft.projectCompletions.shift();
       });
 
+    case "dismissFirstContact":
+      return produce(state, (draft) => {
+        draft.pendingFirstContacts.shift();
+      });
+
     case "declareWar":
       return produce(state, (draft) => applyDeclareWar(draft, action));
 
@@ -2706,6 +2772,7 @@ function applyRunPhase(state: GameState): GameState {
     if (isLast) {
       processOccupation(draft);
       checkEliminations(draft);
+      detectFirstContacts(draft);
       draft.currentPhaseEmpireId = null;
     } else {
       draft.currentPhaseEmpireId = order[idx + 1];

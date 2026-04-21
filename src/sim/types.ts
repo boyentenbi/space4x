@@ -292,7 +292,7 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 16;
+  schemaVersion: 17;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;
@@ -312,6 +312,9 @@ export interface GameState {
   // Modal queue: a project just finished for the player and we want to
   // show its completion panel before returning to the normal flow.
   projectCompletions: Array<{ projectId: string; turn: number }>;
+  // First-contact events the player hasn't seen yet. Each entry pops
+  // a modal (or chronicle highlight) introducing the rival empire.
+  pendingFirstContacts: Array<{ otherEmpireId: string; turn: number }>;
   gameOver: boolean;
 }
 

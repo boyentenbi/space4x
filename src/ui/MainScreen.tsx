@@ -38,6 +38,7 @@ import { SystemScene } from "./SystemScene";
 import { PortraitMenu } from "./PortraitMenu";
 import { EmpireProfileModal } from "./EmpireProfileModal";
 import { EmpireRosterModal } from "./EmpireRosterModal";
+import { FirstContactModal } from "./FirstContactModal";
 import { FleetModal } from "./FleetModal";
 import { PoliciesModal } from "./PoliciesModal";
 import { StatBreakdownModal } from "./StatBreakdownModal";
@@ -996,7 +997,15 @@ export function MainScreen() {
         </div>
       </div>
 
-      {pendingEvent && <EventModal eventId={pendingEvent.eventId} />}
+      {state.pendingFirstContacts.length > 0 && (
+        <FirstContactModal
+          otherEmpireId={state.pendingFirstContacts[0].otherEmpireId}
+          onDismiss={() => dispatch({ type: "dismissFirstContact" })}
+        />
+      )}
+      {state.pendingFirstContacts.length === 0 && pendingEvent && (
+        <EventModal eventId={pendingEvent.eventId} />
+      )}
       {breakdown && (
         <StatBreakdownModal breakdown={breakdown} onClose={() => setBreakdown(null)} />
       )}

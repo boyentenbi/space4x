@@ -99,7 +99,7 @@ function makeState(overrides: {
   const fleetsRec: Record<string, Fleet> = {};
   for (const f of overrides.fleets ?? []) fleetsRec[f.id] = f;
   return {
-    schemaVersion: 16,
+    schemaVersion: 17,
     turn: overrides.turn ?? 1,
     rngSeed: 1,
     galaxy: {
@@ -116,6 +116,7 @@ function makeState(overrides: {
     eventQueue: [],
     eventLog: [],
     projectCompletions: [],
+    pendingFirstContacts: [],
     gameOver: false,
   };
 }
