@@ -215,13 +215,14 @@ export function generateGalaxy(opts: GenOptions): Galaxy {
       const bodyIds: string[] = [];
 
       // Every system has a star as its first body. Not colonisable;
-      // claimed by building an outpost. Keeps the system-claim decision
-      // distinct from the planet-colonise decision.
+      // claimed by building an outpost. The star takes its name from
+      // the system itself (the system IS the star) — no "X Star"
+      // suffix.
       const starId = `body_${bodyCounter++}`;
       bodies[starId] = {
         id: starId,
         systemId: sysId,
-        name: `${name} Star`,
+        name,
         kind: "star",
         habitability: "stellar",
         space: 0,
