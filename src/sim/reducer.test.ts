@@ -65,6 +65,27 @@ function makeEmpire(overrides: Partial<Empire> & { id: string }): Empire {
   };
 }
 
+// Run just one empire's phase inside a fresh round: tick everyone via
+// beginRound, then step phases until the target empire has acted.
+// The round isn't finalized (no occupation pass, no random event),
+// which keeps tests focused on what happens in this one phase rather
+// than on full end-of-round mechanics. Defaults to the player.
+function runOnePhase(
+  state: GameState,
+  empireId?: string,
+): GameState {
+  const target = empireId ?? state.empire.id;
+  let s = reduce(state, { type: "beginRound" });
+  // runPhase processes the current empire and advances the pointer.
+  // Stop once we've run the target empire's phase.
+  while (s.currentPhaseEmpireId) {
+    const running = s.currentPhaseEmpireId;
+    s = reduce(s, { type: "runPhase" });
+    if (running === target) break;
+  }
+  return s;
+}
+
 function makeState(overrides: {
   systems: StarSystem[];
   bodies: Body[];
@@ -451,7 +472,10 @@ describe("combat chronicle", () => {
       fleets: [playerFleet, aiFleet],
       wars: [["e_ai", "e_player"].sort() as [string, string]],
     });
-    const next = reduce(state, { type: "endTurn" });
+    // Combat resolves inside any phase where the two sides share a
+    // system; running only the player's phase is enough to produce
+    // the log entry we want to assert on.
+    const next = runOnePhase(state);
     const combat = next.eventLog.find((e) => e.eventId === "combat");
     expect(combat?.text).toContain("s_ai"); // system name fallback = id here
     expect(combat?.text).toContain("you 4→");
@@ -794,7 +818,7 @@ describe("processFleetOrders via endTurn", () => {
       fleets: [fleet],
     });
 
-    const next = reduce(state, { type: "endTurn" });
+    const next = runOnePhase(state);
     // Fleet stayed home; route intact.
     expect(next.fleets["f_big"]?.systemId).toBe("s_home");
     expect(next.fleets["f_big"]?.destinationSystemId).toBe("s_mid");
