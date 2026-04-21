@@ -17,7 +17,6 @@ import type {
   Politic,
   Resources,
   ResourceKey,
-  StarSystem,
 } from "./types";
 
 // Every empire-scoped action carries `byEmpireId` so the player and the
@@ -1893,6 +1892,17 @@ function processFleetOrders(draft: GameState, onlyEmpireId?: string): void {
     // set; the fleet just doesn't step this turn.
     const fleetOwner = empireById(draft, fleet.empireId);
     if (!fleetOwner || fleetOwner.resources.energy <= 0) continue;
+    // No fleeing under fire. If there's an at-war enemy fleet sharing
+    // this system, the fight has to resolve before anyone moves.
+    const engaged = Object.values(draft.fleets).some(
+      (other) =>
+        other.id !== fleet.id &&
+        other.systemId === fleet.systemId &&
+        other.shipCount > 0 &&
+        other.empireId !== fleet.empireId &&
+        atWar(draft, fleet.empireId, other.empireId),
+    );
+    if (engaged) continue;
     if (fleet.systemId === fleet.destinationSystemId) {
       fleet.destinationSystemId = undefined;
       continue;
