@@ -31,7 +31,7 @@ function persist(state: GameState) {
 
 // Pacing between empire phases when the player presses End Turn.
 // Keeps the round readable — you see each empire act in sequence.
-const PHASE_DELAY_MS = 500;
+const PHASE_DELAY_MS = 200;
 
 interface Store {
   state: GameState;
