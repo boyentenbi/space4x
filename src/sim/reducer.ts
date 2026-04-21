@@ -744,6 +744,7 @@ export function systemClaimant(state: GameState, systemId: string): string | nul
 // For body-scope projects, pass the `targetBodyId` of the intended host
 // (capital or any-owned) so the body requirement can be validated.
 export function canQueueProjectFor(
+  state: GameState,
   empire: Empire,
   projectId: string,
   targetBodyId?: string,
@@ -760,7 +761,14 @@ export function canQueueProjectFor(
   if (proj.scope === "body") {
     if (!targetBodyId) return false;
     if (proj.bodyRequirement === "capital" && targetBodyId !== empire.capitalBodyId) return false;
-    // "any_owned" — caller is expected to only call with an owned body.
+    if (proj.bodyRequirement === "any_owned") {
+      const body = state.galaxy.bodies[targetBodyId];
+      if (!body) return false;
+      const sys = state.galaxy.systems[body.systemId];
+      if (!sys || sys.ownerId !== empire.id) return false;
+      // Must be actually colonized — orbital yards need pops to staff.
+      if (body.pops <= 0) return false;
+    }
   }
   // Dedupe rules:
   //  - Empire-scope projects: at most one of a given projectId queued.
@@ -779,16 +787,16 @@ export function canQueueProjectFor(
 }
 
 // Empire-scope projects this empire can queue right now.
-export function availableProjectsFor(empire: Empire) {
+export function availableProjectsFor(state: GameState, empire: Empire) {
   return EMPIRE_PROJECTS.filter(
-    (p) => p.scope === "empire" && canQueueProjectFor(empire, p.id),
+    (p) => p.scope === "empire" && canQueueProjectFor(state, empire, p.id),
   );
 }
 
 // Body-scope projects this empire can queue on the given body.
-export function availableBodyProjectsFor(empire: Empire, bodyId: string) {
+export function availableBodyProjectsFor(state: GameState, empire: Empire, bodyId: string) {
   return EMPIRE_PROJECTS.filter(
-    (p) => p.scope === "body" && canQueueProjectFor(empire, p.id, bodyId),
+    (p) => p.scope === "body" && canQueueProjectFor(state, empire, p.id, bodyId),
   );
 }
 
@@ -1547,7 +1555,7 @@ function applyQueueEmpireProject(
 ): void {
   const emp = empireById(draft, action.byEmpireId);
   if (!emp) return;
-  if (!canQueueProjectFor(emp, action.projectId, action.targetBodyId)) return;
+  if (!canQueueProjectFor(draft, emp, action.projectId, action.targetBodyId)) return;
   const proj = projectById(action.projectId);
   if (!proj) return;
   emp.projects.push({

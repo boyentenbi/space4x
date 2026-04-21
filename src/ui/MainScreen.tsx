@@ -699,7 +699,7 @@ export function MainScreen() {
                       colonizeHammers={colonizeHammerCost}
                       colonizePolitical={colonizePoliticalCost}
                       growth={focusIsOurs ? growthEstimate(state, state.empire, body) : null}
-                      bodyProjects={focusIsOurs ? availableBodyProjectsFor(state.empire, body.id) : []}
+                      bodyProjects={focusIsOurs ? availableBodyProjectsFor(state, state.empire, body.id) : []}
                       bodyProjectOrder={focusIsOurs ? bodyProjectOrderFor(state.empire, body.id) : null}
                       hammerRate={totalHammers}
                       onColonize={() =>
@@ -739,7 +739,7 @@ export function MainScreen() {
                 which system you're inspecting. */}
             <EmpireProjectsCard
               projects={state.empire.projects}
-              available={availableProjectsFor(state.empire)}
+              available={availableProjectsFor(state, state.empire)}
               hammerRate={totalHammers}
               onQueue={(pid) =>
                 dispatch({
