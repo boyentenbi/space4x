@@ -1487,13 +1487,30 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
 // credit proportional to completion, discounted so the AI still prefers
 // things that are actually built.
 // ===================================================================
+// Horizon weight on per-turn flows — roughly "how many turns of this
+// future stream do I value". Keeping it a single knob (rather than
+// per-resource) keeps the search simple.
+export const FLOW_HORIZON = 5;
+
 export function scoreState(state: GameState, empireId: string): number {
   const empire = empireById(state, empireId);
   if (!empire) return -Infinity;
   let score = 0;
-  // Hard assets.
+  // Hard assets (raw hammer-cost equivalent).
   score += empire.systemIds.length * COLONIZE_HAMMERS;
   score += totalFleetShipsFor(state, empire) * 200; // frigate hammer cost
+  // Future production flows: a system with 30 busy pops is worth
+  // markedly more than an empty one of the same colonize cost, and
+  // this is where that difference shows up.
+  let hammerRate = 0;
+  for (const body of ownedBodiesOf(state, empire)) {
+    hammerRate += body.pops * hammersPerPop(empire);
+  }
+  const flow = perTurnIncomeOf(state, empire);
+  score += hammerRate * FLOW_HORIZON;
+  score += flow.food * FLOW_HORIZON;
+  score += flow.energy * FLOW_HORIZON;
+  score += flow.political * FLOW_HORIZON * 3; // political is scarcer
   // Political capital is expensive to regenerate — rough exchange rate.
   score += empire.resources.political * 15;
   // In-flight projects: completion × cost, with a 30% discount so done
@@ -1506,20 +1523,35 @@ export function scoreState(state: GameState, empireId: string): number {
     const potential = order.hammersRequired * 0.7 * (0.3 + 0.7 * progress);
     score += potential;
   }
-  // Occupations — partial transfers in flight. A system 2 turns into a
-  // 3-turn siege is 2/3 of the way to changing hands; credit/debit both
-  // sides accordingly so the AI sees conquering and defending as real
-  // value changes.
+  // Occupations — partial transfers in flight. Credit / debit are
+  // conditional on active fleet presence: if the occupier has no fleet
+  // at the system any more, the siege clears next turn (no credit); if
+  // the defender has a fleet at their own sieged system, the siege
+  // clears (no debit). This makes "stay and finish the job" and "go
+  // defend a sieged system" the highest-scoring moves naturally,
+  // without any heuristic rules in the move planner.
   for (const sys of Object.values(state.galaxy.systems)) {
     const occ = sys.occupation;
     if (!occ) continue;
     const progress = occ.turns / OCCUPATION_TURNS_TO_FLIP;
+    const occupierHasFleet = Object.values(state.fleets).some(
+      (f) => f.empireId === occ.empireId && f.systemId === sys.id && f.shipCount > 0,
+    );
+    const defenderHasFleet =
+      sys.ownerId !== null &&
+      Object.values(state.fleets).some(
+        (f) => f.empireId === sys.ownerId && f.systemId === sys.id && f.shipCount > 0,
+      );
     if (occ.empireId === empireId) {
-      // We're the occupier — partial gain of an enemy system.
-      score += COLONIZE_HAMMERS * progress;
+      // We're the occupier — partial gain, only if we're still here.
+      if (occupierHasFleet && !defenderHasFleet) {
+        score += COLONIZE_HAMMERS * progress;
+      }
     } else if (sys.ownerId === empireId) {
-      // We're being occupied — partial loss of our system.
-      score -= COLONIZE_HAMMERS * progress;
+      // We're being occupied — partial loss, unless we have a defender.
+      if (occupierHasFleet && !defenderHasFleet) {
+        score -= COLONIZE_HAMMERS * progress;
+      }
     }
   }
   return score;
@@ -1733,61 +1765,84 @@ function buildHyperlaneAdj(draft: GameState): Map<string, string[]> {
   return adj;
 }
 
-// Move each of `empire`'s fleets one hop toward the nearest enemy-owned
-// system. Fleets without a reachable enemy stand still. Neutral-owned
-// space blocks pathing (same rule as the player).
+// Per-fleet greedy search over destinations. For each fleet, try
+// "stay here", "clear route", and every reachable system as a
+// candidate. Score each by imagining the fleet is ALREADY at that
+// destination (teleport approximation) and letting scoreState decide.
+// The "don't abandon a siege", "defend an occupied home system", and
+// "attack the weakest enemy" behaviours all fall out of the value
+// function without special-casing.
+// For each of `empire`'s fleets, try every reachable destination as a
+// candidate move. For each candidate, imagine the fleet is already at
+// that destination (teleport), run one forward step of combat +
+// occupation to let consequences land, then score the resulting state.
+// Pick the best. "Don't abandon a siege", "defend a sieged system",
+// "press the attack", etc. all emerge from scoreState via this search,
+// not from hand-coded rules.
 function aiPlanMoves(draft: GameState, empire: Empire): void {
-  const enemies = new Set(enemiesOf(draft, empire.id));
-  if (enemies.size === 0) return;
-
-  const enemySystemIds = new Set<string>();
-  for (const sys of Object.values(draft.galaxy.systems)) {
-    if (sys.ownerId && enemies.has(sys.ownerId)) enemySystemIds.add(sys.id);
-  }
-  if (enemySystemIds.size === 0) return;
-
-  const adj = buildHyperlaneAdj(draft);
-
-  const ourFleets = Object.values(draft.fleets).filter(
+  const baseline = current(draft);
+  const ourFleets = Object.values(baseline.fleets).filter(
     (f) => f.empireId === empire.id && f.shipCount > 0,
   );
 
   for (const fleet of ourFleets) {
-    // Don't abandon an ongoing siege — if we're the active occupier of
-    // the system we're sitting in, stay and let the occupation counter
-    // continue ticking. Clear any leftover destination and skip.
-    const sysHere = draft.galaxy.systems[fleet.systemId];
-    if (sysHere?.occupation?.empireId === empire.id) {
+    const reachable: string[] = [];
+    for (const sid of Object.keys(baseline.galaxy.systems)) {
+      if (sid === fleet.systemId) continue;
+      const path = shortestPathFor(baseline, empire.id, fleet.systemId, sid);
+      if (path && path.length > 0) reachable.push(sid);
+    }
+
+    const scoreCandidate = (mutate: (d: GameState) => void): number => {
+      const projected = produce(baseline, (d) => {
+        mutate(d);
+        // 1-step forward sim: combat settles any new encounter, then
+        // occupation ticks reveal whether we're advancing or breaking
+        // sieges. scoreState reads the resulting state.
+        resolveCombat(d);
+        processOccupation(d);
+      });
+      return scoreState(projected, empire.id);
+    };
+
+    let bestScore = scoreCandidate(() => {}); // baseline: no change
+    let bestAction: { kind: "keep" } | { kind: "set"; to: string | null } = {
+      kind: "keep",
+    };
+
+    // Clearing the route (stay + no travel).
+    {
+      const score = scoreCandidate((d) => {
+        const f = d.fleets[fleet.id];
+        if (f) f.destinationSystemId = undefined;
+      });
+      if (score > bestScore) {
+        bestScore = score;
+        bestAction = { kind: "set", to: null };
+      }
+    }
+
+    // Each reachable destination (teleport approximation).
+    for (const dest of reachable) {
+      const score = scoreCandidate((d) => {
+        const f = d.fleets[fleet.id];
+        if (!f) return;
+        f.systemId = dest;
+        f.destinationSystemId = undefined;
+      });
+      if (score > bestScore) {
+        bestScore = score;
+        bestAction = { kind: "set", to: dest };
+      }
+    }
+
+    if (bestAction.kind === "set") {
       applySetFleetDestination(draft, {
         byEmpireId: empire.id,
         fleetId: fleet.id,
-        toSystemId: null,
+        toSystemId: bestAction.to,
       });
-      continue;
     }
-
-    // Single BFS from the fleet, stopping at the nearest enemy system.
-    const start = fleet.systemId;
-    const visited = new Set<string>([start]);
-    const queue: string[] = [start];
-    let nearest: string | null = null;
-    while (queue.length) {
-      const id = queue.shift()!;
-      if (id !== start && enemySystemIds.has(id)) { nearest = id; break; }
-      for (const n of adj.get(id) ?? []) {
-        if (visited.has(n)) continue;
-        if (!canEnterSystem(draft, empire.id, n)) continue;
-        visited.add(n);
-        queue.push(n);
-      }
-    }
-    if (!nearest) continue;
-    // Set the AI's route; processFleetOrders does the actual stepping.
-    applySetFleetDestination(draft, {
-      byEmpireId: empire.id,
-      fleetId: fleet.id,
-      toSystemId: nearest,
-    });
   }
 }
 

@@ -301,15 +301,16 @@ describe("setFleetDestination action", () => {
 
 describe("AI scoreState value function", () => {
   it("partially credits in-progress occupations on both sides", () => {
-    // System is owned by e_player but e_ai has a 2-turn occupation going.
+    // Zero-pop bodies isolate the assertion to occupation math only.
     const contested = makeSystem({
       id: "s_contested",
-      bodyIds: [],
+      bodyIds: ["b_contested"],
       ownerId: "e_player",
       occupation: { empireId: "e_ai", turns: 2 },
     });
     const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
-    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 10 });
+    const contestedBody = makeBody({ id: "b_contested", systemId: "s_contested", pops: 0 });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 0 });
     const player = makeEmpire({
       id: "e_player",
       systemIds: [contested.id],
@@ -320,27 +321,37 @@ describe("AI scoreState value function", () => {
       systemIds: [aiHome.id],
       resources: { food: 0, energy: 0, political: 0 },
     });
+    const siegeFleet: Fleet = {
+      id: "f_siege",
+      empireId: "e_ai",
+      systemId: "s_contested",
+      shipCount: 1,
+    };
     const state = makeState({
       systems: [contested, aiHome],
-      bodies: [aiBody],
+      bodies: [contestedBody, aiBody],
       empire: player,
       aiEmpires: [ai],
+      fleets: [siegeFleet],
+      wars: [["e_ai", "e_player"].sort() as [string, string]],
     });
-    // Player raw = 1 system × 200 = 200; occupation debit = 200 × 2/3 ≈ 133.3.
-    // So player score ≈ 66.67.
+    // Player raw = 1 system × 200 = 200; occupation debit = 200 × 2/3
+    // ≈ 133.3; + 15 political-flow baseline. So player score ≈ 82.
     const playerScore = scoreState(state, "e_player");
-    expect(playerScore).toBeGreaterThan(60);
-    expect(playerScore).toBeLessThan(75);
-    // AI raw = 1 system × 200 = 200; occupation credit = 200 × 2/3 ≈ 133.3.
-    // So AI score ≈ 333.3.
+    expect(playerScore).toBeGreaterThan(75);
+    expect(playerScore).toBeLessThan(90);
+    // AI raw = 1 system × 200 + 1 ship × 200 = 400; occupation credit
+    // ≈ 133.3; + 15 political-flow. So AI score ≈ 548.
     const aiScore = scoreState(state, "e_ai");
-    expect(aiScore).toBeGreaterThan(325);
-    expect(aiScore).toBeLessThan(340);
+    expect(aiScore).toBeGreaterThan(540);
+    expect(aiScore).toBeLessThan(555);
   });
 
   it("values systems and ships in hammer-equivalent units", () => {
+    // Use a 0-pop body so the flow terms (hammers/food/energy per turn)
+    // are all zero and the expected number is purely assets.
     const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
-    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 0 });
     const player = makeEmpire({
       id: "e_player",
       capitalBodyId: "b_cap",
@@ -359,8 +370,10 @@ describe("AI scoreState value function", () => {
       empire: player,
       fleets: [fleet],
     });
-    // 1 system × 200 colonize + 2 ships × 200 frigate = 600.
-    expect(scoreState(state, "e_player")).toBe(600);
+    // 1 system × 200 + 2 ships × 200 = 600 assets.
+    // + 1 political/turn baseline × (FLOW_HORIZON 5 × political mult 3) = 15.
+    // Total = 615.
+    expect(scoreState(state, "e_player")).toBe(615);
   });
 
   it("scoreState increases after a round where a new system was colonised", () => {
@@ -517,6 +530,61 @@ describe("AI fleet routing", () => {
     expect(next.fleets["f_ai"]?.systemId).toBe("s_target");
     expect(next.galaxy.systems["s_target"]?.ownerId).toBe("e_ai");
     expect(next.galaxy.systems["s_target"]?.occupation).toBeUndefined();
+  });
+
+  it("sends a defender fleet across the empire to break a siege", () => {
+    // A (AI) owns both hexes; its only fleet is on the right. B (the
+    // player, or any enemy) has 1 ship on the left which is 2/3
+    // through conquering it. A should route its fleet to the left
+    // this round, engage combat, and break the siege — and that
+    // decision should come from the value function, not from any
+    // hand-coded "defend the sieged hex" rule.
+    const right = makeSystem({ id: "s_right", bodyIds: ["b_r"], ownerId: "e_ai" });
+    const left = makeSystem({
+      id: "s_left",
+      bodyIds: ["b_l"],
+      ownerId: "e_ai",
+      occupation: { empireId: "e_player", turns: 2 },
+    });
+    const rBody = makeBody({ id: "b_r", systemId: "s_right", pops: 30 });
+    const lBody = makeBody({ id: "b_l", systemId: "s_left", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: null,
+      systemIds: [],
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_r",
+      systemIds: ["s_right", "s_left"],
+      expansionism: "pragmatist",
+    });
+    const aiDefender: Fleet = {
+      id: "f_def",
+      empireId: "e_ai",
+      systemId: "s_right",
+      shipCount: 2,
+    };
+    const playerInvader: Fleet = {
+      id: "f_inv",
+      empireId: "e_player",
+      systemId: "s_left",
+      shipCount: 1,
+    };
+    const state = makeState({
+      systems: [right, left],
+      bodies: [rBody, lBody],
+      hyperlanes: [["s_right", "s_left"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [aiDefender, playerInvader],
+      wars: [["e_ai", "e_player"].sort() as [string, string]],
+    });
+    const next = reduce(state, { type: "endTurn" });
+    // AI fleet moved left; siege cleared; AI still owns both hexes.
+    expect(next.fleets["f_def"]?.systemId).toBe("s_left");
+    expect(next.galaxy.systems["s_left"]?.occupation).toBeUndefined();
+    expect(next.galaxy.systems["s_left"]?.ownerId).toBe("e_ai");
   });
 });
 
