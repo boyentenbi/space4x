@@ -1028,6 +1028,61 @@ button.res-cell:hover:not(:disabled) {
   gap: 4px;
 }
 
+.empire-profile .profile-diplomacy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.diplomacy-status {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.diplomacy-status.peace {
+  color: var(--text-dim);
+  background: rgba(126, 200, 255, 0.08);
+  border: 1px solid var(--border);
+}
+
+.diplomacy-status.war {
+  color: #ff8a8a;
+  background: rgba(255, 138, 138, 0.1);
+  border: 1px solid rgba(255, 138, 138, 0.4);
+}
+
+.diplomacy-btn {
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.diplomacy-btn.war-btn {
+  border: 1px solid rgba(255, 138, 138, 0.5);
+  color: #ff8a8a;
+  background: transparent;
+}
+
+.diplomacy-btn.war-btn:hover {
+  background: rgba(255, 138, 138, 0.08);
+}
+
+.diplomacy-btn.peace-btn {
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  background: transparent;
+}
+
+.diplomacy-btn.peace-btn:hover {
+  background: rgba(126, 200, 255, 0.08);
+}
+
 /* =======================================================
    Empires roster modal — list of all empires with archetype.
    ======================================================= */
@@ -1075,6 +1130,20 @@ button.res-cell:hover:not(:disabled) {
   font-size: 14px;
   color: var(--text);
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.roster-war-tag {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: #ff8a8a;
+  background: rgba(255, 138, 138, 0.12);
+  border: 1px solid rgba(255, 138, 138, 0.4);
 }
 
 .roster-meta {

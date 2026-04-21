@@ -1,6 +1,6 @@
 import { useGame } from "../store";
 import { leaderContentById, speciesById } from "../sim/content";
-import { empireById, empireModifiers, totalPopsOf } from "../sim/reducer";
+import { atWar, empireById, empireModifiers, totalPopsOf } from "../sim/reducer";
 import type { Expansionism, Politic } from "../sim/types";
 import { ModifierChip } from "./modifierUi";
 
@@ -29,6 +29,7 @@ export function EmpireProfileModal({
   onClose: () => void;
 }) {
   const state = useGame((s) => s.state);
+  const dispatch = useGame((s) => s.dispatch);
   const empire = empireById(state, empireId);
   if (!empire) {
     return (
@@ -48,6 +49,7 @@ export function EmpireProfileModal({
   const modifiers = empireModifiers(empire);
   const pops = totalPopsOf(state, empire);
   const systemsOwned = empire.systemIds.length;
+  const isAtWar = !isPlayer && atWar(state, state.empire.id, empire.id);
 
   return (
     <div className="modal-scrim" onClick={onClose}>
@@ -101,6 +103,38 @@ export function EmpireProfileModal({
               {modifiers.map((m, i) => (
                 <ModifierChip key={i} mod={m} />
               ))}
+            </div>
+          </div>
+        )}
+
+        {!isPlayer && (
+          <div className="profile-section">
+            <div className="profile-section-label">Diplomacy</div>
+            <div className="profile-diplomacy">
+              <span className={`diplomacy-status ${isAtWar ? "war" : "peace"}`}>
+                {isAtWar ? "At war" : "At peace"}
+              </span>
+              {isAtWar ? (
+                <button
+                  className="diplomacy-btn peace-btn"
+                  onClick={() => {
+                    dispatch({ type: "makePeace", withEmpireId: empire.id });
+                    onClose();
+                  }}
+                >
+                  Make peace
+                </button>
+              ) : (
+                <button
+                  className="diplomacy-btn war-btn"
+                  onClick={() => {
+                    dispatch({ type: "declareWar", againstEmpireId: empire.id });
+                    onClose();
+                  }}
+                >
+                  Declare war
+                </button>
+              )}
             </div>
           </div>
         )}

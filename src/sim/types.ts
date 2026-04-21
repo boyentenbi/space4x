@@ -270,13 +270,16 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 14;
+  schemaVersion: 15;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;
   empire: Empire;           // The player's empire.
   aiEmpires: Empire[];      // AI-controlled rivals.
   fleets: Record<string, Fleet>;
+  // Ordered pairs of warring empires. Each pair is sorted by id so
+  // lookups are canonical; membership is symmetric.
+  wars: Array<[string, string]>;
   eventQueue: PendingEvent[];
   eventLog: Array<{ turn: number; eventId: string; choiceId: string | null; text: string }>;
   // Modal queue: a project just finished for the player and we want to

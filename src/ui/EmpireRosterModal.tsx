@@ -1,6 +1,6 @@
 import { useGame } from "../store";
 import { speciesById } from "../sim/content";
-import { allEmpires } from "../sim/reducer";
+import { allEmpires, atWar } from "../sim/reducer";
 
 export function EmpireRosterModal({
   onPick,
@@ -39,6 +39,9 @@ export function EmpireRosterModal({
                 <div className="roster-body">
                   <div className="roster-name">
                     {e.name || (isPlayer ? "Your empire" : "Unknown")}
+                    {!isPlayer && atWar(state, state.empire.id, e.id) && (
+                      <span className="roster-war-tag">at war</span>
+                    )}
                   </div>
                   <div className="roster-meta">
                     {species?.name ?? "?"} · {e.expansionism} · {e.politic}

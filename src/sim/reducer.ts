@@ -36,6 +36,8 @@ export type Action =
   | { type: "cancelOrder"; orderId: string }
   | { type: "adoptPolicy"; policyId: string }
   | { type: "moveFleet"; fleetId: string; toSystemId: string; count?: number }
+  | { type: "declareWar"; againstEmpireId: string }
+  | { type: "makePeace"; withEmpireId: string }
   | { type: "dismissProjectCompletion" };
 
 // Colonization tunables. Pop counts + space caps are now on a 10x
@@ -185,7 +187,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 14,
+    schemaVersion: 15,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -209,6 +211,7 @@ export function initialState(): GameState {
     },
     aiEmpires: [],
     fleets: {},
+    wars: [],
     eventQueue: [],
     eventLog: [],
     projectCompletions: [],
@@ -882,36 +885,43 @@ function resolveCombat(draft: GameState): void {
     (bySystem[f.systemId] ??= []).push(f);
   }
   for (const [sysId, fleets] of Object.entries(bySystem)) {
-    const empires = new Set(fleets.map((f) => f.empireId));
-    if (empires.size < 2) continue;
+    const empires = Array.from(new Set(fleets.map((f) => f.empireId)));
+    if (empires.length < 2) continue;
 
-    // Sum ships per empire in this system.
+    // For each empire here, incoming damage = 0.3 * (sum of ships
+    // belonging to empires we're AT WAR with in this system). Fleets
+    // of non-warring empires coexist peacefully.
     const empireShips: Record<string, number> = {};
     for (const f of fleets) empireShips[f.empireId] = (empireShips[f.empireId] ?? 0) + f.shipCount;
 
-    // Damage incoming = 0.3 * (sum of ships of every OTHER empire).
-    const totalShips = Object.values(empireShips).reduce((s, n) => s + n, 0);
     const damageIn: Record<string, number> = {};
+    let anyFight = false;
     for (const empId of empires) {
-      damageIn[empId] = (totalShips - empireShips[empId]) * 0.3;
+      let enemyShips = 0;
+      for (const otherId of empires) {
+        if (otherId === empId) continue;
+        if (atWar(draft, empId, otherId)) enemyShips += empireShips[otherId];
+      }
+      damageIn[empId] = enemyShips * 0.3;
+      if (enemyShips > 0) anyFight = true;
     }
+    if (!anyFight) continue;
 
     // Apply losses proportionally across each empire's fleets.
     for (const f of fleets) {
       if (f.shipCount <= 0) continue;
       const empTotal = empireShips[f.empireId];
       if (empTotal === 0) continue;
+      if (damageIn[f.empireId] <= 0) continue;
       const share = f.shipCount / empTotal;
       const losses = Math.max(1, Math.ceil(damageIn[f.empireId] * share));
       f.shipCount = Math.max(0, f.shipCount - losses);
     }
-    // Remove empty fleets.
     for (const f of fleets) {
       if (f.shipCount <= 0) delete draft.fleets[f.id];
     }
 
-    // Chronicle if the player's fleet was involved.
-    if (empires.has(draft.empire.id)) {
+    if (empires.includes(draft.empire.id)) {
       const sys = draft.galaxy.systems[sysId];
       draft.eventLog.push({
         turn: draft.turn,
@@ -925,6 +935,44 @@ function resolveCombat(draft: GameState): void {
 
 export function fleetsInSystem(state: GameState, systemId: string): Fleet[] {
   return Object.values(state.fleets).filter((f) => f.systemId === systemId);
+}
+
+// =====================================================================
+// War state — symmetric relation stored as sorted pairs.
+// =====================================================================
+function sortedPair(a: string, b: string): [string, string] {
+  return a < b ? [a, b] : [b, a];
+}
+
+export function atWar(state: GameState, a: string, b: string): boolean {
+  if (a === b) return false;
+  const [x, y] = sortedPair(a, b);
+  return state.wars.some(([p, q]) => p === x && q === y);
+}
+
+// Enemies of `empireId` — every empire we have an active war with.
+export function enemiesOf(state: GameState, empireId: string): string[] {
+  const out: string[] = [];
+  for (const [a, b] of state.wars) {
+    if (a === empireId) out.push(b);
+    else if (b === empireId) out.push(a);
+  }
+  return out;
+}
+
+// Can `moverEmpireId` legally enter `systemId`? Own territory, unowned
+// space, and enemy (at-war) territory all qualify. Neutral-owned space
+// is off-limits until war is declared.
+export function canEnterSystem(
+  state: GameState,
+  moverEmpireId: string,
+  systemId: string,
+): boolean {
+  const sys = state.galaxy.systems[systemId];
+  if (!sys) return false;
+  if (!sys.ownerId) return true;
+  if (sys.ownerId === moverEmpireId) return true;
+  return atWar(state, moverEmpireId, sys.ownerId);
 }
 
 export function totalFleetShipsFor(state: GameState, empire: Empire): number {
@@ -1191,6 +1239,153 @@ function aiPlan(state: GameState, empire: Empire): BuildOrder | null {
     hammersPaid: 0,
     politicalCost: effPolitical,
   };
+}
+
+// Build adjacency from the hyperlane list. Repeated on every turn's
+// AI plan; cheap enough at current galaxy sizes.
+function buildHyperlaneAdj(draft: GameState): Map<string, string[]> {
+  const adj = new Map<string, string[]>();
+  for (const [a, b] of draft.galaxy.hyperlanes) {
+    if (!adj.has(a)) adj.set(a, []);
+    if (!adj.has(b)) adj.set(b, []);
+    adj.get(a)!.push(b);
+    adj.get(b)!.push(a);
+  }
+  return adj;
+}
+
+// Move each of `empire`'s fleets one hop toward the nearest enemy-owned
+// system. Fleets without a reachable enemy stand still. Neutral-owned
+// space blocks pathing (same rule as the player).
+function aiPlanMoves(draft: GameState, empire: Empire): void {
+  const enemies = new Set(enemiesOf(draft, empire.id));
+  if (enemies.size === 0) return;
+
+  const enemySystemIds = new Set<string>();
+  for (const sys of Object.values(draft.galaxy.systems)) {
+    if (sys.ownerId && enemies.has(sys.ownerId)) enemySystemIds.add(sys.id);
+  }
+  if (enemySystemIds.size === 0) return;
+
+  const adj = buildHyperlaneAdj(draft);
+
+  // Snapshot the fleet list — we mutate draft.fleets below.
+  const ourFleets = Object.values(draft.fleets).filter(
+    (f) => f.empireId === empire.id && f.movedTurn !== draft.turn && f.shipCount > 0,
+  );
+
+  for (const fleet of ourFleets) {
+    const start = fleet.systemId;
+    const prev = new Map<string, string>();
+    const visited = new Set<string>([start]);
+    const queue: string[] = [start];
+    let found: string | null = null;
+    while (queue.length) {
+      const id = queue.shift()!;
+      if (id !== start && enemySystemIds.has(id)) {
+        found = id;
+        break;
+      }
+      for (const n of adj.get(id) ?? []) {
+        if (visited.has(n)) continue;
+        if (!canEnterSystem(draft, empire.id, n)) continue;
+        visited.add(n);
+        prev.set(n, id);
+        queue.push(n);
+      }
+    }
+    if (!found) continue;
+
+    // Walk backwards from `found` to the first hop after `start`.
+    let cur = found;
+    while (prev.get(cur) !== start) {
+      const p = prev.get(cur);
+      if (!p) { cur = start; break; }
+      cur = p;
+    }
+    if (cur === start) continue;
+    const nextHop = cur;
+
+    // Move ALL ships; AI doesn't split for now.
+    const moveCount = fleet.shipCount;
+    let destFleet: Fleet | undefined;
+    for (const f of Object.values(draft.fleets)) {
+      if (f.id !== fleet.id && f.empireId === empire.id && f.systemId === nextHop) {
+        destFleet = f;
+        break;
+      }
+    }
+    if (destFleet) {
+      destFleet.shipCount += moveCount;
+      destFleet.movedTurn = draft.turn;
+      delete draft.fleets[fleet.id];
+    } else {
+      const live = draft.fleets[fleet.id];
+      if (live) {
+        live.systemId = nextHop;
+        live.movedTurn = draft.turn;
+      }
+    }
+  }
+}
+
+// Archetype-driven war declarations. Conquerors occasionally declare
+// war on a reachable neighbour; pragmatists and isolationists don't
+// initiate (they still fight back via combat resolution).
+function aiPlanDiplomacy(draft: GameState, empire: Empire, rand: () => number): void {
+  if (empire.expansionism !== "conqueror") return;
+  if (enemiesOf(draft, empire.id).length >= 1) return;
+  if (empire.systemIds.length === 0) return;
+
+  const adj = buildHyperlaneAdj(draft);
+
+  // BFS through our + unowned territory; any hit on a foreign-owned
+  // system counts as "in contact" for the purpose of starting a war.
+  const MAX_DEPTH = 6;
+  const contacted = new Set<string>();
+  const visited = new Set<string>();
+  let frontier = new Set<string>(empire.systemIds);
+  for (const id of frontier) visited.add(id);
+  for (let d = 0; d < MAX_DEPTH && frontier.size > 0; d++) {
+    const next = new Set<string>();
+    for (const id of frontier) {
+      for (const n of adj.get(id) ?? []) {
+        if (visited.has(n)) continue;
+        const sys = draft.galaxy.systems[n];
+        if (!sys) continue;
+        if (sys.ownerId && sys.ownerId !== empire.id) {
+          contacted.add(sys.ownerId);
+          continue; // don't traverse through them
+        }
+        visited.add(n);
+        next.add(n);
+      }
+    }
+    frontier = next;
+  }
+
+  if (contacted.size === 0) return;
+  if (rand() > 0.15) return;
+
+  const list = Array.from(contacted);
+  const pick = list[Math.floor(rand() * list.length)];
+  if (!pick) return;
+  if (atWar(draft, empire.id, pick)) return;
+  draft.wars.push(sortedPair(empire.id, pick));
+
+  // Log only if the player is involved — AI-vs-AI wars stay quiet
+  // until we have a dedicated diplomacy feed.
+  const playerId = draft.empire.id;
+  if (empire.id === playerId || pick === playerId) {
+    const target = empireById(draft, pick);
+    const aggressor = empire.id === playerId ? "You" : empire.name;
+    draft.eventLog.push({
+      turn: draft.turn,
+      eventId: "war_declared",
+      choiceId: null,
+      text: `${aggressor} declared war on ${target?.name ?? "an empire"}.`,
+    });
+  }
 }
 
 // Simple AI fleet goal: keep roughly 2 ships per owned system, plus a
@@ -1494,6 +1689,40 @@ export function reduce(state: GameState, action: Action): GameState {
       });
     }
 
+    case "declareWar": {
+      const playerId = state.empire.id;
+      const target = empireById(state, action.againstEmpireId);
+      if (!target) return state;
+      if (target.id === playerId) return state;
+      if (atWar(state, playerId, target.id)) return state;
+      return produce(state, (draft) => {
+        draft.wars.push(sortedPair(playerId, target.id));
+        draft.eventLog.push({
+          turn: draft.turn,
+          eventId: "war_declared",
+          choiceId: null,
+          text: `War declared against ${target.name}.`,
+        });
+      });
+    }
+
+    case "makePeace": {
+      const playerId = state.empire.id;
+      const target = empireById(state, action.withEmpireId);
+      if (!target) return state;
+      if (!atWar(state, playerId, target.id)) return state;
+      const [x, y] = sortedPair(playerId, target.id);
+      return produce(state, (draft) => {
+        draft.wars = draft.wars.filter(([a, b]) => !(a === x && b === y));
+        draft.eventLog.push({
+          turn: draft.turn,
+          eventId: "peace_declared",
+          choiceId: null,
+          text: `Peace with ${target.name}.`,
+        });
+      });
+    }
+
     case "moveFleet": {
       const fleet = state.fleets[action.fleetId];
       if (!fleet) return state;
@@ -1511,6 +1740,9 @@ export function reduce(state: GameState, action: Action): GameState {
           (b === fleet.systemId && a === action.toSystemId),
       );
       if (!adjacent) return state;
+
+      // Can't cross into another empire's space without being at war.
+      if (!canEnterSystem(state, fleet.empireId, action.toSystemId)) return state;
 
       return produce(state, (draft) => {
         const src = draft.fleets[action.fleetId]!;
@@ -1556,8 +1788,7 @@ export function reduce(state: GameState, action: Action): GameState {
         draft.rngSeed = nextSeed(draft.rngSeed);
 
         const growthRand = mulberry32(draft.rngSeed ^ 0xa5a5a5a5);
-        const aiPlanRand = mulberry32(draft.rngSeed ^ 0xdeadbeef);
-        void aiPlanRand; // reserved for tie-breaking if we ever randomize AI picks
+        const diplomacyRand = mulberry32(draft.rngSeed ^ 0xd1910ac7);
 
         // AI planning before ticks, so newly-queued orders drain this turn.
         for (const ai of draft.aiEmpires) {
@@ -1571,9 +1802,17 @@ export function reduce(state: GameState, action: Action): GameState {
           tickEmpire(draft, ai, growthRand);
         }
 
+        // AI diplomacy THEN movement: fresh wars can immediately use
+        // their new freedom to cross borders this same turn.
+        for (const ai of draft.aiEmpires) {
+          aiPlanDiplomacy(draft, ai, diplomacyRand);
+        }
+        for (const ai of draft.aiEmpires) {
+          aiPlanMoves(draft, ai);
+        }
+
         // Combat in contested systems runs after all empires have
-        // ticked (projects complete -> ships spawn -> fleets maybe
-        // share a system with an enemy).
+        // ticked and fleets have moved.
         resolveCombat(draft);
       });
 

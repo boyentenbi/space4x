@@ -8,6 +8,7 @@ import {
   bodyIncome,
   bodyProjectOrderFor,
   canColonize,
+  canEnterSystem,
   colonizeOrderForTarget,
   computeBreakdownFor,
   effectiveColonizeHammers,
@@ -446,6 +447,10 @@ export function MainScreen() {
     for (const [a, b] of state.galaxy.hyperlanes) {
       if (a === moveFleet.systemId) moveAdjacentIds.add(b);
       if (b === moveFleet.systemId) moveAdjacentIds.add(a);
+    }
+    // Strip destinations we can't legally enter (neutral empires block).
+    for (const id of Array.from(moveAdjacentIds)) {
+      if (!canEnterSystem(state, moveFleet.empireId, id)) moveAdjacentIds.delete(id);
     }
   }
   const moveOwnerEmpire = moveFleet ? empireById(state, moveFleet.empireId) : null;
