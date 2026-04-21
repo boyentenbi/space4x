@@ -1492,6 +1492,18 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
 // per-resource) keeps the search simple.
 export const FLOW_HORIZON = 5;
 
+// Expected terminal value of a colonized body by habitability, used
+// when scoring in-flight colonize orders. Garden/temperate worlds
+// will grow pops and generate hammers + food; harsh and hellscape
+// worlds have low or zero carrying capacity and produce little of
+// value, so they score much lower.
+const HAB_COLONIZE_VALUE: Record<HabitabilityTier, number> = {
+  garden: 400,
+  temperate: 300,
+  harsh: 100,
+  hellscape: 10,
+};
+
 export function scoreState(state: GameState, empireId: string): number {
   const empire = empireById(state, empireId);
   if (!empire) return -Infinity;
@@ -1513,15 +1525,24 @@ export function scoreState(state: GameState, empireId: string): number {
   score += flow.political * FLOW_HORIZON * 3; // political is scarcer
   // Political capital is expensive to regenerate — rough exchange rate.
   score += empire.resources.political * 15;
-  // In-flight projects: completion × cost, with a 30% discount so done
-  // beats in-progress if we're otherwise indifferent.
+  // In-flight projects: value the anticipated terminal state, scaled
+  // by (progress-weighted) completion. Colonize orders are hab-aware
+  // so the search prefers a temperate world over a hellscape even
+  // though they have the same hammer cost.
   for (const order of empire.projects) {
     const progress =
       order.hammersRequired > 0
         ? Math.min(1, order.hammersPaid / order.hammersRequired)
         : 0;
-    const potential = order.hammersRequired * 0.7 * (0.3 + 0.7 * progress);
-    score += potential;
+    const progressWeight = 0.3 + 0.7 * progress;
+    if (order.kind === "colonize") {
+      const body = state.galaxy.bodies[order.targetBodyId];
+      const habValue = body ? HAB_COLONIZE_VALUE[body.habitability] : 100;
+      score += habValue * progressWeight;
+    } else {
+      // Generic empire_project — 70% of raw hammer cost.
+      score += order.hammersRequired * 0.7 * progressWeight;
+    }
   }
   // Occupations — partial transfers in flight. Credit / debit are
   // conditional on active fleet presence: if the occupier has no fleet
@@ -1644,7 +1665,7 @@ function applyActionToDraft(draft: GameState, action: Action): void {
 
 // Pick the project action that maximises scoreState, or none if
 // doing nothing scores as well as any move.
-function aiPlanProject(draft: GameState, empire: Empire): void {
+export function aiPlanProject(draft: GameState, empire: Empire): void {
   if (empire.projects.length > 0) return;
 
   const baseline = current(draft);

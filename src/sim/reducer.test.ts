@@ -2,6 +2,7 @@ import { produce } from "immer";
 import { describe, expect, it } from "vitest";
 import {
   aiPlanMoves,
+  aiPlanProject,
   atWar,
   availableBodyProjectsFor,
   canEnterSystem,
@@ -455,6 +456,60 @@ describe("combat chronicle", () => {
     expect(combat?.text).toContain("s_ai"); // system name fallback = id here
     expect(combat?.text).toContain("you 4→");
     expect(combat?.text).toContain("Rival Empire 3→");
+  });
+});
+
+describe("AI project selection (decision only)", () => {
+  it("prefers colonizing a temperate body over a hellscape when both are reachable", () => {
+    // AI owns a single system. Two unowned neighbour systems, each
+    // with one body — one temperate, one hellscape. Both are equally
+    // costly to colonize; the right answer is temperate.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_home"], ownerId: "e_ai" });
+    const tempSys = makeSystem({ id: "s_temp", bodyIds: ["b_temp"], ownerId: null });
+    const hellSys = makeSystem({ id: "s_hell", bodyIds: ["b_hell"], ownerId: null });
+    const homeBody = makeBody({ id: "b_home", systemId: "s_home", pops: 30 });
+    const tempBody = makeBody({
+      id: "b_temp",
+      systemId: "s_temp",
+      habitability: "temperate",
+      pops: 0,
+    });
+    const hellBody = makeBody({
+      id: "b_hell",
+      systemId: "s_hell",
+      habitability: "hellscape",
+      pops: 0,
+    });
+    const player = makeEmpire({ id: "e_player", systemIds: [] });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_home",
+      systemIds: ["s_home"],
+      // Plenty of PC so affordability doesn't filter candidates out.
+      resources: { food: 500, energy: 500, political: 50 },
+    });
+    const state = makeState({
+      systems: [home, tempSys, hellSys],
+      bodies: [homeBody, tempBody, hellBody],
+      hyperlanes: [
+        ["s_home", "s_temp"],
+        ["s_home", "s_hell"],
+      ],
+      empire: player,
+      aiEmpires: [ai],
+    });
+
+    // Run the AI project planner directly and inspect what it queued.
+    const decided = produce(state, (d) => {
+      const emp = empireById(d, "e_ai");
+      if (emp) aiPlanProject(d, emp);
+    });
+    const aiPost = empireById(decided, "e_ai");
+    const colonizeOrder = aiPost?.projects.find((p) => p.kind === "colonize");
+    expect(colonizeOrder).toBeDefined();
+    if (colonizeOrder && colonizeOrder.kind === "colonize") {
+      expect(colonizeOrder.targetBodyId).toBe("b_temp");
+    }
   });
 });
 
