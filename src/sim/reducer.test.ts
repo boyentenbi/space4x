@@ -233,7 +233,7 @@ describe("moveFleet action", () => {
     return { state, fleetId: fleet.id, destId: dest.id };
   }
 
-  it("moves a fleet one hop through an unowned destination", () => {
+  it("relocates the fleet (same id) on a full-move into an empty system", () => {
     const { state, fleetId, destId } = twoSystemSetup();
     const next = reduce(state, {
       type: "moveFleet",
@@ -241,14 +241,10 @@ describe("moveFleet action", () => {
       fleetId,
       toSystemId: destId,
     });
-    // Full-move deletes the source fleet and spawns a fresh one at the
-    // destination, so look up by system rather than id.
-    const fleetAtDest = Object.values(next.fleets).find((f) => f.systemId === destId);
-    expect(fleetAtDest).toBeDefined();
-    expect(fleetAtDest?.empireId).toBe("e_player");
-    expect(fleetAtDest?.shipCount).toBe(3);
-    expect(fleetAtDest?.movedTurn).toBe(state.turn);
-    expect(next.fleets[fleetId]).toBeUndefined();
+    expect(next.fleets[fleetId]).toBeDefined();
+    expect(next.fleets[fleetId]?.systemId).toBe(destId);
+    expect(next.fleets[fleetId]?.shipCount).toBe(3);
+    expect(next.fleets[fleetId]?.movedTurn).toBe(state.turn);
   });
 
   it("refuses a dispatch from an empire that doesn't own the fleet", () => {
@@ -285,10 +281,27 @@ describe("moveFleet action", () => {
       fleetId,
       toSystemId: destId,
     });
-    const fleetAtDest = Object.values(next.fleets).find((f) => f.systemId === destId);
-    expect(fleetAtDest).toBeDefined();
-    expect(fleetAtDest?.empireId).toBe("e_player");
-    expect(next.fleets[fleetId]).toBeUndefined();
+    expect(next.fleets[fleetId]?.systemId).toBe(destId);
+  });
+
+  it("splits off a subset and creates a new fleet at the destination", () => {
+    const { state, fleetId, destId } = twoSystemSetup();
+    const next = reduce(state, {
+      type: "moveFleet",
+      byEmpireId: "e_player",
+      fleetId,
+      toSystemId: destId,
+      count: 2,
+    });
+    // Source fleet keeps its id and 1 ship.
+    expect(next.fleets[fleetId]?.systemId).toBe("s_home");
+    expect(next.fleets[fleetId]?.shipCount).toBe(1);
+    // New fleet with a different id at the destination holding the
+    // split-off 2 ships.
+    const splitFleet = Object.values(next.fleets).find(
+      (f) => f.systemId === destId && f.id !== fleetId,
+    );
+    expect(splitFleet?.shipCount).toBe(2);
   });
 });
 

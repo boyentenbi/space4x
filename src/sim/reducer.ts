@@ -1663,16 +1663,30 @@ function applyMoveFleet(
   const nextHop = path[0];
   const finalDest = action.toSystemId;
   const hasMultiHop = path.length > 1;
+  const isFullMove = moveCount === fleet.shipCount;
 
-  fleet.shipCount -= moveCount;
-
+  // Existing friendly fleet at the next hop to merge into, if any.
   let destFleet: Fleet | undefined;
   for (const f of Object.values(draft.fleets)) {
+    if (f.id === fleet.id) continue;
     if (f.empireId === fleet.empireId && f.systemId === nextHop) {
       destFleet = f;
       break;
     }
   }
+
+  if (isFullMove && !destFleet) {
+    // Relocate the existing fleet — same id, new system. Keeps UI
+    // state (selected fleet, move mode) stable across the move.
+    fleet.systemId = nextHop;
+    fleet.movedTurn = draft.turn;
+    fleet.destinationSystemId = hasMultiHop ? finalDest : undefined;
+    return;
+  }
+
+  // Split or merge path: carve off `moveCount` and either add it to
+  // the destination fleet or spawn a new one there.
+  fleet.shipCount -= moveCount;
   if (destFleet) {
     destFleet.shipCount += moveCount;
     destFleet.movedTurn = draft.turn;
