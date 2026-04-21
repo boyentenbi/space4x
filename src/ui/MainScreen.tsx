@@ -11,6 +11,7 @@ import {
   canColonize,
   colonizeOrderForTarget,
   computeBreakdownFor,
+  COLONIZE_POP_COST,
   projectedFleetCompute,
   effectiveColonizeHammers,
   effectiveColonizePolitical,
@@ -385,6 +386,8 @@ function BodyRow({
             {colonizeHammers}
             <img className="stat-icon" src={RESOURCE_ICON.political} alt="" />
             {colonizePolitical}
+            <img className="stat-icon" src={POPS_ICON} alt="" />
+            {COLONIZE_POP_COST}
             <span className="colonize-turns">· {colonizeTurns}T</span>
           </span>
         </button>

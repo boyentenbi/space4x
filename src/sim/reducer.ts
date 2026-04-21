@@ -64,7 +64,12 @@ export type Action =
 // which gives per-turn growth a smoother feel.
 export const COLONIZE_HAMMERS = 200;
 export const COLONIZE_POLITICAL = 5;
-export const COLONIZE_STARTER_POPS = 10;
+// Pops the colony ship "carries": deducted from the capital when the
+// order is queued, delivered to the target when it completes. Net zero
+// empire-wide, but makes pops the real limiter on expansion — you can't
+// spam colonies faster than your home can grow settlers.
+export const COLONIZE_POP_COST = 5;
+export const COLONIZE_STARTER_POPS = COLONIZE_POP_COST;
 
 let orderCounter = 0;
 function nextOrderId(): string {
@@ -221,7 +226,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 17,
+    schemaVersion: 18,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -1512,7 +1517,12 @@ export function canColonizeFor(state: GameState, empire: Empire, targetBodyId: s
   // Colonising now requires the system to already be ours — the
   // system claim happens via Build Outpost on the star, not via
   // colonising a body.
-  return targetSys.ownerId === empire.id;
+  if (targetSys.ownerId !== empire.id) return false;
+  // Colony ship: requires the capital to have enough pops to load onto
+  // the ship. Pops are deducted at queue time and delivered on arrival.
+  const cap = empire.capitalBodyId ? state.galaxy.bodies[empire.capitalBodyId] : null;
+  if (!cap || cap.pops < COLONIZE_POP_COST) return false;
+  return true;
 }
 
 // ===== Player-facing convenience (default to player empire) =====
@@ -1541,12 +1551,15 @@ export function canColonize(state: GameState, targetBodyId: string): boolean {
 function completeOrder(draft: GameState, empire: Empire, order: BuildOrder): void {
   if (order.kind === "colonize") {
     const target = draft.galaxy.bodies[order.targetBodyId];
-    if (!target) return;
-    const targetSys = draft.galaxy.systems[target.systemId];
-    if (!targetSys) return;
-    // Colonising requires the system to be ours (claimed via outpost).
-    // If someone else claimed it mid-project, the colonise fizzles.
-    if (targetSys.ownerId !== empire.id) return;
+    const targetSys = target ? draft.galaxy.systems[target.systemId] : null;
+    const fizzled = !target || !targetSys || targetSys.ownerId !== empire.id;
+    if (fizzled) {
+      // Colony never landed. Refund the settlers to the current capital
+      // so the pops aren't silently destroyed.
+      const cap = empire.capitalBodyId ? draft.galaxy.bodies[empire.capitalBodyId] : null;
+      if (cap) cap.pops += COLONIZE_POP_COST;
+      return;
+    }
     empire.resources.political -= order.politicalCost;
     target.pops = Math.max(target.pops, COLONIZE_STARTER_POPS);
     if (empire.id === draft.empire.id) {
@@ -1836,8 +1849,15 @@ export function scoreState(state: GameState, empireId: string): number {
       const flow =
         (projectedHammers + projectedIncome.food + projectedIncome.energy) *
         FLOW_HORIZON;
-      // Colonize cost + anticipated flow = what this order is worth.
+      // Cost-of-work + anticipated flow, progress-weighted for
+      // cancel risk.
       score += (COLONIZE_HAMMERS + flow) * progressWeight;
+      // Colony-ship pops are already drawn from the capital — credit
+      // the target's future flow at full weight so the net-zero pop
+      // transfer doesn't show up as a loss. On a temperate→temperate
+      // transfer this cleanly offsets the lower capital flow; on a
+      // transfer to a worse hab the score correctly ends up lower.
+      score += flow;
     } else if (
       order.kind === "empire_project" &&
       order.projectId === "build_frigate"
@@ -2302,6 +2322,10 @@ function applyQueueColonize(
   const emp = empireById(draft, action.byEmpireId);
   if (!emp) return;
   if (!canColonizeFor(draft, emp, action.targetBodyId)) return;
+  // Load settlers onto the colony ship. canColonizeFor already
+  // guarantees the capital exists and has ≥ COLONIZE_POP_COST pops.
+  const cap = draft.galaxy.bodies[emp.capitalBodyId!];
+  cap.pops -= COLONIZE_POP_COST;
   emp.projects.push({
     kind: "colonize",
     id: nextOrderId(),
@@ -2337,6 +2361,15 @@ function applyCancelOrder(
 ): void {
   const emp = empireById(draft, action.byEmpireId);
   if (!emp) return;
+  const order = emp.projects.find((o) => o.id === action.orderId);
+  if (!order) return;
+  // Refund colony-ship pops to the current capital (capital may have
+  // changed since queue time if the old one fell; refund lands at the
+  // new home). If no capital exists, the settlers are lost.
+  if (order.kind === "colonize") {
+    const cap = emp.capitalBodyId ? draft.galaxy.bodies[emp.capitalBodyId] : null;
+    if (cap) cap.pops += COLONIZE_POP_COST;
+  }
   emp.projects = emp.projects.filter((o) => o.id !== action.orderId);
 }
 

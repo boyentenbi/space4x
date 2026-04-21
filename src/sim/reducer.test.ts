@@ -99,7 +99,7 @@ function makeState(overrides: {
   const fleetsRec: Record<string, Fleet> = {};
   for (const f of overrides.fleets ?? []) fleetsRec[f.id] = f;
   return {
-    schemaVersion: 17,
+    schemaVersion: 18,
     turn: overrides.turn ?? 1,
     rngSeed: 1,
     galaxy: {
@@ -402,6 +402,100 @@ describe("AI scoreState value function", () => {
     // − energy upkeep (2 ships + 1 outpost = 3) × 5 horizon = −15.
     // Total = 280.
     expect(scoreState(state, "e_player")).toBe(280);
+  });
+
+  it("queueing colonize deducts COLONIZE_POP_COST from the capital", () => {
+    // The colony ship "carries" its pops from the capital. Queueing
+    // the order pays those pops up front; the same number arrive on
+    // the target when the order completes. Net-zero empire-wide.
+    const home = makeSystem({
+      id: "s_home",
+      bodyIds: ["b_cap", "b_vacant"],
+      ownerId: "e_player",
+    });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const vacant = makeBody({
+      id: "b_vacant",
+      systemId: "s_home",
+      habitability: "temperate",
+      pops: 0,
+    });
+    const empire = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+    });
+    const state = makeState({ systems: [home], bodies: [cap, vacant], empire });
+    const queued = reduce(state, {
+      type: "queueColonize",
+      byEmpireId: "e_player",
+      targetBodyId: "b_vacant",
+    });
+    expect(queued.galaxy.bodies["b_cap"].pops).toBe(25);
+    expect(queued.empire.projects).toHaveLength(1);
+  });
+
+  it("refuses to queue colonize when the capital has fewer than COLONIZE_POP_COST pops", () => {
+    const home = makeSystem({
+      id: "s_home",
+      bodyIds: ["b_cap", "b_vacant"],
+      ownerId: "e_player",
+    });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 4 });
+    const vacant = makeBody({
+      id: "b_vacant",
+      systemId: "s_home",
+      habitability: "temperate",
+      pops: 0,
+    });
+    const empire = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+    });
+    const state = makeState({ systems: [home], bodies: [cap, vacant], empire });
+    const attempted = reduce(state, {
+      type: "queueColonize",
+      byEmpireId: "e_player",
+      targetBodyId: "b_vacant",
+    });
+    // No order queued, capital pops untouched.
+    expect(attempted.empire.projects).toHaveLength(0);
+    expect(attempted.galaxy.bodies["b_cap"].pops).toBe(4);
+  });
+
+  it("cancelling a colonize order refunds the pops to the capital", () => {
+    const home = makeSystem({
+      id: "s_home",
+      bodyIds: ["b_cap", "b_vacant"],
+      ownerId: "e_player",
+    });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const vacant = makeBody({
+      id: "b_vacant",
+      systemId: "s_home",
+      habitability: "temperate",
+      pops: 0,
+    });
+    const empire = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+    });
+    const state = makeState({ systems: [home], bodies: [cap, vacant], empire });
+    const queued = reduce(state, {
+      type: "queueColonize",
+      byEmpireId: "e_player",
+      targetBodyId: "b_vacant",
+    });
+    const orderId = queued.empire.projects[0].id;
+    const cancelled = reduce(queued, {
+      type: "cancelOrder",
+      byEmpireId: "e_player",
+      orderId,
+    });
+    expect(cancelled.empire.projects).toHaveLength(0);
+    expect(cancelled.galaxy.bodies["b_cap"].pops).toBe(30);
   });
 
   it("scoreState increases after queueing colonize on a second body in an owned system", () => {
