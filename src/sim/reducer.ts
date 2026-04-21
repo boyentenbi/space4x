@@ -136,7 +136,7 @@ export function expectedPopGrowth(state: GameState, empire: Empire): number {
   const growthAdd = popGrowthAdditive(empire);
   let total = 0;
   for (const body of ownedBodiesOf(state, empire)) {
-    const cap = effectiveSpace(empire, body);
+    const cap = maxPopsFor(empire, body);
     if (body.pops >= cap) continue;
     const headroom = (cap - body.pops) / cap;
     const chance = Math.min(1, Math.max(0, (headroom * 0.5 + growthAdd) * growthMult));
@@ -150,7 +150,7 @@ export function growthEstimate(
   empire: Empire,
   body: Body,
 ): { kind: "full" } | { kind: "starved" } | { kind: "growing"; turns: number } {
-  const cap = effectiveSpace(empire, body);
+  const cap = maxPopsFor(empire, body);
   if (body.pops >= cap) return { kind: "full" };
   if (empire.resources.food < POP_GROWTH_FOOD_COST) return { kind: "starved" };
   const headroom = (cap - body.pops) / cap;
@@ -226,7 +226,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 18,
+    schemaVersion: 19,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -344,7 +344,7 @@ export function expansionismModifiers(ex: Expansionism): Modifier[] {
     case "isolationist":
       return [
         { kind: "colonizePoliticalMult", value: 2.0 },
-        { kind: "spaceMult", value: 2.0 },
+        { kind: "maxPopsMult", value: 2.0 },
         { kind: "popGrowthMult", value: 1.25 },
       ];
   }
@@ -394,7 +394,7 @@ export function empireModifiers(empire: Empire): Modifier[] {
 // Multiplicative modifiers multiply together; returns 1.0 if none.
 function productMult(
   mods: Modifier[],
-  kind: "popGrowthMult" | "spaceMult" | "colonizeHammerMult" | "colonizePoliticalMult",
+  kind: "popGrowthMult" | "maxPopsMult" | "colonizeHammerMult" | "colonizePoliticalMult",
 ): number {
   let m = 1;
   for (const mod of mods) if (mod.kind === kind) m *= mod.value;
@@ -463,9 +463,10 @@ export function hammersPerPopFor(empire: Empire, body: Body): number {
   return hammersPerPop(empire) + (HAMMERS_PER_POP_HAB_BONUS[body.habitability] ?? 0);
 }
 
-// Effective space cap on a body (species spaceMult applied).
-export function effectiveSpace(empire: Empire, body: Body): number {
-  return Math.floor(body.space * productMult(empireModifiers(empire), "spaceMult"));
+// Max pops this body can hold, after empire-wide maxPopsMult
+// modifiers (e.g. species bonuses).
+export function maxPopsFor(empire: Empire, body: Body): number {
+  return Math.floor(body.maxPops * productMult(empireModifiers(empire), "maxPopsMult"));
 }
 
 export function popGrowthMultiplier(empire: Empire): number {
@@ -744,7 +745,7 @@ export function projectedFleetCompute(state: GameState, empire: Empire): number 
 
 export function popsBreakdownFor(state: GameState, empire: Empire): StatBreakdown {
   const bodyRows = ownedBodiesOf(state, empire).map((body) => {
-    const cap = effectiveSpace(empire, body);
+    const cap = maxPopsFor(empire, body);
     return {
       id: body.id,
       name: body.name,
@@ -755,7 +756,7 @@ export function popsBreakdownFor(state: GameState, empire: Empire): StatBreakdow
   });
   const modRows: StatBreakdownSection["rows"] = [];
   for (const lm of labelledModifiers(empire)) {
-    if (lm.mod.kind === "spaceMult") {
+    if (lm.mod.kind === "maxPopsMult") {
       const pct = Math.round((lm.mod.value - 1) * 100);
       modRows.push({ name: lm.label, detail: "max pops", value: pct / 100 });
     }
@@ -1512,7 +1513,7 @@ export function canColonizeFor(state: GameState, empire: Empire, targetBodyId: s
   if (!targetSys) return false;
   if (target.pops > 0) return false;
   // Zero effective space = no pops can live here anyway.
-  if (effectiveSpace(empire, target) <= 0) return false;
+  if (maxPopsFor(empire, target) <= 0) return false;
   if (colonizeOrderForTarget(state, targetBodyId)) return false;
   // Colonising now requires the system to already be ours — the
   // system claim happens via Build Outpost on the star, not via
@@ -1721,7 +1722,7 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
     for (const bid of sys.bodyIds) {
       const body = draft.galaxy.bodies[bid];
       if (!body) continue;
-      const cap = effectiveSpace(empire, body);
+      const cap = maxPopsFor(empire, body);
       // Strict logistic: pops never exceed cap. Clamp downward if
       // a cap-reducing modifier was removed between turns.
       if (body.pops > cap) body.pops = cap;
@@ -1823,7 +1824,7 @@ export function scoreState(state: GameState, empireId: string): number {
     for (const bid of sys.bodyIds) {
       const body = state.galaxy.bodies[bid];
       if (!body) continue;
-      score += TILE_VALUE + effectiveSpace(empire, body) * MAX_POPS_VALUE;
+      score += TILE_VALUE + maxPopsFor(empire, body) * MAX_POPS_VALUE;
     }
   }
   // Ships: archetype-weighted × at-war premium, with diminishing
@@ -1868,7 +1869,7 @@ export function scoreState(state: GameState, empireId: string): number {
     if (order.kind === "colonize") {
       const body = state.galaxy.bodies[order.targetBodyId];
       if (!body) continue;
-      const pops = Math.min(COLONIZE_STARTER_POPS, effectiveSpace(empire, body));
+      const pops = Math.min(COLONIZE_STARTER_POPS, maxPopsFor(empire, body));
       const hypothetical: Body = { ...body, pops };
       const projectedIncome = bodyIncomeFor(empire, hypothetical);
       const projectedHammers = pops * hammersPerPopFor(empire, body);
@@ -1910,7 +1911,7 @@ export function scoreState(state: GameState, empireId: string): number {
       if (targetSys) {
         for (const bid of targetSys.bodyIds) {
           const b = state.galaxy.bodies[bid];
-          if (b) sysBodyValue += TILE_VALUE + effectiveSpace(empire, b) * MAX_POPS_VALUE;
+          if (b) sysBodyValue += TILE_VALUE + maxPopsFor(empire, b) * MAX_POPS_VALUE;
         }
       }
       score += (COLONIZE_HAMMERS + sysBodyValue) * progressWeight;
@@ -2564,7 +2565,7 @@ export function reduce(state: GameState, action: Action): GameState {
             ...starterBody,
             habitability: "temperate" as const,
             kind: "planet" as const,
-            space: Math.max(starterBody.space, 80),
+            maxPops: Math.max(starterBody.maxPops, 80),
             pops: startingPops,
           };
         } else {
@@ -2575,7 +2576,7 @@ export function reduce(state: GameState, action: Action): GameState {
             name: `${sys.name} I`,
             kind: "planet",
             habitability: "temperate",
-            space: 80,
+            maxPops: 80,
             pops: startingPops,
             hammers: 0,
             queue: [],

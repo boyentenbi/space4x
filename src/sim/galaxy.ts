@@ -49,12 +49,12 @@ function rollStarKind(r: Rand): StarKind {
   return "blue_giant";
 }
 
-// Space cap per body depends on habitability. Gardens and temperate
+// Max-pops per body depends on habitability. Gardens and temperate
 // support real populations; harsh is a mining outpost. Hellscape
 // variants hold specialist stations (compute / factory / solar)
 // with small crews — not many pops, but the pops that live there
 // produce disproportionately.
-const SPACE_BY_HAB: Record<HabitabilityTier, [number, number]> = {
+const MAX_POPS_BY_HAB: Record<HabitabilityTier, [number, number]> = {
   garden: [80, 120],
   temperate: [40, 70],
   harsh: [10, 20],
@@ -64,8 +64,8 @@ const SPACE_BY_HAB: Record<HabitabilityTier, [number, number]> = {
   stellar: [0, 0], // stars hold no pops
 };
 
-function rollSpace(r: Rand, hab: HabitabilityTier): number {
-  const [lo, hi] = SPACE_BY_HAB[hab];
+function rollMaxPops(r: Rand, hab: HabitabilityTier): number {
+  const [lo, hi] = MAX_POPS_BY_HAB[hab];
   return lo + Math.floor(r() * (hi - lo + 1));
 }
 
@@ -225,7 +225,7 @@ export function generateGalaxy(opts: GenOptions): Galaxy {
         name,
         kind: "star",
         habitability: "stellar",
-        space: 0,
+        maxPops: 0,
         pops: 0,
         hammers: 0,
         queue: [],
@@ -239,14 +239,14 @@ export function generateGalaxy(opts: GenOptions): Galaxy {
         const bodyId = `body_${bodyCounter++}`;
         const kind: BodyKind = i === 0 ? "planet" : rand() < 0.5 ? "planet" : "moon";
         const habitability = rollHabitability(rand);
-        const space = rollSpace(rand, habitability);
+        const maxPops = rollMaxPops(rand, habitability);
         bodies[bodyId] = {
           id: bodyId,
           systemId: sysId,
           name: bodyNameFor(name, i),
           kind,
           habitability,
-          space,
+          maxPops,
           pops: 0,
           hammers: 0,
           queue: [],
@@ -280,8 +280,8 @@ export function generateGalaxy(opts: GenOptions): Galaxy {
     const pick = nonStarBodyIds[Math.floor(rand() * nonStarBodyIds.length)];
     const body = bodies[pick];
     body.habitability = "temperate";
-    const [lo, hi] = SPACE_BY_HAB.temperate;
-    if (body.space < lo) body.space = lo + Math.floor(rand() * (hi - lo + 1));
+    const [lo, hi] = MAX_POPS_BY_HAB.temperate;
+    if (body.maxPops < lo) body.maxPops = lo + Math.floor(rand() * (hi - lo + 1));
     body.kind = "planet";
   }
 
@@ -335,7 +335,7 @@ export function assignStarterSystem(
       ...starter,
       habitability: "garden",
       kind: "planet",
-      space: Math.max(starter.space, 10),
+      maxPops: Math.max(starter.maxPops, 10),
       pops: startingPops,
     };
   } else {
@@ -347,7 +347,7 @@ export function assignStarterSystem(
       name: `${chosen.name} I`,
       kind: "planet",
       habitability: "garden",
-      space: 12,
+      maxPops: 12,
       pops: startingPops,
       hammers: 0,
       queue: [],

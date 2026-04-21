@@ -48,7 +48,7 @@ export const POLICIES: Policy[] = [
     basePoliticalCost: 20,
     modifiers: [
       { kind: "flat", resource: "political", value: 1 },
-      { kind: "spaceMult", value: 0.95 },
+      { kind: "maxPopsMult", value: 0.95 },
     ],
   },
   {

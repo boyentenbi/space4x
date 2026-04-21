@@ -15,7 +15,7 @@ import {
   projectedFleetCompute,
   effectiveColonizeHammers,
   effectiveColonizePolitical,
-  effectiveSpace,
+  maxPopsFor,
   empireById,
   expectedPopGrowth,
   fleetsInSystem,
@@ -296,7 +296,7 @@ function BodyRow({
       <div className="body-stats">
         <span className="stat-pill">
           <img className="stat-icon" src={POPS_ICON} alt="" />
-          {body.pops}/{body.space}
+          {body.pops}/{body.maxPops}
         </span>
         {owned && body.hammers > 0 && (
           <span className="stat-pill" title={`${HAMMERS_PER_POP} hammer per pop`}>
@@ -467,7 +467,7 @@ export function MainScreen() {
     return sum + sys.bodyIds.reduce((s, bid) => s + (state.galaxy.bodies[bid]?.hammers ?? 0), 0);
   }, 0);
   const popsNow = totalPops(state);
-  // Effective cap accounts for species spaceMult (e.g. insectoid +50%),
+  // Effective cap accounts for species maxPopsMult (e.g. insectoid +50%),
   // matching what pop growth actually allows.
   const popsCap = state.empire.systemIds.reduce((sum, sid) => {
     const sys = state.galaxy.systems[sid];
@@ -476,7 +476,7 @@ export function MainScreen() {
       sum +
       sys.bodyIds.reduce((s, bid) => {
         const body = state.galaxy.bodies[bid];
-        return s + (body ? effectiveSpace(state.empire, body) : 0);
+        return s + (body ? maxPopsFor(state.empire, body) : 0);
       }, 0)
     );
   }, 0);

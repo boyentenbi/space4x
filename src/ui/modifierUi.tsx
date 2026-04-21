@@ -15,7 +15,7 @@ export function isNegativeModifier(mod: Modifier): boolean {
     case "habBonus":
       return mod.value < 0;
     case "popGrowthMult":
-    case "spaceMult":
+    case "maxPopsMult":
       return mod.value < 1;
     case "colonizeHammerMult":
     case "colonizePoliticalMult":
@@ -56,7 +56,7 @@ export function renderModifier(mod: Modifier): ReactNode {
         </>
       );
     }
-    case "spaceMult": {
+    case "maxPopsMult": {
       const pct = Math.round((mod.value - 1) * 100);
       return (
         <>

@@ -25,7 +25,7 @@ function makeBody(overrides: Partial<Body> & { id: string; systemId: string }): 
     name: overrides.name ?? overrides.id,
     kind: overrides.kind ?? "planet",
     habitability: overrides.habitability ?? "temperate",
-    space: overrides.space ?? 10,
+    maxPops: overrides.maxPops ?? 10,
     pops: overrides.pops ?? 0,
     hammers: overrides.hammers ?? 0,
     queue: overrides.queue ?? [],
@@ -99,7 +99,7 @@ function makeState(overrides: {
   const fleetsRec: Record<string, Fleet> = {};
   for (const f of overrides.fleets ?? []) fleetsRec[f.id] = f;
   return {
-    schemaVersion: 18,
+    schemaVersion: 19,
     turn: overrides.turn ?? 1,
     rngSeed: 1,
     galaxy: {
@@ -549,7 +549,7 @@ describe("AI scoreState value function", () => {
       systemId: "s_lush",
       kind: "star",
       habitability: "stellar",
-      space: 0,
+      maxPops: 0,
     });
     const lushTemp = makeBody({
       id: "b_lush_temp",
@@ -562,7 +562,7 @@ describe("AI scoreState value function", () => {
       systemId: "s_barren",
       kind: "star",
       habitability: "stellar",
-      space: 0,
+      maxPops: 0,
     });
     const empire = makeEmpire({
       id: "e_player",
@@ -702,7 +702,7 @@ describe("AI project selection (decision only)", () => {
       kind: "star",
       habitability: "stellar",
       pops: 0,
-      space: 0,
+      maxPops: 0,
     });
     const player = makeEmpire({ id: "e_player", systemIds: [] });
     const ai = makeEmpire({
@@ -750,7 +750,7 @@ describe("AI project selection (decision only)", () => {
       kind: "star",
       habitability: "stellar",
       pops: 0,
-      space: 0,
+      maxPops: 0,
     });
     const tempBody = makeBody({
       id: "b_temp",
@@ -805,7 +805,7 @@ describe("AI project selection (decision only)", () => {
       id: "b_frozen",
       systemId: "s_home",
       habitability: "frozen",
-      space: 8,
+      maxPops: 8,
       pops: 0,
     });
     const player = makeEmpire({ id: "e_player", systemIds: [] });

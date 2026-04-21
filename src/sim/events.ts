@@ -51,7 +51,7 @@ export function applyEffect(state: GameState, effect: Effect): GameState {
         const capitalId = draft.empire.capitalBodyId;
         if (capitalId && draft.galaxy.bodies[capitalId]) {
           const body = draft.galaxy.bodies[capitalId];
-          body.pops = Math.min(body.space, body.pops + effect.value);
+          body.pops = Math.min(body.maxPops, body.pops + effect.value);
         }
         break;
       }

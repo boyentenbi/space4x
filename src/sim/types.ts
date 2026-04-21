@@ -52,7 +52,7 @@ export interface Body {
   name: string;
   kind: BodyKind;
   habitability: HabitabilityTier;
-  space: number;           // Pop cap.
+  maxPops: number;         // Pop cap.
   pops: number;            // Current population.
   hammers: number;         // Per-turn production flow (resets each tick).
   queue: BuildOrder[];     // Projects hammers flow into.
@@ -135,7 +135,7 @@ export type Modifier =
   // multipliers. Used for things like a Brood Mother that provide a
   // steady baseline of growth even on near-full bodies.
   | { kind: "popGrowthAdd"; value: number }
-  | { kind: "spaceMult"; value: number }
+  | { kind: "maxPopsMult"; value: number }
   | { kind: "colonizeHammerMult"; value: number }
   | { kind: "colonizePoliticalMult"; value: number }
   // Additive deltas on per-pop costs/yields that don't fit the resource model.
@@ -292,7 +292,7 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 18;
+  schemaVersion: 19;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;

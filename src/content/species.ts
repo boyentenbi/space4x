@@ -35,7 +35,7 @@ export const SPECIES: Species[] = [
     ],
     color: "#8b5bc8",
     modifiers: [
-      { kind: "spaceMult", value: 1.5 },
+      { kind: "maxPopsMult", value: 1.5 },
       { kind: "foodUpkeepDelta", value: -0.25 },
     ],
     // Hive-minded: cannot run an individualist politic.
