@@ -1433,8 +1433,6 @@ function completeOrder(draft: GameState, empire: Empire, order: BuildOrder): voi
         choiceId: null,
         text: proj.onComplete.chronicle,
       });
-      // Queue a modal so the player gets a dedicated flavour beat.
-      draft.projectCompletions.push({ projectId: proj.id, turn: draft.turn });
     }
   }
 }

@@ -39,7 +39,6 @@ import { EmpireProfileModal } from "./EmpireProfileModal";
 import { EmpireRosterModal } from "./EmpireRosterModal";
 import { FleetModal } from "./FleetModal";
 import { PoliciesModal } from "./PoliciesModal";
-import { ProjectCompletionModal } from "./ProjectCompletionModal";
 import { StatBreakdownModal } from "./StatBreakdownModal";
 import { COMPUTE_ICON, HAMMERS_ICON, POPS_ICON, RESOURCE_ICON, planetSpriteFor } from "./icons";
 
@@ -79,43 +78,74 @@ function ResCell({
   );
 }
 
-function EmpireProjectsCard({
+// Full build queue: every order in empire.projects in FIFO drain order,
+// plus any empire-scope projects still available to start. Body-scope
+// orders (colonize, outpost, frigate on a specific body) also appear
+// on their own body row, but showing them here makes the "what finishes
+// next, what's queued behind it" cadence legible.
+function BuildQueueCard({
+  state,
   projects,
   available,
   hammerRate,
   onQueue,
   onCancel,
 }: {
+  state: import("../sim/types").GameState;
   projects: import("../sim/types").BuildOrder[];
   available: ReturnType<typeof availableProjectsFor>;
   hammerRate: number;
   onQueue: (projectId: string) => void;
   onCancel: (orderId: string) => void;
 }) {
-  const inFlightEmpireOrders = projects.filter(
-    (o): o is Extract<import("../sim/types").BuildOrder, { kind: "empire_project" }> =>
-      o.kind === "empire_project" && !o.targetBodyId,
-  );
-  if (inFlightEmpireOrders.length === 0 && available.length === 0) return null;
+  if (projects.length === 0 && available.length === 0) return null;
+
+  // Sum hammers paid-ahead-of-this-order so we can show cumulative
+  // turns-to-complete down the queue.
+  let cumulativeRemaining = 0;
+
+  function renderLabel(order: import("../sim/types").BuildOrder): {
+    name: string;
+    desc: string;
+    art?: string;
+  } {
+    if (order.kind === "colonize") {
+      const body = state.galaxy.bodies[order.targetBodyId];
+      return {
+        name: `Colonize ${body?.name ?? "?"}`,
+        desc: body ? `${body.habitability} body — grant starter pops on completion.` : "",
+      };
+    }
+    const proj = projectById(order.projectId);
+    if (!proj) return { name: "?", desc: "" };
+    const suffix = order.targetBodyId
+      ? ` · ${state.galaxy.bodies[order.targetBodyId]?.name ?? ""}`
+      : "";
+    return {
+      name: `${proj.name}${suffix}`,
+      desc: proj.description,
+      art: proj.art,
+    };
+  }
 
   return (
     <div className="empire-projects">
-      <div className="projects-label">Empire Projects</div>
-      {inFlightEmpireOrders.map((order) => {
-        const proj = projectById(order.projectId);
-        if (!proj) return null;
+      <div className="projects-label">Build Queue</div>
+      {projects.map((order) => {
+        const { name, desc, art } = renderLabel(order);
         const pct = Math.min(100, (order.hammersPaid / order.hammersRequired) * 100);
-        const remaining = Math.max(0, order.hammersRequired - order.hammersPaid);
-        const turns = hammerRate > 0 ? Math.ceil(remaining / hammerRate) : "—";
+        const selfRemaining = Math.max(0, order.hammersRequired - order.hammersPaid);
+        cumulativeRemaining += selfRemaining;
+        const turns = hammerRate > 0 ? Math.ceil(cumulativeRemaining / hammerRate) : "—";
         return (
           <div key={order.id} className="project-card in-flight">
-            {proj.art && <img className="project-art" src={proj.art} alt="" />}
+            {art && <img className="project-art" src={art} alt="" />}
             <div className="project-card-body">
               <div className="project-card-head">
-                <span className="project-name">{proj.name}</span>
+                <span className="project-name">{name}</span>
                 <button className="project-cancel" onClick={() => onCancel(order.id)} title="Cancel">×</button>
               </div>
-              <div className="project-card-desc">{proj.description}</div>
+              <div className="project-card-desc">{desc}</div>
               <div className="project-bar">
                 <div className="project-bar-fill" style={{ width: `${pct}%` }} />
               </div>
@@ -186,6 +216,93 @@ function BodyRow({
   onQueueBodyProject: (projectId: string) => void;
   onCancelOrder: (orderId: string) => void;
 }) {
+  // Star bodies get a simplified row — no pops/hab/income, just the
+  // star thumb + any outpost-related project.
+  if (body.kind === "star") {
+    return (
+      <div className="body-row star-row">
+        <div className="body-head">
+          <span className="body-name">
+            <span
+              className="body-thumb-wrap"
+              style={{ width: BODY_THUMB_BASE, height: BODY_THUMB_BASE }}
+            >
+              <img
+                className="body-thumb"
+                src="/stars/yellow_main.png"
+                alt=""
+                style={{ width: BODY_THUMB_BASE, height: BODY_THUMB_BASE }}
+              />
+            </span>
+            {body.name}
+          </span>
+          <span className="hab stellar">star</span>
+        </div>
+
+        {/* In-flight outpost project (if any). */}
+        {bodyProjectOrder && (() => {
+          const proj = projectById(bodyProjectOrder.projectId);
+          if (!proj) return null;
+          const pct = Math.min(
+            100,
+            (bodyProjectOrder.hammersPaid / bodyProjectOrder.hammersRequired) * 100,
+          );
+          const remaining = Math.max(
+            0,
+            bodyProjectOrder.hammersRequired - bodyProjectOrder.hammersPaid,
+          );
+          const turns = hammerRate > 0 ? Math.ceil(remaining / hammerRate) : "—";
+          return (
+            <div className="project-progress body-project">
+              <div className="project-head">
+                <span>{proj.name}</span>
+                <button
+                  className="project-cancel"
+                  onClick={() => onCancelOrder(bodyProjectOrder.id)}
+                  title="Cancel"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="project-bar">
+                <div className="project-bar-fill" style={{ width: `${pct}%` }} />
+              </div>
+              <div className="project-stats">
+                {bodyProjectOrder.hammersPaid}/{bodyProjectOrder.hammersRequired} · ~{turns}T
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Offer Build Outpost when available and nothing in flight. */}
+        {!bodyProjectOrder && bodyProjects.map((proj) => {
+          const turns = hammerRate > 0 ? Math.ceil(proj.hammersRequired / hammerRate) : "—";
+          return (
+            <button
+              key={proj.id}
+              className="project-btn body-project-btn"
+              onClick={() => onQueueBodyProject(proj.id)}
+              title={proj.description}
+            >
+              <span>+ {proj.name}</span>
+              <span className="colonize-cost">
+                <img className="stat-icon" src={HAMMERS_ICON} alt="" />
+                {proj.hammersRequired}
+                {proj.costs?.political !== undefined && (
+                  <>
+                    <img className="stat-icon" src={RESOURCE_ICON.political} alt="" />
+                    {proj.costs.political}
+                  </>
+                )}
+                <span className="colonize-turns">· {turns}T</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
   const thumbSize =
     body.kind === "moon" ? BODY_THUMB_BASE * BODY_THUMB_MOON_RATIO : BODY_THUMB_BASE;
   return (
@@ -771,9 +888,10 @@ export function MainScreen() {
                 </div>
               )}
 
-            {/* Empire-level projects are always visible, regardless of
-                which system you're inspecting. */}
-            <EmpireProjectsCard
+            {/* Full build queue — every queued order in FIFO drain
+                order plus any empire-scope projects still available. */}
+            <BuildQueueCard
+              state={state}
               projects={state.empire.projects}
               available={availableProjectsFor(state, state.empire)}
               hammerRate={totalHammers}
@@ -937,14 +1055,7 @@ export function MainScreen() {
         </div>
       </div>
 
-      {state.projectCompletions.length > 0 && (
-        <ProjectCompletionModal
-          projectId={state.projectCompletions[0].projectId}
-          turn={state.projectCompletions[0].turn}
-          onDismiss={() => dispatch({ type: "dismissProjectCompletion" })}
-        />
-      )}
-      {state.projectCompletions.length === 0 && pendingEvent && <EventModal eventId={pendingEvent.eventId} />}
+      {pendingEvent && <EventModal eventId={pendingEvent.eventId} />}
       {breakdown && (
         <StatBreakdownModal breakdown={breakdown} onClose={() => setBreakdown(null)} />
       )}
