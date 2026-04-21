@@ -104,12 +104,19 @@ const PER_POP_BY_HAB: Record<HabitabilityTier, Partial<Record<ResourceKey, numbe
 const HAMMERS_PER_POP_HAB_BONUS: Partial<Record<HabitabilityTier, number>> = {
   molten: 1.5,
 };
-const COMPUTE_PER_POP_HAB_BONUS: Partial<Record<HabitabilityTier, number>> = {
+
+// Per-pop compute output, per habitability. Frozen worlds specialise
+// in compute (compute nodes at scale); temperate and garden worlds
+// produce a smaller baseline since general-purpose infrastructure
+// still does some computing. Other habs (harsh, molten, barren,
+// stellar) produce no compute.
+const COMPUTE_PER_POP_HAB: Partial<Record<HabitabilityTier, number>> = {
   frozen: 1,
+  temperate: 0.25,
+  garden: 0.25,
 };
 
 export const HAMMERS_PER_POP = 1;
-const COMPUTE_PER_BODY = 1;
 export const POP_GROWTH_FOOD_COST = 50;
 
 // Expected turns until this body grows by +1 pop, or a status string.
@@ -673,12 +680,12 @@ export function hammersBreakdownFor(state: GameState, empire: Empire): StatBreak
 
 export function computeBreakdownFor(state: GameState, empire: Empire): StatBreakdown {
   const bodyRows = ownedBodiesOf(state, empire).map((body) => {
-    const frozenBonus = body.pops * (COMPUTE_PER_POP_HAB_BONUS[body.habitability] ?? 0);
-    const value = COMPUTE_PER_BODY + frozenBonus;
+    const rate = COMPUTE_PER_POP_HAB[body.habitability] ?? 0;
+    const value = Math.floor(body.pops * rate);
     const detail =
-      body.habitability === "frozen" && body.pops > 0
-        ? `data-center + ${body.pops} compute nodes`
-        : "data-center stub";
+      rate > 0 && body.pops > 0
+        ? `${body.pops} pops × ${rate}/pop`
+        : "no compute output";
     return {
       id: body.id,
       name: body.name,
@@ -786,11 +793,15 @@ export function perTurnIncomeOf(state: GameState, empire: Empire): Resources {
 }
 
 export function computeCapOf(state: GameState, empire: Empire): number {
+  // Compute is per-pop, hab-weighted: frozen 1/pop, temperate/garden
+  // 0.25/pop (baseline infra on habitable worlds), others 0. Per-body
+  // contribution is floored so small outposts of <4 pops on a
+  // temperate world count as 0 — you need genuine population to
+  // generate meaningful compute.
   let total = 0;
   for (const body of ownedBodiesOf(state, empire)) {
-    total += COMPUTE_PER_BODY;
-    // Frozen bodies host compute nodes — extra compute per pop.
-    total += body.pops * (COMPUTE_PER_POP_HAB_BONUS[body.habitability] ?? 0);
+    const rate = COMPUTE_PER_POP_HAB[body.habitability] ?? 0;
+    total += Math.floor(body.pops * rate);
   }
   return total;
 }
@@ -2460,7 +2471,7 @@ export function reduce(state: GameState, action: Action): GameState {
             });
           }
         }
-        draft.empire.compute.cap = draft.galaxy.systems[playerStarter.systemId].bodyIds.length * COMPUTE_PER_BODY;
+        draft.empire.compute.cap = computeCapOf(draft, draft.empire);
         draft.empire.compute.used = 0;
         for (const bid of draft.galaxy.systems[playerStarter.systemId].bodyIds) {
           const body = draft.galaxy.bodies[bid];
@@ -2513,7 +2524,7 @@ export function reduce(state: GameState, action: Action): GameState {
               }
             }
           }
-          empire.compute.cap = draft.galaxy.systems[starter.systemId].bodyIds.length * COMPUTE_PER_BODY;
+          empire.compute.cap = computeCapOf(draft, empire);
           return empire;
         });
         // Seed AI bodies' hammers too so turn-1 rates show correctly.

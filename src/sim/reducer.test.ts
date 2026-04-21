@@ -365,13 +365,12 @@ describe("AI scoreState value function", () => {
     const playerScore = scoreState(state, "e_player");
     expect(playerScore).toBeGreaterThan(75);
     expect(playerScore).toBeLessThan(90);
-    // AI score = 1 system × 200 + ship (pragmatist 200 × at-war 1.5
-    // = 300, mobile since cap ≥ 1) + 15 political-flow + 200 × 2/3
-    // occupation credit (≈ 133) − 10 energy upkeep flow (1 ship + 1
-    // outpost = 2 per turn × 5 horizon). Total ≈ 638.
+    // AI score = 1 system × 200 + ship (pragmatist 300 at war,
+    // stuck @ 20% since cap=0 with 0-pop body) = 60 + 15 political
+    // + 133 occupation credit − 10 energy upkeep = ≈ 398.
     const aiScore = scoreState(state, "e_ai");
-    expect(aiScore).toBeGreaterThan(630);
-    expect(aiScore).toBeLessThan(645);
+    expect(aiScore).toBeGreaterThan(390);
+    expect(aiScore).toBeLessThan(410);
   });
 
   it("values systems and ships in hammer-equivalent units", () => {
@@ -399,13 +398,12 @@ describe("AI scoreState value function", () => {
     });
     // 1 system × 200 = 200 assets.
     // Ships: 2 ships, pragmatist (base 200) × no-war (×1.0) = 200 each.
-    // Compute cap (1 owned body × COMPUTE_PER_BODY 1) = 1 → only 1
-    // ship is "mobile"; the other is "stuck" @ 20% value.
-    // → 1 × 200 + 1 × 40 = 240.
+    // Compute cap = 0 (body has 0 pops → 0.25/pop × 0 = 0) → all
+    // ships are "stuck" @ 20% value: 2 × 40 = 80.
     // + political/turn baseline × 15 = 15.
     // − energy upkeep (2 ships + 1 outpost = 3) × 5 horizon = −15.
-    // Total = 440.
-    expect(scoreState(state, "e_player")).toBe(440);
+    // Total = 280.
+    expect(scoreState(state, "e_player")).toBe(280);
   });
 
   it("scoreState increases after queueing colonize on a second body in an owned system", () => {
@@ -1026,11 +1024,11 @@ describe("processFleetOrders via endTurn", () => {
   });
 
   it("idles a fleet whose jump would exceed the compute budget", () => {
-    // Empire owns one body → compute.cap = 1. A 3-ship fleet routed
-    // to a neighbour costs 3 compute → can't afford, stays put.
+    // 0-pop temperate body → compute.cap = 0. A 1-ship fleet routed
+    // to a neighbour costs 1 compute → can't afford, stays put.
     const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
     const mid = makeSystem({ id: "s_mid", bodyIds: [], ownerId: null });
-    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 0 });
     const empire = makeEmpire({
       id: "e_player",
       capitalBodyId: "b_cap",
@@ -1040,7 +1038,7 @@ describe("processFleetOrders via endTurn", () => {
       id: "f_big",
       empireId: "e_player",
       systemId: "s_home",
-      shipCount: 3,
+      shipCount: 1,
       destinationSystemId: "s_mid",
     };
     const state = makeState({
