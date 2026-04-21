@@ -857,17 +857,17 @@ export function canQueueProjectFor(
       if (!isSystemAdjacentToEmpireOf(state, empire, sys.id)) return false;
     }
   }
-  // Dedupe rules:
+  // Dedupe rules (opt out with `repeatable: true` on the project):
   //  - Empire-scope projects: at most one of a given projectId queued.
   //  - Body-scope projects: at most one (projectId, targetBodyId) pair.
-  //    Different bodies can queue the same project concurrently so
-  //    repeatable things like frigates can be built in parallel.
-  for (const order of empire.projects) {
-    if (order.kind !== "empire_project" || order.projectId !== projectId) continue;
-    if (proj.scope === "body") {
-      if (order.targetBodyId === targetBodyId) return false;
-    } else {
-      return false;
+  if (!proj.repeatable) {
+    for (const order of empire.projects) {
+      if (order.kind !== "empire_project" || order.projectId !== projectId) continue;
+      if (proj.scope === "body") {
+        if (order.targetBodyId === targetBodyId) return false;
+      } else {
+        return false;
+      }
     }
   }
   return true;
@@ -2244,22 +2244,52 @@ export function reduce(state: GameState, action: Action): GameState {
         startingPops: number,
       ): { galaxy: typeof galaxy; capitalBodyId: string; systemId: string } {
         const sys = nextGalaxy.systems[sysId];
-        const starterBodyId = sys.bodyIds[0];
-        const starterBody = nextGalaxy.bodies[starterBodyId];
-        // Starter body is guaranteed temperate with generous space.
-        // (Gardens are disabled for now — see galaxy.ts.)
-        const updatedBody = {
-          ...starterBody,
-          habitability: "temperate" as const,
-          kind: "planet" as const,
-          space: Math.max(starterBody.space, 80),
-          pops: startingPops,
+
+        // The star is body[0] now; the starter needs to be a non-star
+        // body. If the system has one we upgrade it to temperate; if
+        // not (star-only system), we mint a fresh temperate planet so
+        // the empire has a home.
+        const nonStarIds = sys.bodyIds.filter(
+          (bid) => nextGalaxy.bodies[bid]?.kind !== "star",
+        );
+        let starterBodyId: string;
+        const nextBodiesMap = { ...nextGalaxy.bodies };
+        if (nonStarIds.length > 0) {
+          starterBodyId = nonStarIds[0];
+          const starterBody = nextBodiesMap[starterBodyId];
+          nextBodiesMap[starterBodyId] = {
+            ...starterBody,
+            habitability: "temperate" as const,
+            kind: "planet" as const,
+            space: Math.max(starterBody.space, 80),
+            pops: startingPops,
+          };
+        } else {
+          starterBodyId = `body_starter_${sysId}`;
+          nextBodiesMap[starterBodyId] = {
+            id: starterBodyId,
+            systemId: sysId,
+            name: `${sys.name} I`,
+            kind: "planet",
+            habitability: "temperate",
+            space: 80,
+            pops: startingPops,
+            hammers: 0,
+            queue: [],
+            flavorFlags: [],
+          };
+        }
+        const updatedSys = {
+          ...sys,
+          bodyIds: sys.bodyIds.includes(starterBodyId)
+            ? sys.bodyIds
+            : [...sys.bodyIds, starterBodyId],
+          ownerId: empireId,
         };
-        const updatedSys = { ...sys, ownerId: empireId };
         nextGalaxy = {
           ...nextGalaxy,
           systems: { ...nextGalaxy.systems, [sysId]: updatedSys },
-          bodies: { ...nextGalaxy.bodies, [starterBodyId]: updatedBody },
+          bodies: nextBodiesMap,
         };
         return { galaxy: nextGalaxy, capitalBodyId: starterBodyId, systemId: sysId };
       }

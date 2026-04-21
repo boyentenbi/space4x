@@ -230,6 +230,11 @@ export interface EmpireProject {
   hammersRequired: number;
   scope: "empire" | "body";
   bodyRequirement?: "capital" | "any_owned" | "star";
+  // When true, multiple copies of this project can be queued on the
+  // same target — useful for things like frigates where you might
+  // want to build three in a row. Default (false) enforces the old
+  // one-of-per-(project, body) dedupe.
+  repeatable?: boolean;
   costs?: Partial<Resources>;
   art?: string;
   availability: {

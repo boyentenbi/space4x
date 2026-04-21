@@ -451,7 +451,10 @@ function BodyRow({
         );
       })()}
 
-      {owned && !bodyProjectOrder && bodyProjects.map((proj) => {
+      {/* Offer any body projects canQueueProjectFor says are legal.
+          For repeatable projects (e.g. build_frigate) the button keeps
+          showing even while another of the same is in flight. */}
+      {owned && bodyProjects.map((proj) => {
         const turns = hammerRate > 0 ? Math.ceil(proj.hammersRequired / hammerRate) : "—";
         return (
           <button

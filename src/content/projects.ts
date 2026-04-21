@@ -26,8 +26,9 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     scope: "body",
     bodyRequirement: "any_owned",
     costs: { political: 2 },
+    repeatable: true,
     availability: {
-      // Repeatable: no excludesFlag, no excludesCompleted.
+      // Repeatable: multiple frigates can be queued on the same body.
     },
     onComplete: {
       spawnShip: { count: 1 },
