@@ -315,7 +315,7 @@ describe("processFleetOrders via endTurn", () => {
       id: "f1",
       empireId: "e_player",
       systemId: "s_home",
-      shipCount: 2,
+      shipCount: 1,
       destinationSystemId: "s_far",
     };
     const state = makeState({
@@ -338,6 +338,38 @@ describe("processFleetOrders via endTurn", () => {
     // Arrived; destination cleared.
     expect(t2.fleets["f1"]?.systemId).toBe("s_far");
     expect(t2.fleets["f1"]?.destinationSystemId).toBeUndefined();
+  });
+
+  it("idles a fleet whose jump would exceed the compute budget", () => {
+    // Empire owns one body → compute.cap = 1. A 3-ship fleet routed
+    // to a neighbour costs 3 compute → can't afford, stays put.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const mid = makeSystem({ id: "s_mid", bodyIds: [], ownerId: null });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const empire = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+    });
+    const fleet: Fleet = {
+      id: "f_big",
+      empireId: "e_player",
+      systemId: "s_home",
+      shipCount: 3,
+      destinationSystemId: "s_mid",
+    };
+    const state = makeState({
+      systems: [home, mid],
+      bodies: [cap],
+      hyperlanes: [["s_home", "s_mid"]],
+      empire,
+      fleets: [fleet],
+    });
+
+    const next = reduce(state, { type: "endTurn" });
+    // Fleet stayed home; route intact.
+    expect(next.fleets["f_big"]?.systemId).toBe("s_home");
+    expect(next.fleets["f_big"]?.destinationSystemId).toBe("s_mid");
   });
 });
 

@@ -642,14 +642,46 @@ export function computeBreakdownFor(state: GameState, empire: Empire): StatBreak
     value: COMPUTE_PER_BODY,
     habitability: body.habitability,
   }));
-  const total = bodyRows.reduce((s, r) => s + r.value, 0);
+  const capTotal = bodyRows.reduce((s, r) => s + r.value, 0);
+
+  // Projected spend next turn — each routed fleet will cost its ship
+  // count in compute to execute the jump.
+  const fleetRows = Object.values(state.fleets)
+    .filter((f) => f.empireId === empire.id && f.destinationSystemId && f.shipCount > 0)
+    .map((f) => {
+      const dest = state.galaxy.systems[f.destinationSystemId!];
+      return {
+        id: f.id,
+        name: `Fleet → ${dest?.name ?? "?"}`,
+        detail: `${f.shipCount} ship${f.shipCount === 1 ? "" : "s"}`,
+        value: -f.shipCount,
+      };
+    });
+  const projectedSpend = fleetRows.reduce((s, r) => s - r.value, 0);
+
   return {
     title: "Compute",
     iconSrc: "/icons/compute.png",
     unit: "/turn",
-    total,
-    sections: [{ label: "Per body", rows: bodyRows }],
+    total: capTotal - projectedSpend,
+    sections: [
+      { label: "Per body", rows: bodyRows },
+      ...(fleetRows.length > 0 ? [{ label: "Fleet jumps (projected)", rows: fleetRows }] : []),
+    ],
   };
+}
+
+// Projected compute that will be consumed by fleet jumps this turn —
+// used to show a deficit warning in the sidebar.
+export function projectedFleetCompute(state: GameState, empire: Empire): number {
+  let total = 0;
+  for (const f of Object.values(state.fleets)) {
+    if (f.empireId !== empire.id) continue;
+    if (!f.destinationSystemId) continue;
+    if (f.shipCount <= 0) continue;
+    total += f.shipCount;
+  }
+  return total;
 }
 
 export function popsBreakdownFor(state: GameState, empire: Empire): StatBreakdown {
@@ -1313,6 +1345,10 @@ function aiPlanProject(draft: GameState, empire: Empire): void {
 // whose route is now blocked are stranded (destination cleared,
 // chronicled for the player). This is the ONLY mechanism by which
 // fleets move — setFleetDestination never moves a fleet itself.
+//
+// Each hop costs `shipCount` compute from the empire's per-turn budget.
+// If the empire can't afford a hop, the fleet stays put this turn with
+// its route intact and retries next turn.
 function processFleetOrders(draft: GameState): void {
   const fleetIds = Object.keys(draft.fleets);
   for (const fid of fleetIds) {
@@ -1344,6 +1380,26 @@ function processFleetOrders(draft: GameState): void {
       fleet.destinationSystemId = undefined;
       continue;
     }
+    // Compute budget check: moving N ships costs N compute.
+    const owner =
+      draft.empire.id === fleet.empireId
+        ? draft.empire
+        : draft.aiEmpires.find((e) => e.id === fleet.empireId);
+    if (!owner) continue;
+    const cost = fleet.shipCount;
+    if (owner.compute.used + cost > owner.compute.cap) {
+      if (fleet.empireId === draft.empire.id) {
+        const here = draft.galaxy.systems[fleet.systemId];
+        draft.eventLog.push({
+          turn: draft.turn,
+          eventId: "fleet_idled",
+          choiceId: null,
+          text: `Fleet at ${here?.name ?? "a system"} held station — not enough compute to coordinate the jump.`,
+        });
+      }
+      continue;
+    }
+    owner.compute.used += cost;
     const nextHop = path[0];
     const final = fleet.destinationSystemId;
     const moveCount = fleet.shipCount;

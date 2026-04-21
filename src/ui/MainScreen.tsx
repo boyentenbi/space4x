@@ -10,6 +10,7 @@ import {
   canColonize,
   colonizeOrderForTarget,
   computeBreakdownFor,
+  projectedFleetCompute,
   effectiveColonizeHammers,
   effectiveColonizePolitical,
   effectiveSpace,
@@ -547,7 +548,7 @@ export function MainScreen() {
           ))}
           <ResCell
             icon={COMPUTE_ICON}
-            value={state.empire.compute.cap}
+            value={`${state.empire.compute.cap - projectedFleetCompute(state, state.empire)}/${state.empire.compute.cap}`}
             onClick={() => setBreakdown(computeBreakdownFor(state, state.empire))}
           />
           <ResCell
