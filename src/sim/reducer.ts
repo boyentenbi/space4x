@@ -1782,6 +1782,13 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
 // per-resource) keeps the search simple.
 export const FLOW_HORIZON = 5;
 
+// Per unit of effective pop-space in an owned system (or a system with
+// an outpost under way, scaled by progress). Values "room to grow" so
+// a lush system outscores a rocky one even before colonies land.
+// Calibrated below a filled-pop's flow value (~12/unit on temperate),
+// since empty space is potential, not production.
+export const MAX_POPS_VALUE = 8;
+
 // Per-archetype intrinsic value of a ship. Conquerors want navies;
 // isolationists want enough to defend; pragmatists sit in the middle.
 // This is the base number before at-war multipliers and over-cap
@@ -1800,6 +1807,19 @@ export function scoreState(state: GameState, empireId: string): number {
   let score = 0;
   // Hard assets (raw hammer-cost equivalent).
   score += empire.systemIds.length * COLONIZE_HAMMERS;
+  // Max-pops potential: for every body in an owned system, credit its
+  // effective space. This is the "room to grow" that differentiates a
+  // lush system from a rocky one, and it's what in-flight outposts
+  // contribute progress toward.
+  for (const sysId of empire.systemIds) {
+    const sys = state.galaxy.systems[sysId];
+    if (!sys) continue;
+    for (const bid of sys.bodyIds) {
+      const body = state.galaxy.bodies[bid];
+      if (!body) continue;
+      score += effectiveSpace(empire, body) * MAX_POPS_VALUE;
+    }
+  }
   // Ships: archetype-weighted × at-war premium, with diminishing
   // returns once the fleet exceeds the per-turn compute cap (ships
   // you can't move in a single turn are mostly dead weight).
@@ -1873,13 +1893,23 @@ export function scoreState(state: GameState, empireId: string): number {
       order.kind === "empire_project" &&
       order.projectId === "build_outpost"
     ) {
-      // A finished outpost claims a system — worth its colonise cost
-      // equivalent plus a frontier premium so the AI prefers expansion
-      // over ship-spam when both are equally affordable. The premium
-      // is a stop-gap until we do multi-step rollouts that'd see the
-      // future colonise value naturally.
-      const FRONTIER_PREMIUM = 150;
-      score += (COLONIZE_HAMMERS + FRONTIER_PREMIUM) * progressWeight;
+      // A finished outpost claims its system (COLONIZE_HAMMERS),
+      // unlocks its pop-potential (MAX_POPS_VALUE per space), and
+      // gains a small flat frontier value for the transit/denial
+      // benefits that every claimed system provides (even a star-
+      // only one). All three credit progress-weighted so starting
+      // work on an outpost pulls some of that reward forward.
+      const FRONTIER_PREMIUM = 50;
+      const hostBody = order.targetBodyId ? state.galaxy.bodies[order.targetBodyId] : null;
+      const targetSys = hostBody ? state.galaxy.systems[hostBody.systemId] : null;
+      let sysMaxPops = 0;
+      if (targetSys) {
+        for (const bid of targetSys.bodyIds) {
+          const b = state.galaxy.bodies[bid];
+          if (b) sysMaxPops += effectiveSpace(empire, b);
+        }
+      }
+      score += (COLONIZE_HAMMERS + FRONTIER_PREMIUM + sysMaxPops * MAX_POPS_VALUE) * progressWeight;
     } else {
       // Generic empire_project — fall back to 70% of raw hammer cost.
       score += order.hammersRequired * 0.7 * progressWeight;

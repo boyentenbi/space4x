@@ -361,16 +361,17 @@ describe("AI scoreState value function", () => {
       fleets: [siegeFleet],
       wars: [["e_ai", "e_player"].sort() as [string, string]],
     });
-    // Player = 1 × 200 system − 200 × 2/3 occupation debit + 15
-    // political − 5 outpost upkeep ≈ 77.
+    // Player = 1 × 200 system + 10 space × 8 max-pops − 200 × 2/3
+    // occupation debit + 15 political − 5 outpost upkeep ≈ 157.
     const playerScore = scoreState(state, "e_player");
-    expect(playerScore).toBeGreaterThan(70);
-    expect(playerScore).toBeLessThan(90);
-    // AI = 1 × 200 system + stuck 1-ship @ at-war (300 × 0.2) = 60
-    // + 200 × 2/3 occupation credit + 15 political − 10 upkeep ≈ 398.
+    expect(playerScore).toBeGreaterThan(150);
+    expect(playerScore).toBeLessThan(170);
+    // AI = 1 × 200 system + 10 space × 8 max-pops + stuck 1-ship
+    // @ at-war (300 × 0.2) = 60 + 200 × 2/3 occupation credit
+    // + 15 political − 10 upkeep ≈ 478.
     const aiScore = scoreState(state, "e_ai");
-    expect(aiScore).toBeGreaterThan(390);
-    expect(aiScore).toBeLessThan(410);
+    expect(aiScore).toBeGreaterThan(470);
+    expect(aiScore).toBeLessThan(490);
   });
 
   it("values systems and ships in hammer-equivalent units", () => {
@@ -397,11 +398,12 @@ describe("AI scoreState value function", () => {
       fleets: [fleet],
     });
     // 1 system × 200 (COLONIZE_HAMMERS) = 200 assets.
+    // + Max-pops potential: body space 10 × 8 (MAX_POPS_VALUE) = 80.
     // Ships: 2 × 200 × (no-war 1.0) × stuck 20% (cap=0) = 80.
     // + political/turn baseline × 15 = 15.
     // − energy upkeep (2 ships + 1 outpost = 3) × 5 horizon = −15.
-    // Total = 280.
-    expect(scoreState(state, "e_player")).toBe(280);
+    // Total = 360.
+    expect(scoreState(state, "e_player")).toBe(360);
   });
 
   it("queueing colonize deducts COLONIZE_POP_COST from the capital", () => {
@@ -529,6 +531,65 @@ describe("AI scoreState value function", () => {
       targetBodyId: "b_vacant",
     });
     expect(scoreState(queued, "e_player")).toBeGreaterThan(baseScore);
+  });
+
+  it("rates an in-flight outpost on a lush target above one on a star-only target", () => {
+    // Two adjacent unclaimed systems: one has a temperate planet
+    // alongside its star, the other is star-only. Queueing an outpost
+    // on either puts the empire in the same "system-claim-in-progress"
+    // state — but the lush one should score higher because its pop
+    // potential is credited at progress weight.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const lush = makeSystem({ id: "s_lush", bodyIds: ["b_lush_star", "b_lush_temp"], ownerId: null });
+    const barren = makeSystem({ id: "s_barren", bodyIds: ["b_barren_star"], ownerId: null });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 0 });
+    const lushStar = makeBody({
+      id: "b_lush_star",
+      systemId: "s_lush",
+      kind: "star",
+      habitability: "stellar",
+      space: 0,
+    });
+    const lushTemp = makeBody({
+      id: "b_lush_temp",
+      systemId: "s_lush",
+      habitability: "temperate",
+      pops: 0,
+    });
+    const barrenStar = makeBody({
+      id: "b_barren_star",
+      systemId: "s_barren",
+      kind: "star",
+      habitability: "stellar",
+      space: 0,
+    });
+    const empire = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+      resources: { food: 500, energy: 500, political: 20 },
+    });
+    const state = makeState({
+      systems: [home, lush, barren],
+      bodies: [cap, lushStar, lushTemp, barrenStar],
+      hyperlanes: [["s_home", "s_lush"], ["s_home", "s_barren"]],
+      empire,
+    });
+    const toLush = reduce(state, {
+      type: "queueEmpireProject",
+      byEmpireId: "e_player",
+      projectId: "build_outpost",
+      targetBodyId: "b_lush_star",
+    });
+    const toBarren = reduce(state, {
+      type: "queueEmpireProject",
+      byEmpireId: "e_player",
+      projectId: "build_outpost",
+      targetBodyId: "b_barren_star",
+    });
+    expect(scoreState(toLush, "e_player")).toBeGreaterThan(
+      scoreState(toBarren, "e_player"),
+    );
   });
 });
 
