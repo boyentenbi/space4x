@@ -38,8 +38,19 @@ export type Action =
   | { type: "queueEmpireProject"; byEmpireId: string; projectId: string; targetBodyId?: string }
   | { type: "cancelOrder"; byEmpireId: string; orderId: string }
   | { type: "adoptPolicy"; byEmpireId: string; policyId: string }
-  | { type: "moveFleet"; byEmpireId: string; fleetId: string; toSystemId: string; count?: number }
-  | { type: "cancelFleetOrder"; byEmpireId: string; fleetId: string }
+  | {
+      type: "setFleetDestination";
+      byEmpireId: string;
+      fleetId: string;
+      toSystemId: string | null;
+    }
+  | {
+      type: "splitFleet";
+      byEmpireId: string;
+      fleetId: string;
+      count: number;
+      toSystemId: string;
+    }
   | { type: "declareWar"; byEmpireId: string; targetEmpireId: string }
   | { type: "makePeace"; byEmpireId: string; targetEmpireId: string }
   | { type: "dismissProjectCompletion" };
@@ -1299,15 +1310,15 @@ function aiPlanProject(draft: GameState, empire: Empire): void {
 
 // Auto-step every fleet carrying a destinationSystemId: recompute the
 // legal-path BFS, walk one hop, and clear the order on arrival. Fleets
-// that moved manually this turn skip; fleets whose route is now blocked
-// are stranded (destination cleared, chronicled for the player).
+// whose route is now blocked are stranded (destination cleared,
+// chronicled for the player). This is the ONLY mechanism by which
+// fleets move — setFleetDestination never moves a fleet itself.
 function processFleetOrders(draft: GameState): void {
   const fleetIds = Object.keys(draft.fleets);
   for (const fid of fleetIds) {
     const fleet = draft.fleets[fid];
     if (!fleet) continue;
     if (!fleet.destinationSystemId) continue;
-    if (fleet.movedTurn === draft.turn) continue;
     if (fleet.shipCount <= 0) continue;
     if (fleet.systemId === fleet.destinationSystemId) {
       fleet.destinationSystemId = undefined;
@@ -1347,12 +1358,10 @@ function processFleetOrders(draft: GameState): void {
     }
     if (destFleet) {
       destFleet.shipCount += moveCount;
-      destFleet.movedTurn = draft.turn;
       destFleet.destinationSystemId = nextHop === final ? undefined : final;
       delete draft.fleets[fid];
     } else {
       fleet.systemId = nextHop;
-      fleet.movedTurn = draft.turn;
       if (nextHop === final) fleet.destinationSystemId = undefined;
     }
   }
@@ -1386,9 +1395,8 @@ function aiPlanMoves(draft: GameState, empire: Empire): void {
 
   const adj = buildHyperlaneAdj(draft);
 
-  // Snapshot the fleet list — applyMoveFleet mutates draft.fleets.
   const ourFleets = Object.values(draft.fleets).filter(
-    (f) => f.empireId === empire.id && f.movedTurn !== draft.turn && f.shipCount > 0,
+    (f) => f.empireId === empire.id && f.shipCount > 0,
   );
 
   for (const fleet of ourFleets) {
@@ -1408,10 +1416,8 @@ function aiPlanMoves(draft: GameState, empire: Empire): void {
       }
     }
     if (!nearest) continue;
-    // Dispatch through the shared apply path. applyMoveFleet re-runs a
-    // BFS to produce the single-hop step and stores the long-range
-    // destination for any unfinished route.
-    applyMoveFleet(draft, {
+    // Set the AI's route; processFleetOrders does the actual stepping.
+    applySetFleetDestination(draft, {
       byEmpireId: empire.id,
       fleetId: fleet.id,
       toSystemId: nearest,
@@ -1645,79 +1651,51 @@ function applyMakePeace(
   }
 }
 
-function applyMoveFleet(
+function applySetFleetDestination(
   draft: GameState,
-  action: { byEmpireId: string; fleetId: string; toSystemId: string; count?: number },
+  action: { byEmpireId: string; fleetId: string; toSystemId: string | null },
 ): void {
   const fleet = draft.fleets[action.fleetId];
   if (!fleet) return;
   if (fleet.empireId !== action.byEmpireId) return;
-  if (fleet.movedTurn === draft.turn) return;
-  if (fleet.systemId === action.toSystemId) return;
-  if (action.count !== undefined && action.count <= 0) return;
-  const moveCount = Math.min(fleet.shipCount, action.count ?? fleet.shipCount);
-  if (moveCount <= 0) return;
-
-  const path = shortestPathFor(draft, fleet.empireId, fleet.systemId, action.toSystemId);
-  if (!path || path.length === 0) return;
-  const nextHop = path[0];
-  const finalDest = action.toSystemId;
-  const hasMultiHop = path.length > 1;
-  const isFullMove = moveCount === fleet.shipCount;
-
-  // Existing friendly fleet at the next hop to merge into, if any.
-  let destFleet: Fleet | undefined;
-  for (const f of Object.values(draft.fleets)) {
-    if (f.id === fleet.id) continue;
-    if (f.empireId === fleet.empireId && f.systemId === nextHop) {
-      destFleet = f;
-      break;
-    }
-  }
-
-  if (isFullMove && !destFleet) {
-    // Relocate the existing fleet — same id, new system. Keeps UI
-    // state (selected fleet, move mode) stable across the move.
-    fleet.systemId = nextHop;
-    fleet.movedTurn = draft.turn;
-    fleet.destinationSystemId = hasMultiHop ? finalDest : undefined;
+  if (action.toSystemId === null) {
+    fleet.destinationSystemId = undefined;
     return;
   }
-
-  // Split or merge path: carve off `moveCount` and either add it to
-  // the destination fleet or spawn a new one there.
-  fleet.shipCount -= moveCount;
-  if (destFleet) {
-    destFleet.shipCount += moveCount;
-    destFleet.movedTurn = draft.turn;
-    destFleet.destinationSystemId = hasMultiHop ? finalDest : undefined;
-  } else {
-    const id = nextFleetId();
-    draft.fleets[id] = {
-      id,
-      empireId: fleet.empireId,
-      systemId: nextHop,
-      shipCount: moveCount,
-      movedTurn: draft.turn,
-      destinationSystemId: hasMultiHop ? finalDest : undefined,
-    };
+  if (action.toSystemId === fleet.systemId) {
+    fleet.destinationSystemId = undefined;
+    return;
   }
-  if (fleet.shipCount <= 0) {
-    delete draft.fleets[action.fleetId];
-  } else {
-    fleet.movedTurn = draft.turn;
-  }
+  // Destination must have a legal path. Reject the order if there's
+  // none — keeps the "stranded" state reachable only through mid-route
+  // territory flips, not by setting impossible orders.
+  const path = shortestPathFor(draft, fleet.empireId, fleet.systemId, action.toSystemId);
+  if (!path || path.length === 0) return;
+  fleet.destinationSystemId = action.toSystemId;
 }
 
-function applyCancelFleetOrder(
+function applySplitFleet(
   draft: GameState,
-  action: { byEmpireId: string; fleetId: string },
+  action: { byEmpireId: string; fleetId: string; count: number; toSystemId: string },
 ): void {
   const fleet = draft.fleets[action.fleetId];
   if (!fleet) return;
   if (fleet.empireId !== action.byEmpireId) return;
-  if (!fleet.destinationSystemId) return;
-  fleet.destinationSystemId = undefined;
+  if (action.count <= 0 || action.count >= fleet.shipCount) return;
+  if (action.toSystemId === fleet.systemId) return;
+  const path = shortestPathFor(draft, fleet.empireId, fleet.systemId, action.toSystemId);
+  if (!path || path.length === 0) return;
+  // Peel off a new co-located fleet with the requested destination.
+  // Movement itself happens at end of turn via processFleetOrders.
+  fleet.shipCount -= action.count;
+  const id = nextFleetId();
+  draft.fleets[id] = {
+    id,
+    empireId: fleet.empireId,
+    systemId: fleet.systemId,
+    shipCount: action.count,
+    destinationSystemId: action.toSystemId,
+  };
 }
 
 export function reduce(state: GameState, action: Action): GameState {
@@ -1922,11 +1900,11 @@ export function reduce(state: GameState, action: Action): GameState {
     case "makePeace":
       return produce(state, (draft) => applyMakePeace(draft, action));
 
-    case "moveFleet":
-      return produce(state, (draft) => applyMoveFleet(draft, action));
+    case "setFleetDestination":
+      return produce(state, (draft) => applySetFleetDestination(draft, action));
 
-    case "cancelFleetOrder":
-      return produce(state, (draft) => applyCancelFleetOrder(draft, action));
+    case "splitFleet":
+      return produce(state, (draft) => applySplitFleet(draft, action));
 
     case "endTurn": {
       if (state.eventQueue.length > 0) return state;

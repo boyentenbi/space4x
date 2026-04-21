@@ -430,14 +430,12 @@ export function MainScreen() {
   }
   const colonizeTurnEstimate = turnsToColonize();
 
-  // Resolve move mode: if the fleet vanished (combat, end-of-turn) or
-  // has since moved, drop out of move mode.
+  // Resolve move mode: if the fleet vanished (combat, etc.) drop out.
   const moveFleet = moveMode ? state.fleets[moveMode.fleetId] ?? null : null;
   const moveFleetStale =
     !!moveMode &&
     (!moveFleet ||
       moveFleet.empireId !== state.empire.id ||
-      moveFleet.movedTurn === state.turn ||
       moveFleet.shipCount <= 0);
   useEffect(() => {
     if (moveFleetStale) setMoveMode(null);
@@ -460,26 +458,36 @@ export function MainScreen() {
   })();
 
   function handleSystemSelect(id: string | null) {
-    // In move mode any reachable system is a legal order target — the
-    // reducer handles path-finding and rejects unreachable taps.
+    // In move mode, any reachable system is a legal order target.
+    // Fleet stays selected after ordering so the path is visible; tap
+    // another system to retarget, or tap empty space / pill to deselect.
     if (moveMode && moveFleet && !moveFleetStale && id && id !== moveFleet.systemId) {
-      const split = moveMode.split;
-      const count =
-        split === null
-          ? undefined
-          : Math.max(1, Math.min(moveFleet.shipCount - 1, split));
-      // Confirm a path exists before dispatching so we can fall through
-      // cleanly when the tap is unreachable (neutral empire blocks).
       const path = shortestPathFor(state, moveFleet.empireId, moveFleet.systemId, id);
       if (path && path.length > 0) {
-        dispatch({
-          type: "moveFleet",
-          byEmpireId: state.empire.id,
-          fleetId: moveMode.fleetId,
-          toSystemId: id,
-          ...(count !== undefined ? { count } : {}),
-        });
-        setMoveMode(null);
+        const split = moveMode.split;
+        const count =
+          split === null
+            ? null
+            : Math.max(1, Math.min(moveFleet.shipCount - 1, split));
+        if (count !== null) {
+          dispatch({
+            type: "splitFleet",
+            byEmpireId: state.empire.id,
+            fleetId: moveMode.fleetId,
+            count,
+            toSystemId: id,
+          });
+          // After a split the peel-off is a different fleet; exit move
+          // mode so the user picks up whichever group they care about.
+          setMoveMode(null);
+        } else {
+          dispatch({
+            type: "setFleetDestination",
+            byEmpireId: state.empire.id,
+            fleetId: moveMode.fleetId,
+            toSystemId: id,
+          });
+        }
         setSelectedSystemId(id);
         return;
       }
@@ -633,7 +641,7 @@ export function MainScreen() {
                   {fleets.map((f) => {
                     const empire = empireById(state, f.empireId);
                     const isPlayer = f.empireId === state.empire.id;
-                    const canMove = isPlayer && f.movedTurn !== state.turn && f.shipCount > 0;
+                    const canMove = isPlayer && f.shipCount > 0;
                     const isMoving = moveMode?.fleetId === f.id;
                     const destSys = f.destinationSystemId
                       ? state.galaxy.systems[f.destinationSystemId] ?? null
@@ -849,9 +857,10 @@ export function MainScreen() {
                         className="move-bar-clear"
                         onClick={() =>
                           dispatch({
-                            type: "cancelFleetOrder",
+                            type: "setFleetDestination",
                             byEmpireId: state.empire.id,
                             fleetId: moveFleet.id,
+                            toSystemId: null,
                           })
                         }
                       >

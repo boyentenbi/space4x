@@ -209,7 +209,7 @@ describe("atWar", () => {
   });
 });
 
-describe("moveFleet action", () => {
+describe("setFleetDestination action", () => {
   function twoSystemSetup(opts: {
     destOwner?: string | null;
     wars?: Array<[string, string]>;
@@ -233,75 +233,145 @@ describe("moveFleet action", () => {
     return { state, fleetId: fleet.id, destId: dest.id };
   }
 
-  it("relocates the fleet (same id) on a full-move into an empty system", () => {
+  it("stores the destination without moving the fleet", () => {
     const { state, fleetId, destId } = twoSystemSetup();
     const next = reduce(state, {
-      type: "moveFleet",
+      type: "setFleetDestination",
       byEmpireId: "e_player",
       fleetId,
       toSystemId: destId,
     });
-    expect(next.fleets[fleetId]).toBeDefined();
-    expect(next.fleets[fleetId]?.systemId).toBe(destId);
-    expect(next.fleets[fleetId]?.shipCount).toBe(3);
-    expect(next.fleets[fleetId]?.movedTurn).toBe(state.turn);
+    expect(next.fleets[fleetId]?.systemId).toBe("s_home");
+    expect(next.fleets[fleetId]?.destinationSystemId).toBe(destId);
+  });
+
+  it("clears the destination when toSystemId is null", () => {
+    const { state, fleetId, destId } = twoSystemSetup();
+    const withOrder = reduce(state, {
+      type: "setFleetDestination",
+      byEmpireId: "e_player",
+      fleetId,
+      toSystemId: destId,
+    });
+    const cleared = reduce(withOrder, {
+      type: "setFleetDestination",
+      byEmpireId: "e_player",
+      fleetId,
+      toSystemId: null,
+    });
+    expect(cleared.fleets[fleetId]?.destinationSystemId).toBeUndefined();
   });
 
   it("refuses a dispatch from an empire that doesn't own the fleet", () => {
     const { state, fleetId, destId } = twoSystemSetup();
     const next = reduce(state, {
-      type: "moveFleet",
+      type: "setFleetDestination",
       byEmpireId: "e_other",
       fleetId,
       toSystemId: destId,
     });
-    expect(next).toBe(state); // no-op
+    expect(next).toBe(state);
   });
 
-  it("refuses to enter neutral territory", () => {
+  it("refuses a destination with no legal path (neutral territory)", () => {
     const { state, fleetId, destId } = twoSystemSetup({ destOwner: "e_other" });
     const next = reduce(state, {
-      type: "moveFleet",
+      type: "setFleetDestination",
       byEmpireId: "e_player",
       fleetId,
       toSystemId: destId,
     });
-    // Fleet stays home.
-    expect(next.fleets[fleetId]?.systemId).toBe("s_home");
+    expect(next.fleets[fleetId]?.destinationSystemId).toBeUndefined();
   });
 
-  it("enters at-war territory", () => {
+  it("accepts an at-war destination", () => {
     const { state, fleetId, destId } = twoSystemSetup({
       destOwner: "e_other",
       wars: [["e_other", "e_player"].sort() as [string, string]],
     });
     const next = reduce(state, {
-      type: "moveFleet",
+      type: "setFleetDestination",
       byEmpireId: "e_player",
       fleetId,
       toSystemId: destId,
     });
-    expect(next.fleets[fleetId]?.systemId).toBe(destId);
+    expect(next.fleets[fleetId]?.destinationSystemId).toBe(destId);
   });
+});
 
-  it("splits off a subset and creates a new fleet at the destination", () => {
-    const { state, fleetId, destId } = twoSystemSetup();
-    const next = reduce(state, {
-      type: "moveFleet",
-      byEmpireId: "e_player",
-      fleetId,
-      toSystemId: destId,
-      count: 2,
+describe("processFleetOrders via endTurn", () => {
+  it("steps a fleet one hop per turn along the stored path", () => {
+    // Three systems in a line: home - mid - far. All unowned except home.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const mid = makeSystem({ id: "s_mid", bodyIds: [], ownerId: null });
+    const far = makeSystem({ id: "s_far", bodyIds: [], ownerId: null });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const empire = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
     });
-    // Source fleet keeps its id and 1 ship.
-    expect(next.fleets[fleetId]?.systemId).toBe("s_home");
-    expect(next.fleets[fleetId]?.shipCount).toBe(1);
-    // New fleet with a different id at the destination holding the
-    // split-off 2 ships.
-    const splitFleet = Object.values(next.fleets).find(
-      (f) => f.systemId === destId && f.id !== fleetId,
-    );
-    expect(splitFleet?.shipCount).toBe(2);
+    const fleet: Fleet = {
+      id: "f1",
+      empireId: "e_player",
+      systemId: "s_home",
+      shipCount: 2,
+      destinationSystemId: "s_far",
+    };
+    const state = makeState({
+      systems: [home, mid, far],
+      bodies: [cap],
+      hyperlanes: [
+        ["s_home", "s_mid"],
+        ["s_mid", "s_far"],
+      ],
+      empire,
+      fleets: [fleet],
+    });
+
+    const t1 = reduce(state, { type: "endTurn" });
+    // After one end-turn, fleet should be at mid, still routed to far.
+    expect(t1.fleets["f1"]?.systemId).toBe("s_mid");
+    expect(t1.fleets["f1"]?.destinationSystemId).toBe("s_far");
+
+    const t2 = reduce(t1, { type: "endTurn" });
+    // Arrived; destination cleared.
+    expect(t2.fleets["f1"]?.systemId).toBe("s_far");
+    expect(t2.fleets["f1"]?.destinationSystemId).toBeUndefined();
+  });
+});
+
+describe("splitFleet action", () => {
+  it("peels off a co-located fleet with its own destination", () => {
+    const home = makeSystem({ id: "s_home", bodyIds: [], ownerId: "e_player" });
+    const dest = makeSystem({ id: "s_dest", bodyIds: [], ownerId: null });
+    const empire = makeEmpire({ id: "e_player", systemIds: [home.id] });
+    const fleet: Fleet = { id: "f1", empireId: "e_player", systemId: "s_home", shipCount: 5 };
+    const state = makeState({
+      systems: [home, dest],
+      bodies: [],
+      hyperlanes: [["s_home", "s_dest"]],
+      empire,
+      fleets: [fleet],
+    });
+
+    const next = reduce(state, {
+      type: "splitFleet",
+      byEmpireId: "e_player",
+      fleetId: "f1",
+      count: 2,
+      toSystemId: "s_dest",
+    });
+
+    // Original fleet stays at home with 3 ships.
+    expect(next.fleets["f1"]?.systemId).toBe("s_home");
+    expect(next.fleets["f1"]?.shipCount).toBe(3);
+    expect(next.fleets["f1"]?.destinationSystemId).toBeUndefined();
+    // New fleet is at home (not yet moved) with 2 ships and destination.
+    const split = Object.values(next.fleets).find((f) => f.id !== "f1");
+    expect(split?.systemId).toBe("s_home");
+    expect(split?.shipCount).toBe(2);
+    expect(split?.destinationSystemId).toBe("s_dest");
   });
 });
 

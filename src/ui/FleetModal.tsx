@@ -29,11 +29,9 @@ export function FleetModal({ fleetId, onClose }: { fleetId: string; onClose: () 
 
   const status = !isPlayer
     ? "Foreign fleet — cannot command."
-    : fleet.movedTurn === state.turn
-      ? "Already moved this turn."
-      : fleet.shipCount <= 0
-        ? "No ships left."
-        : "Tap the fleet pill on the system view to move it.";
+    : fleet.shipCount <= 0
+      ? "No ships left."
+      : "Tap the fleet pill on the system view to set a route.";
 
   return (
     <div className="modal-scrim" onClick={onClose}>

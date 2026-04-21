@@ -32,11 +32,10 @@ export interface Fleet {
   empireId: string;
   systemId: string;
   shipCount: number;
-  // Turn this fleet last moved. A fleet can only move once per turn.
-  movedTurn?: number;
-  // Multi-turn route: if set, the fleet auto-steps one hop toward this
-  // system at end of turn until it either arrives or becomes stranded
-  // (no legal path remains).
+  // Movement is exclusively an end-of-turn world-update now: players
+  // and AIs set destinations via setFleetDestination and the auto-
+  // stepper walks the fleet one hop per turn until it arrives or the
+  // route becomes blocked.
   destinationSystemId?: string;
 }
 
