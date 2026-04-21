@@ -562,7 +562,10 @@ button.res-cell:hover:not(:disabled) {
 .body-row .hab.garden { color: #6fbf87; }
 .body-row .hab.temperate { color: #9dd89a; }
 .body-row .hab.harsh { color: var(--warn); }
-.body-row .hab.hellscape { color: var(--bad); }
+.body-row .hab.frozen { color: #8ab8e0; }
+.body-row .hab.molten { color: #ff6a4a; }
+.body-row .hab.barren { color: #c9b99a; }
+.body-row .hab.stellar { color: #ffe680; }
 
 .body-row .body-stats {
   font-size: 11px;

@@ -16,9 +16,16 @@ export interface Compute {
 // =====================================================================
 // Map — one hex tile is one star system containing bodies.
 // =====================================================================
-export type HabitabilityTier = "garden" | "temperate" | "harsh" | "hellscape";
+export type HabitabilityTier =
+  | "garden"
+  | "temperate"
+  | "harsh"
+  | "frozen"
+  | "molten"
+  | "barren"
+  | "stellar"; // reserved for the star body in each system
 
-export type BodyKind = "planet" | "moon";
+export type BodyKind = "star" | "planet" | "moon";
 
 export type StarKind = "yellow_main" | "blue_giant" | "red_dwarf";
 
@@ -222,7 +229,7 @@ export interface EmpireProject {
   description: string;
   hammersRequired: number;
   scope: "empire" | "body";
-  bodyRequirement?: "capital" | "any_owned";
+  bodyRequirement?: "capital" | "any_owned" | "star";
   costs?: Partial<Resources>;
   art?: string;
   availability: {
@@ -280,7 +287,7 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 15;
+  schemaVersion: 16;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;

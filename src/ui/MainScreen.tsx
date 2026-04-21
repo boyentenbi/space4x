@@ -718,6 +718,10 @@ export function MainScreen() {
             {focusSystem
               ? focusBodies.map((body) => {
                   const order = colonizeOrderForTarget(state, body.id);
+                  // Body-scope projects are always queryable — canQueueProjectFor
+                  // already enforces whether the target is legal. This is what
+                  // lets the star row show "Build Outpost" in unclaimed systems.
+                  const bodyProjects = availableBodyProjectsFor(state, state.empire, body.id);
                   return (
                     <BodyRow
                       key={body.id}
@@ -731,8 +735,8 @@ export function MainScreen() {
                       colonizeHammers={colonizeHammerCost}
                       colonizePolitical={colonizePoliticalCost}
                       growth={focusIsOurs ? growthEstimate(state, state.empire, body) : null}
-                      bodyProjects={focusIsOurs ? availableBodyProjectsFor(state, state.empire, body.id) : []}
-                      bodyProjectOrder={focusIsOurs ? bodyProjectOrderFor(state.empire, body.id) : null}
+                      bodyProjects={bodyProjects}
+                      bodyProjectOrder={bodyProjectOrderFor(state.empire, body.id)}
                       hammerRate={totalHammers}
                       onColonize={() =>
                         dispatch({

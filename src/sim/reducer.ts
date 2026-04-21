@@ -88,7 +88,22 @@ const PER_POP_BY_HAB: Record<HabitabilityTier, Partial<Record<ResourceKey, numbe
   garden:    { food: 2, energy: 1 },
   temperate: { food: 2, energy: 1 },
   harsh:     { food: 0, energy: 1 },
-  hellscape: { food: 0, energy: 1 },
+  // Hellscape variants: each specializes in one resource at the cost
+  // of food. Stars sit in the system but produce nothing on their own.
+  frozen:    { food: 0, energy: 0 }, // compute bonus applied separately
+  molten:    { food: 0, energy: 0 }, // hammer bonus applied separately
+  barren:    { food: 0, energy: 2 },
+  stellar:   { food: 0, energy: 0 },
+};
+
+// Per-pop bonuses specific to hellscape variants. Molten boosts hammer
+// output, frozen boosts compute, barren gets energy via PER_POP_BY_HAB
+// above. Stars are non-colonisable so they get nothing here.
+const HAMMERS_PER_POP_HAB_BONUS: Partial<Record<HabitabilityTier, number>> = {
+  molten: 1.5,
+};
+const COMPUTE_PER_POP_HAB_BONUS: Partial<Record<HabitabilityTier, number>> = {
+  frozen: 1,
 };
 
 export const HAMMERS_PER_POP = 1;
@@ -197,7 +212,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 15,
+    schemaVersion: 16,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -414,9 +429,16 @@ export function foodUpkeepPerPop(empire: Empire): number {
   return Math.max(0, 1 + sumDelta(empireModifiers(empire), "foodUpkeepDelta"));
 }
 
-// Effective hammer yield per pop.
+// Effective hammer yield per pop — empire-wide baseline (no hab bonus).
 export function hammersPerPop(empire: Empire): number {
   return HAMMERS_PER_POP + sumDelta(empireModifiers(empire), "hammersPerPopDelta");
+}
+
+// Hammer yield per pop on a specific body — adds the hellscape-variant
+// bonus (molten bodies run factories that boost output) on top of the
+// empire baseline.
+export function hammersPerPopFor(empire: Empire, body: Body): number {
+  return hammersPerPop(empire) + (HAMMERS_PER_POP_HAB_BONUS[body.habitability] ?? 0);
 }
 
 // Effective space cap on a body (species spaceMult applied).
@@ -599,16 +621,18 @@ export function resourceBreakdownAsStat(
 }
 
 export function hammersBreakdownFor(state: GameState, empire: Empire): StatBreakdown {
-  const rate = hammersPerPop(empire);
   const bodyRows = ownedBodiesOf(state, empire)
     .filter((b) => b.pops > 0)
-    .map((body) => ({
-      id: body.id,
-      name: body.name,
-      detail: `${body.pops} pops × ${rate}/pop`,
-      value: Math.floor(body.pops * rate),
-      habitability: body.habitability,
-    }));
+    .map((body) => {
+      const rate = hammersPerPopFor(empire, body);
+      return {
+        id: body.id,
+        name: body.name,
+        detail: `${body.pops} pops × ${rate}/pop`,
+        value: Math.floor(body.pops * rate),
+        habitability: body.habitability,
+      };
+    });
   const modRows: StatBreakdownSection["rows"] = [
     { name: "Baseline per pop", detail: "", value: HAMMERS_PER_POP },
   ];
@@ -631,13 +655,21 @@ export function hammersBreakdownFor(state: GameState, empire: Empire): StatBreak
 }
 
 export function computeBreakdownFor(state: GameState, empire: Empire): StatBreakdown {
-  const bodyRows = ownedBodiesOf(state, empire).map((body) => ({
-    id: body.id,
-    name: body.name,
-    detail: "data-center stub",
-    value: COMPUTE_PER_BODY,
-    habitability: body.habitability,
-  }));
+  const bodyRows = ownedBodiesOf(state, empire).map((body) => {
+    const frozenBonus = body.pops * (COMPUTE_PER_POP_HAB_BONUS[body.habitability] ?? 0);
+    const value = COMPUTE_PER_BODY + frozenBonus;
+    const detail =
+      body.habitability === "frozen" && body.pops > 0
+        ? `data-center + ${body.pops} compute nodes`
+        : "data-center stub";
+    return {
+      id: body.id,
+      name: body.name,
+      detail,
+      value,
+      habitability: body.habitability,
+    };
+  });
   const capTotal = bodyRows.reduce((s, r) => s + r.value, 0);
 
   // Projected spend next turn — each routed fleet will cost its ship
@@ -734,7 +766,13 @@ export function perTurnIncomeOf(state: GameState, empire: Empire): Resources {
 }
 
 export function computeCapOf(state: GameState, empire: Empire): number {
-  return ownedBodiesOf(state, empire).length * COMPUTE_PER_BODY;
+  let total = 0;
+  for (const body of ownedBodiesOf(state, empire)) {
+    total += COMPUTE_PER_BODY;
+    // Frozen bodies host compute nodes — extra compute per pop.
+    total += body.pops * (COMPUTE_PER_POP_HAB_BONUS[body.habitability] ?? 0);
+  }
+  return total;
 }
 
 export function isSystemAdjacentToEmpireOf(
@@ -807,6 +845,16 @@ export function canQueueProjectFor(
       if (!sys || sys.ownerId !== empire.id) return false;
       // Must be actually colonized — orbital yards need pops to staff.
       if (body.pops <= 0) return false;
+    }
+    if (proj.bodyRequirement === "star") {
+      const body = state.galaxy.bodies[targetBodyId];
+      if (!body || body.kind !== "star") return false;
+      const sys = state.galaxy.systems[body.systemId];
+      if (!sys) return false;
+      // Can't outpost if someone already owns this system.
+      if (sys.ownerId) return false;
+      // Frontier check: the star system must be reachable from current territory.
+      if (!isSystemAdjacentToEmpireOf(state, empire, sys.id)) return false;
     }
   }
   // Dedupe rules:
@@ -1262,18 +1310,18 @@ export function totalFleetShipsFor(state: GameState, empire: Empire): number {
 export function canColonizeFor(state: GameState, empire: Empire, targetBodyId: string): boolean {
   const target = state.galaxy.bodies[targetBodyId];
   if (!target) return false;
+  // Stars aren't colonisable — they're claim targets for outposts.
+  if (target.kind === "star") return false;
   const targetSys = state.galaxy.systems[target.systemId];
   if (!targetSys) return false;
   if (target.pops > 0) return false;
-  // A body with zero effective space can't hold pops — colonizing it
-  // would spend hammers + political capital and have pops clamp right
-  // back to 0 on the next tick. Gate the button out.
+  // Zero effective space = no pops can live here anyway.
   if (effectiveSpace(empire, target) <= 0) return false;
   if (colonizeOrderForTarget(state, targetBodyId)) return false;
-  const claimant = systemClaimant(state, targetSys.id);
-  if (claimant && claimant !== empire.id) return false;   // locked to another empire
-  if (claimant === empire.id) return true;                 // we already have presence here
-  return isSystemAdjacentToEmpireOf(state, empire, targetSys.id); // frontier
+  // Colonising now requires the system to already be ours — the
+  // system claim happens via Build Outpost on the star, not via
+  // colonising a body.
+  return targetSys.ownerId === empire.id;
 }
 
 // ===== Player-facing convenience (default to player empire) =====
@@ -1305,12 +1353,10 @@ function completeOrder(draft: GameState, empire: Empire, order: BuildOrder): voi
     if (!target) return;
     const targetSys = draft.galaxy.systems[target.systemId];
     if (!targetSys) return;
-    if (targetSys.ownerId && targetSys.ownerId !== empire.id) return;
+    // Colonising requires the system to be ours (claimed via outpost).
+    // If someone else claimed it mid-project, the colonise fizzles.
+    if (targetSys.ownerId !== empire.id) return;
     empire.resources.political -= order.politicalCost;
-    targetSys.ownerId = empire.id;
-    if (!empire.systemIds.includes(targetSys.id)) {
-      empire.systemIds.push(targetSys.id);
-    }
     target.pops = Math.max(target.pops, COLONIZE_STARTER_POPS);
     if (empire.id === draft.empire.id) {
       draft.eventLog.push({
@@ -1356,6 +1402,27 @@ function completeOrder(draft: GameState, empire: Empire, order: BuildOrder): voi
           targetBody.systemId,
           proj.onComplete.spawnShip.count,
         );
+      }
+    }
+    // Build Outpost — claims the star's system for the empire. Any
+    // project with bodyRequirement "star" gets this treatment so
+    // future flavour outposts don't need bespoke wiring.
+    if (proj.bodyRequirement === "star" && order.targetBodyId) {
+      const starBody = draft.galaxy.bodies[order.targetBodyId];
+      if (starBody) {
+        const sys = draft.galaxy.systems[starBody.systemId];
+        if (sys && !sys.ownerId) {
+          sys.ownerId = empire.id;
+          if (!empire.systemIds.includes(sys.id)) empire.systemIds.push(sys.id);
+          if (empire.id === draft.empire.id) {
+            draft.eventLog.push({
+              turn: draft.turn,
+              eventId: "outpost",
+              choiceId: null,
+              text: `Outpost established — ${sys.name} is yours.`,
+            });
+          }
+        }
       }
     }
     empire.completedProjects.push(proj.id);
@@ -1404,10 +1471,11 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
   // 2. Reset flow resources on this empire's bodies.
   empire.compute.cap = computeCapOf(draft, empire);
   empire.compute.used = 0;
-  const hammerRate = hammersPerPop(empire);
   for (const body of ownedBodiesOf(draft, empire)) {
     const live = draft.galaxy.bodies[body.id];
-    if (live) live.hammers = Math.floor(live.pops * hammerRate);
+    if (live) {
+      live.hammers = Math.floor(live.pops * hammersPerPopFor(empire, live));
+    }
   }
   // 3. Sum hammer pool + drain into FIFO projects.
   let pool = 0;
@@ -1512,7 +1580,7 @@ export function scoreState(state: GameState, empireId: string): number {
   // this is where that difference shows up.
   let hammerRate = 0;
   for (const body of ownedBodiesOf(state, empire)) {
-    hammerRate += body.pops * hammersPerPop(empire);
+    hammerRate += body.pops * hammersPerPopFor(empire, body);
   }
   const flow = perTurnIncomeOf(state, empire);
   score += hammerRate * FLOW_HORIZON;
@@ -1539,7 +1607,7 @@ export function scoreState(state: GameState, empireId: string): number {
       const pops = Math.min(COLONIZE_STARTER_POPS, effectiveSpace(empire, body));
       const hypothetical: Body = { ...body, pops };
       const projectedIncome = bodyIncomeFor(empire, hypothetical);
-      const projectedHammers = pops * hammersPerPop(empire);
+      const projectedHammers = pops * hammersPerPopFor(empire, body);
       const flow =
         (projectedHammers + projectedIncome.food + projectedIncome.energy) *
         FLOW_HORIZON;
@@ -1551,6 +1619,13 @@ export function scoreState(state: GameState, empireId: string): number {
     ) {
       // A finished frigate = one more ship (worth 200).
       score += 200 * progressWeight;
+    } else if (
+      order.kind === "empire_project" &&
+      order.projectId === "build_outpost"
+    ) {
+      // A finished outpost = one more claimed system (worth
+      // COLONIZE_HAMMERS for the system asset).
+      score += COLONIZE_HAMMERS * progressWeight;
     } else {
       // Generic empire_project — fall back to 70% of raw hammer cost.
       score += order.hammersRequired * 0.7 * progressWeight;
@@ -1594,39 +1669,36 @@ export function scoreState(state: GameState, empireId: string): number {
 // right now — includes a null/no-op so search can choose to do nothing.
 function aiEnumerateProjectActions(state: GameState, empire: Empire): Action[] {
   const actions: Action[] = [];
-  // Colonize each candidate body.
+
+  // Colonize candidates — every body in the galaxy; canColonizeFor
+  // filters by star/pops/space/ownership/reachability.
   for (const body of Object.values(state.galaxy.bodies)) {
     if (!canColonizeFor(state, empire, body.id)) continue;
-    // Isolationists still refuse to claim fresh systems — preserve character.
-    if (empire.expansionism === "isolationist") {
-      const sys = state.galaxy.systems[body.systemId];
-      if (!sys || sys.ownerId !== empire.id) continue;
-    }
     actions.push({
       type: "queueColonize",
       byEmpireId: empire.id,
       targetBodyId: body.id,
     });
   }
-  // Body-scope projects (e.g. build_frigate) on each of our bodies.
-  for (const sid of empire.systemIds) {
-    const sys = state.galaxy.systems[sid];
-    if (!sys) continue;
-    for (const bid of sys.bodyIds) {
-      for (const proj of EMPIRE_PROJECTS) {
-        if (proj.scope !== "body") continue;
-        if (!canQueueProjectFor(state, empire, proj.id, bid)) continue;
-        actions.push({
-          type: "queueEmpireProject",
-          byEmpireId: empire.id,
-          projectId: proj.id,
-          targetBodyId: bid,
-        });
-      }
+
+  // Body-scope empire projects — every body × every body-scope project.
+  // canQueueProjectFor handles all legality (bodyRequirement, ownership,
+  // reachability, flags, dedupe). New projects with new
+  // bodyRequirement values are picked up automatically.
+  for (const body of Object.values(state.galaxy.bodies)) {
+    for (const proj of EMPIRE_PROJECTS) {
+      if (proj.scope !== "body") continue;
+      if (!canQueueProjectFor(state, empire, proj.id, body.id)) continue;
+      actions.push({
+        type: "queueEmpireProject",
+        byEmpireId: empire.id,
+        projectId: proj.id,
+        targetBodyId: body.id,
+      });
     }
   }
-  // Empire-scope projects (no valid ones today, but enumerate for
-  // forward-compatibility).
+
+  // Empire-scope projects.
   for (const proj of EMPIRE_PROJECTS) {
     if (proj.scope !== "empire") continue;
     if (!canQueueProjectFor(state, empire, proj.id)) continue;
@@ -1634,6 +1706,18 @@ function aiEnumerateProjectActions(state: GameState, empire: Empire): Action[] {
       type: "queueEmpireProject",
       byEmpireId: empire.id,
       projectId: proj.id,
+    });
+  }
+
+  // Archetype character filter — isolationists refuse to claim new
+  // systems (either by outpost or any future colonize-into-unclaimed
+  // mechanic). Applied as a post-filter so the enumerator itself stays
+  // content-driven; character is a separate layer.
+  if (empire.expansionism === "isolationist") {
+    return actions.filter((a) => {
+      if (a.type !== "queueEmpireProject") return true;
+      if (a.projectId !== "build_outpost") return true;
+      return false;
     });
   }
   return actions;
@@ -2237,10 +2321,9 @@ export function reduce(state: GameState, action: Action): GameState {
         }
         draft.empire.compute.cap = draft.galaxy.systems[playerStarter.systemId].bodyIds.length * COMPUTE_PER_BODY;
         draft.empire.compute.used = 0;
-        const playerHammerRate = hammersPerPop(draft.empire);
         for (const bid of draft.galaxy.systems[playerStarter.systemId].bodyIds) {
           const body = draft.galaxy.bodies[bid];
-          if (body) body.hammers = Math.floor(body.pops * playerHammerRate);
+          if (body) body.hammers = Math.floor(body.pops * hammersPerPopFor(draft.empire, body));
         }
 
         // AI empires — one per leader.
@@ -2294,10 +2377,9 @@ export function reduce(state: GameState, action: Action): GameState {
         });
         // Seed AI bodies' hammers too so turn-1 rates show correctly.
         for (const ai of draft.aiEmpires) {
-          const rate = hammersPerPop(ai);
           for (const bid of draft.galaxy.systems[ai.systemIds[0]].bodyIds) {
             const body = draft.galaxy.bodies[bid];
-            if (body) body.hammers = Math.floor(body.pops * rate);
+            if (body) body.hammers = Math.floor(body.pops * hammersPerPopFor(ai, body));
           }
         }
 

@@ -99,7 +99,7 @@ function makeState(overrides: {
   const fleetsRec: Record<string, Fleet> = {};
   for (const f of overrides.fleets ?? []) fleetsRec[f.id] = f;
   return {
-    schemaVersion: 15,
+    schemaVersion: 16,
     turn: overrides.turn ?? 1,
     rngSeed: 1,
     galaxy: {
@@ -401,13 +401,19 @@ describe("AI scoreState value function", () => {
     expect(scoreState(state, "e_player")).toBe(615);
   });
 
-  it("scoreState increases after a round where a new system was colonised", () => {
-    // Proxy test: if the AI's project search is functional it will
-    // queue colonize and score higher on the next round.
-    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
-    const far = makeSystem({ id: "s_far", bodyIds: ["b_far"], ownerId: null });
+  it("scoreState increases after queueing colonize on a second body in an owned system", () => {
+    // The target system is already ours (via an earlier outpost —
+    // which is how systems get claimed under the new model). Queueing
+    // colonise on an empty body in it should raise our score by the
+    // partial-credit weight.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap", "b_vacant"], ownerId: "e_player" });
     const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
-    const farBody = makeBody({ id: "b_far", systemId: "s_far", pops: 0 });
+    const vacant = makeBody({
+      id: "b_vacant",
+      systemId: "s_home",
+      habitability: "temperate",
+      pops: 0,
+    });
     const empire = makeEmpire({
       id: "e_player",
       capitalBodyId: "b_cap",
@@ -415,20 +421,16 @@ describe("AI scoreState value function", () => {
       resources: { food: 500, energy: 500, political: 20 },
     });
     const state = makeState({
-      systems: [home, far],
-      bodies: [cap, farBody],
-      hyperlanes: [["s_home", "s_far"]],
+      systems: [home],
+      bodies: [cap, vacant],
       empire,
     });
     const baseScore = scoreState(state, "e_player");
-    // Queue the colonize directly (simulating what AI search would pick).
     const queued = reduce(state, {
       type: "queueColonize",
       byEmpireId: "e_player",
-      targetBodyId: "b_far",
+      targetBodyId: "b_vacant",
     });
-    // With the project queued, score should rise by the partial-credit
-    // weight (70% discount × initial progress).
     expect(scoreState(queued, "e_player")).toBeGreaterThan(baseScore);
   });
 });
@@ -484,24 +486,27 @@ describe("combat chronicle", () => {
 });
 
 describe("AI project selection (decision only)", () => {
-  it("prefers colonizing a temperate body over a hellscape when both are reachable", () => {
-    // AI owns a single system. Two unowned neighbour systems, each
-    // with one body — one temperate, one hellscape. Both are equally
-    // costly to colonize; the right answer is temperate.
-    const home = makeSystem({ id: "s_home", bodyIds: ["b_home"], ownerId: "e_ai" });
-    const tempSys = makeSystem({ id: "s_temp", bodyIds: ["b_temp"], ownerId: null });
-    const hellSys = makeSystem({ id: "s_hell", bodyIds: ["b_hell"], ownerId: null });
+  it("prefers colonising the temperate body over the frozen one when both are in an owned system", () => {
+    // AI owns one system that contains both a temperate body (space
+    // large, food-producing) and a frozen body (small, no food, only
+    // compute). With both colonisable, the temperate should win.
+    const home = makeSystem({
+      id: "s_home",
+      bodyIds: ["b_home", "b_temp", "b_frozen"],
+      ownerId: "e_ai",
+    });
     const homeBody = makeBody({ id: "b_home", systemId: "s_home", pops: 30 });
     const tempBody = makeBody({
       id: "b_temp",
-      systemId: "s_temp",
+      systemId: "s_home",
       habitability: "temperate",
       pops: 0,
     });
-    const hellBody = makeBody({
-      id: "b_hell",
-      systemId: "s_hell",
-      habitability: "hellscape",
+    const frozenBody = makeBody({
+      id: "b_frozen",
+      systemId: "s_home",
+      habitability: "frozen",
+      space: 8,
       pops: 0,
     });
     const player = makeEmpire({ id: "e_player", systemIds: [] });
@@ -509,21 +514,15 @@ describe("AI project selection (decision only)", () => {
       id: "e_ai",
       capitalBodyId: "b_home",
       systemIds: ["s_home"],
-      // Plenty of PC so affordability doesn't filter candidates out.
       resources: { food: 500, energy: 500, political: 50 },
     });
     const state = makeState({
-      systems: [home, tempSys, hellSys],
-      bodies: [homeBody, tempBody, hellBody],
-      hyperlanes: [
-        ["s_home", "s_temp"],
-        ["s_home", "s_hell"],
-      ],
+      systems: [home],
+      bodies: [homeBody, tempBody, frozenBody],
       empire: player,
       aiEmpires: [ai],
     });
 
-    // Run the AI project planner directly and inspect what it queued.
     const decided = produce(state, (d) => {
       const emp = empireById(d, "e_ai");
       if (emp) aiPlanProject(d, emp);

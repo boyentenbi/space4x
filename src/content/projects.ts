@@ -2,6 +2,22 @@ import type { EmpireProject } from "../sim/types";
 
 export const EMPIRE_PROJECTS: EmpireProject[] = [
   {
+    id: "build_outpost",
+    name: "Build Outpost",
+    description:
+      "Construct an orbital outpost at the system's star. Claims the system for your empire; required before you can colonise any planet here.",
+    hammersRequired: 120,
+    scope: "body",
+    bodyRequirement: "star",
+    costs: { political: 3 },
+    availability: {
+      // Not repeatable per-star; canQueueProjectFor dedupes.
+    },
+    onComplete: {
+      chronicle: "Outpost online.",
+    },
+  },
+  {
     id: "build_frigate",
     name: "Build Frigate",
     description:

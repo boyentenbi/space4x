@@ -29,13 +29,17 @@ function pick<T>(r: Rand, xs: readonly T[]): T {
   return xs[Math.floor(r() * xs.length)];
 }
 
-// Only harsh / hellscape in the random roll — temperate bodies are scarce
-// and placed explicitly afterwards (see SCATTER_TEMPERATE_COUNT). Gardens
-// disabled for now.
+// Random planet habitability: harsh planets are the baseline default
+// worldscape, with hellscape variants (frozen / molten / barren) more
+// common because those are where the specialist stations (compute,
+// factories, solar) live. Temperate bodies are placed explicitly via
+// SCATTER_TEMPERATE_COUNT; gardens are starter-only.
 function rollHabitability(r: Rand): HabitabilityTier {
   const roll = r();
-  if (roll < 0.55) return "harsh";
-  return "hellscape";
+  if (roll < 0.3) return "harsh";
+  if (roll < 0.55) return "frozen";
+  if (roll < 0.8) return "molten";
+  return "barren";
 }
 
 function rollStarKind(r: Rand): StarKind {
@@ -45,17 +49,19 @@ function rollStarKind(r: Rand): StarKind {
   return "blue_giant";
 }
 
-// Space cap per body depends on habitability. Pops only fit comfortably
-// on temperate (and gardens when they come back). Harsh worlds host a
-// mining outpost (1-2 pops); hellscapes are uninhabitable — owned for
-// territory, not population.
-// Pop caps per body. Scaled 10x from the old 1-12 range so per-turn
-// growth ticks are small fractions of the cap rather than big jumps.
+// Space cap per body depends on habitability. Gardens and temperate
+// support real populations; harsh is a mining outpost. Hellscape
+// variants hold specialist stations (compute / factory / solar)
+// with small crews — not many pops, but the pops that live there
+// produce disproportionately.
 const SPACE_BY_HAB: Record<HabitabilityTier, [number, number]> = {
   garden: [80, 120],
   temperate: [40, 70],
   harsh: [10, 20],
-  hellscape: [0, 0],
+  frozen: [5, 12],
+  molten: [5, 12],
+  barren: [5, 12],
+  stellar: [0, 0], // stars hold no pops
 };
 
 function rollSpace(r: Rand, hab: HabitabilityTier): number {
@@ -63,12 +69,16 @@ function rollSpace(r: Rand, hab: HabitabilityTier): number {
   return lo + Math.floor(r() * (hi - lo + 1));
 }
 
-function rollBodyCount(r: Rand): number {
+// Count of *planets/moons* per system (star is added separately and
+// always present). Tuned for sparseness — a lot of systems are just
+// a star, which makes finding a genuinely habitable world feel
+// earned. Previous distribution was 1-4 planets guaranteed.
+function rollPlanetCount(r: Rand): number {
   const roll = r();
-  if (roll < 0.2) return 1;
-  if (roll < 0.6) return 2;
-  if (roll < 0.9) return 3;
-  return 4;
+  if (roll < 0.35) return 0; // star only
+  if (roll < 0.65) return 1;
+  if (roll < 0.9) return 2;
+  return 3;
 }
 
 function rollFlavorFlags(r: Rand): string[] {
@@ -202,9 +212,29 @@ export function generateGalaxy(opts: GenOptions): Galaxy {
       if (rand() > opts.density) continue;
       const sysId = `sys_${systemCounter++}`;
       const name = systemName(rand, takenNames);
-      const bodyCount = rollBodyCount(rand);
       const bodyIds: string[] = [];
-      for (let i = 0; i < bodyCount; i++) {
+
+      // Every system has a star as its first body. Not colonisable;
+      // claimed by building an outpost. Keeps the system-claim decision
+      // distinct from the planet-colonise decision.
+      const starId = `body_${bodyCounter++}`;
+      bodies[starId] = {
+        id: starId,
+        systemId: sysId,
+        name: `${name} Star`,
+        kind: "star",
+        habitability: "stellar",
+        space: 0,
+        pops: 0,
+        hammers: 0,
+        queue: [],
+        flavorFlags: [],
+      };
+      bodyIds.push(starId);
+
+      // Then 0-3 planets / moons.
+      const planetCount = rollPlanetCount(rand);
+      for (let i = 0; i < planetCount; i++) {
         const bodyId = `body_${bodyCounter++}`;
         const kind: BodyKind = i === 0 ? "planet" : rand() < 0.5 ? "planet" : "moon";
         const habitability = rollHabitability(rand);
@@ -239,12 +269,14 @@ export function generateGalaxy(opts: GenOptions): Galaxy {
 
   // Scatter temperate bodies across the galaxy, proportional to system
   // count. Starter bodies (one per empire) are force-temperate
-  // separately in the reducer. Gardens disabled for now.
+  // separately in the reducer. Only non-star bodies are eligible.
   const systemCount = Object.keys(systems).length;
   const SCATTER_TEMPERATE_COUNT = Math.max(2, Math.round(systemCount * 0.12));
-  const bodyIds = Object.keys(bodies);
-  for (let i = 0; i < SCATTER_TEMPERATE_COUNT && bodyIds.length > 0; i++) {
-    const pick = bodyIds[Math.floor(rand() * bodyIds.length)];
+  const nonStarBodyIds = Object.values(bodies)
+    .filter((b) => b.kind !== "star")
+    .map((b) => b.id);
+  for (let i = 0; i < SCATTER_TEMPERATE_COUNT && nonStarBodyIds.length > 0; i++) {
+    const pick = nonStarBodyIds[Math.floor(rand() * nonStarBodyIds.length)];
     const body = bodies[pick];
     body.habitability = "temperate";
     const [lo, hi] = SPACE_BY_HAB.temperate;
@@ -288,18 +320,45 @@ export function assignStarterSystem(
   const nextSystems = { ...galaxy.systems };
   const nextBodies = { ...galaxy.bodies };
 
-  const starterBodyId = chosen.bodyIds[0];
-  const starter = nextBodies[starterBodyId];
-  // Force starter body to a garden with generous space — the player needs a home.
-  nextBodies[starterBodyId] = {
-    ...starter,
-    habitability: "garden",
-    kind: "planet",
-    space: Math.max(starter.space, 10),
-    pops: startingPops,
-  };
+  // Starters need a non-star body as their home planet. If the chosen
+  // system only has a star, grow a garden planet there specifically
+  // so the empire has somewhere to live.
+  const nonStarBodies = chosen.bodyIds
+    .map((bid) => nextBodies[bid])
+    .filter((b) => b && b.kind !== "star");
+  let starterBodyId: string;
+  if (nonStarBodies.length > 0) {
+    starterBodyId = nonStarBodies[0].id;
+    const starter = nextBodies[starterBodyId];
+    nextBodies[starterBodyId] = {
+      ...starter,
+      habitability: "garden",
+      kind: "planet",
+      space: Math.max(starter.space, 10),
+      pops: startingPops,
+    };
+  } else {
+    // System is star-only — mint a fresh garden body.
+    starterBodyId = `body_starter_${chosen.id}`;
+    nextBodies[starterBodyId] = {
+      id: starterBodyId,
+      systemId: chosen.id,
+      name: `${chosen.name} I`,
+      kind: "planet",
+      habitability: "garden",
+      space: 12,
+      pops: startingPops,
+      hammers: 0,
+      queue: [],
+      flavorFlags: [],
+    };
+  }
+
   nextSystems[chosen.id] = {
     ...chosen,
+    bodyIds: chosen.bodyIds.includes(starterBodyId)
+      ? chosen.bodyIds
+      : [...chosen.bodyIds, starterBodyId],
     ownerId: empireId,
   };
 

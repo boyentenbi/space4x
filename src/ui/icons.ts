@@ -6,7 +6,11 @@ export const HAB_COLOR: Record<HabitabilityTier, string> = {
   garden: "#6fbf87",
   temperate: "#9dd89a",
   harsh: "#ffb673",
-  hellscape: "#ff8a8a",
+  // Hellscape variants.
+  frozen: "#8ab8e0", // icy blue
+  molten: "#ff6a4a", // hot red-orange
+  barren: "#c9b99a", // dusty tan
+  stellar: "#ffe680", // star colour — rarely used, stars render via their own art
 };
 
 export const RESOURCE_ICON: Record<ResourceKey, string> = {
@@ -20,7 +24,8 @@ export const HAMMERS_ICON = "/icons/hammers.png";
 export const POPS_ICON = "/icons/pops.png";
 
 // Per-habitability planet sprite variants. Which one renders is picked
-// deterministically from a hash of the body id.
+// deterministically from a hash of the body id. Hellscape variants
+// reuse the old hellscape art until we gen dedicated frames per type.
 export const PLANET_VARIANTS: Record<HabitabilityTier, string[]> = {
   garden: [
     "/planets/garden.png",
@@ -37,10 +42,18 @@ export const PLANET_VARIANTS: Record<HabitabilityTier, string[]> = {
     "/planets/harsh_2.png",
     "/planets/harsh_3.png",
   ],
-  hellscape: [
-    "/planets/hellscape.png",
+  frozen: [
     "/planets/hellscape_2.png",
     "/planets/hellscape_3.png",
+  ],
+  molten: [
+    "/planets/hellscape.png",
+  ],
+  barren: [
+    "/planets/hellscape_3.png",
+  ],
+  stellar: [
+    "/planets/hellscape.png", // stars render via their own art; this shouldn't be hit
   ],
 };
 
