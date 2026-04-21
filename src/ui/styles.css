@@ -330,6 +330,48 @@ button.res-cell:hover:not(:disabled) {
   pointer-events: none;
 }
 
+.siege-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  margin: 6px 10px 0;
+  background: rgba(255, 138, 138, 0.05);
+  border: 1px solid rgba(255, 138, 138, 0.4);
+  border-left-width: 3px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+.siege-meter {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.siege-pip {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid rgba(255, 138, 138, 0.5);
+}
+
+.siege-pip.filled {
+  border-color: transparent;
+}
+
+.galaxy-map .siege-ring {
+  animation: siege-ring-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes siege-ring-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1.0; }
+}
+
 .phase-banner {
   position: absolute;
   top: 6px;

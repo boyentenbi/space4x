@@ -20,6 +20,7 @@ import {
   growthEstimate,
   HAMMERS_PER_POP,
   hammersBreakdownFor,
+  OCCUPATION_TURNS_TO_FLIP,
   perTurnIncome,
   popsBreakdownFor,
   resourceBreakdownAsStat,
@@ -621,6 +622,35 @@ export function MainScreen() {
                 </button>
               )}
             </div>
+            {focusSystem?.occupation && (() => {
+              const occ = focusSystem.occupation;
+              const occupier = empireById(state, occ.empireId);
+              return (
+                <div
+                  className="siege-banner"
+                  style={{ borderColor: occupier?.color ?? "#ff8a8a" }}
+                >
+                  <span>
+                    Under siege by {occupier?.name ?? "unknown force"} — flips in{" "}
+                    {OCCUPATION_TURNS_TO_FLIP - occ.turns} turn
+                    {OCCUPATION_TURNS_TO_FLIP - occ.turns === 1 ? "" : "s"}
+                  </span>
+                  <span className="siege-meter">
+                    {Array.from({ length: OCCUPATION_TURNS_TO_FLIP }).map((_, i) => (
+                      <span
+                        key={i}
+                        className={`siege-pip ${i < occ.turns ? "filled" : ""}`}
+                        style={
+                          i < occ.turns
+                            ? { background: occupier?.color ?? "#ff8a8a" }
+                            : undefined
+                        }
+                      />
+                    ))}
+                  </span>
+                </div>
+              );
+            })()}
             {focusSystem ? (
               <SystemScene
                 system={focusSystem}
