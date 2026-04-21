@@ -681,7 +681,7 @@ export function hammersBreakdownFor(state: GameState, empire: Empire): StatBreak
 export function computeBreakdownFor(state: GameState, empire: Empire): StatBreakdown {
   const bodyRows = ownedBodiesOf(state, empire).map((body) => {
     const rate = COMPUTE_PER_POP_HAB[body.habitability] ?? 0;
-    const value = Math.floor(body.pops * rate);
+    const value = bodyComputeOutput(body);
     const detail =
       rate > 0 && body.pops > 0
         ? `${body.pops} pops × ${rate}/pop`
@@ -792,16 +792,17 @@ export function perTurnIncomeOf(state: GameState, empire: Empire): Resources {
   return income;
 }
 
+// Compute produced by this single body (floored). Frozen worlds produce
+// 1/pop, temperate and garden produce 0.25/pop, others produce 0.
+export function bodyComputeOutput(body: Body): number {
+  const rate = COMPUTE_PER_POP_HAB[body.habitability] ?? 0;
+  return Math.floor(body.pops * rate);
+}
+
 export function computeCapOf(state: GameState, empire: Empire): number {
-  // Compute is per-pop, hab-weighted: frozen 1/pop, temperate/garden
-  // 0.25/pop (baseline infra on habitable worlds), others 0. Per-body
-  // contribution is floored so small outposts of <4 pops on a
-  // temperate world count as 0 — you need genuine population to
-  // generate meaningful compute.
   let total = 0;
   for (const body of ownedBodiesOf(state, empire)) {
-    const rate = COMPUTE_PER_POP_HAB[body.habitability] ?? 0;
-    total += Math.floor(body.pops * rate);
+    total += bodyComputeOutput(body);
   }
   return total;
 }

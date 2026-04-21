@@ -5,6 +5,7 @@ import {
   allEmpires,
   availableBodyProjectsFor,
   availableProjectsFor,
+  bodyComputeOutput,
   bodyIncome,
   bodyProjectOrderFor,
   canColonize,
@@ -333,6 +334,12 @@ function BodyRow({
           <span className="stat-pill" title={`${HAMMERS_PER_POP} hammer per pop`}>
             <img className="stat-icon" src={HAMMERS_ICON} alt="" />
             +{body.hammers}
+          </span>
+        )}
+        {owned && bodyComputeOutput(body) > 0 && (
+          <span className="stat-pill" title="Compute produced per turn">
+            <img className="stat-icon" src={COMPUTE_ICON} alt="" />
+            +{bodyComputeOutput(body)}
           </span>
         )}
         {owned && growth && growth.kind === "growing" && (
