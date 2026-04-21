@@ -55,7 +55,10 @@ export function SystemScene({
   const orbitStep = 30;
   const tiltY = 0.42;
 
-  const placed: Placed[] = bodies.map((body, i) => {
+  // The star body already renders as the sun at the centre — skip it
+  // here so we don't get a phantom hellscape planet orbiting itself.
+  const orbitingBodies = bodies.filter((b) => b.kind !== "star");
+  const placed: Placed[] = orbitingBodies.map((body, i) => {
     const rx = orbitBase + i * orbitStep;
     const basePhase = (hashCode(body.id) / 4294967296) * Math.PI * 2;
     const orbitSpeed = 0.18 / (1 + i * 0.5);
@@ -130,8 +133,8 @@ export function SystemScene({
       className="system-scene"
       preserveAspectRatio="xMidYMid meet"
     >
-      {/* Orbit ellipses sit behind everything. */}
-      {bodies.map((_b, i) => {
+      {/* Orbit ellipses sit behind everything — one per non-star body. */}
+      {orbitingBodies.map((_b, i) => {
         const rx = orbitBase + i * orbitStep;
         return (
           <ellipse
