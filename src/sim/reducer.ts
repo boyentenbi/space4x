@@ -1566,13 +1566,37 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
 // per-resource) keeps the search simple.
 export const FLOW_HORIZON = 5;
 
+// Per-archetype intrinsic value of a ship. Conquerors want navies;
+// isolationists want enough to defend; pragmatists sit in the middle.
+// This is the base number before at-war multipliers and over-cap
+// diminishing returns.
+function shipValueFor(empire: Empire): number {
+  switch (empire.expansionism) {
+    case "conqueror":    return 300;
+    case "pragmatist":   return 200;
+    case "isolationist": return 250;
+  }
+}
+
 export function scoreState(state: GameState, empireId: string): number {
   const empire = empireById(state, empireId);
   if (!empire) return -Infinity;
   let score = 0;
   // Hard assets (raw hammer-cost equivalent).
   score += empire.systemIds.length * COLONIZE_HAMMERS;
-  score += totalFleetShipsFor(state, empire) * 200; // frigate hammer cost
+  // Ships: archetype-weighted × at-war premium, with diminishing
+  // returns once the fleet exceeds the per-turn compute cap (ships
+  // you can't move in a single turn are mostly dead weight).
+  const totalShips = totalFleetShipsFor(state, empire);
+  if (totalShips > 0) {
+    const atWar = enemiesOf(state, empire.id).length > 0;
+    const shipBase = shipValueFor(empire) * (atWar ? 1.5 : 1.0);
+    const cap = computeCapOf(state, empire);
+    const mobileShips = Math.min(totalShips, cap);
+    const stuckShips = Math.max(0, totalShips - cap);
+    score += mobileShips * shipBase;
+    score += stuckShips * shipBase * 0.2;
+  }
   // Future production flows: a system with 30 busy pops is worth
   // markedly more than an empty one of the same colonize cost, and
   // this is where that difference shows up.
@@ -1615,8 +1639,13 @@ export function scoreState(state: GameState, empireId: string): number {
       order.kind === "empire_project" &&
       order.projectId === "build_frigate"
     ) {
-      // A finished frigate = one more ship (worth 200).
-      score += 200 * progressWeight;
+      // A finished frigate is valued the same way as an existing one —
+      // archetype × at-war premium. This is what makes Conqueror AIs at
+      // war actually pile up fleets instead of stopping at the raw
+      // hammer-cost-equivalent.
+      const atWar = enemiesOf(state, empire.id).length > 0;
+      const shipBase = shipValueFor(empire) * (atWar ? 1.5 : 1.0);
+      score += shipBase * progressWeight;
     } else if (
       order.kind === "empire_project" &&
       order.projectId === "build_outpost"

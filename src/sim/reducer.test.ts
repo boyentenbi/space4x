@@ -365,11 +365,12 @@ describe("AI scoreState value function", () => {
     const playerScore = scoreState(state, "e_player");
     expect(playerScore).toBeGreaterThan(75);
     expect(playerScore).toBeLessThan(90);
-    // AI raw = 1 system × 200 + 1 ship × 200 = 400; occupation credit
-    // ≈ 133.3; + 15 political-flow. So AI score ≈ 548.
+    // AI score = 1 system × 200 + ship (pragmatist 200 × at-war 1.5
+    // = 300, mobile since cap ≥ 1) + 15 political-flow + 200 × 2/3
+    // occupation credit (≈ 133). Total ≈ 648.
     const aiScore = scoreState(state, "e_ai");
-    expect(aiScore).toBeGreaterThan(540);
-    expect(aiScore).toBeLessThan(555);
+    expect(aiScore).toBeGreaterThan(640);
+    expect(aiScore).toBeLessThan(655);
   });
 
   it("values systems and ships in hammer-equivalent units", () => {
@@ -395,10 +396,14 @@ describe("AI scoreState value function", () => {
       empire: player,
       fleets: [fleet],
     });
-    // 1 system × 200 + 2 ships × 200 = 600 assets.
-    // + 1 political/turn baseline × (FLOW_HORIZON 5 × political mult 3) = 15.
-    // Total = 615.
-    expect(scoreState(state, "e_player")).toBe(615);
+    // 1 system × 200 = 200 assets.
+    // Ships: 2 ships, pragmatist (base 200) × no-war (×1.0) = 200 each.
+    // Compute cap (1 owned body × COMPUTE_PER_BODY 1) = 1 → only 1
+    // ship is "mobile"; the other is "stuck" @ 20% value.
+    // → 1 × 200 + 1 × 40 = 240.
+    // + political/turn baseline × 15 = 15.
+    // Total = 455.
+    expect(scoreState(state, "e_player")).toBe(455);
   });
 
   it("scoreState increases after queueing colonize on a second body in an owned system", () => {
@@ -486,6 +491,50 @@ describe("combat chronicle", () => {
 });
 
 describe("AI project selection (decision only)", () => {
+  it("conqueror at war with an adjacent empire queues a frigate", () => {
+    // Two-hex map: conqueror AI owns s_ai (with a temperate capital),
+    // enemy owns s_enemy (adjacent, already claimed so no outpost).
+    // They're at war. With no colonise targets in own system and no
+    // outpost candidates, the one useful play is to build ships —
+    // and the at-war multiplier + conqueror archetype should make
+    // this the clear winner over doing nothing.
+    const home = makeSystem({ id: "s_ai", bodyIds: ["b_cap"], ownerId: "e_ai" });
+    const enemyHome = makeSystem({ id: "s_enemy", bodyIds: ["b_enemy"], ownerId: "e_enemy" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_ai", pops: 30 });
+    const enemyBody = makeBody({ id: "b_enemy", systemId: "s_enemy", pops: 30 });
+    const player = makeEmpire({ id: "e_player", systemIds: [] });
+    const enemy = makeEmpire({
+      id: "e_enemy",
+      capitalBodyId: "b_enemy",
+      systemIds: ["s_enemy"],
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_cap",
+      systemIds: ["s_ai"],
+      expansionism: "conqueror",
+      resources: { food: 500, energy: 500, political: 50 },
+    });
+    const state = makeState({
+      systems: [home, enemyHome],
+      bodies: [cap, enemyBody],
+      hyperlanes: [["s_ai", "s_enemy"]],
+      empire: player,
+      aiEmpires: [ai, enemy],
+      wars: [["e_ai", "e_enemy"].sort() as [string, string]],
+    });
+
+    const decided = produce(state, (d) => {
+      const emp = empireById(d, "e_ai");
+      if (emp) aiPlanProject(d, emp);
+    });
+    const aiPost = empireById(decided, "e_ai");
+    const frigate = aiPost?.projects.find(
+      (p) => p.kind === "empire_project" && p.projectId === "build_frigate",
+    );
+    expect(frigate).toBeDefined();
+  });
+
   it("queues an outpost on an adjacent unclaimed system's star", () => {
     // AI owns s_home. s_target is unclaimed and has only a star body.
     // The right first move is build_outpost on that star — it claims
