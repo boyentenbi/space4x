@@ -965,6 +965,9 @@ function resolveCombat(draft: GameState): void {
     }
     if (!anyFight) continue;
 
+    // Snapshot before-counts for the chronicle entry.
+    const before: Record<string, number> = { ...empireShips };
+
     // Apply losses proportionally across each empire's fleets.
     for (const f of fleets) {
       if (f.shipCount <= 0) continue;
@@ -975,17 +978,41 @@ function resolveCombat(draft: GameState): void {
       const losses = Math.max(1, Math.ceil(damageIn[f.empireId] * share));
       f.shipCount = Math.max(0, f.shipCount - losses);
     }
+    // Sum survivors per empire for the chronicle; then clear empties.
+    const after: Record<string, number> = {};
+    for (const f of fleets) {
+      if (f.shipCount > 0) after[f.empireId] = (after[f.empireId] ?? 0) + f.shipCount;
+    }
+    for (const empId of empires) {
+      if (!(empId in after)) after[empId] = 0;
+    }
     for (const f of fleets) {
       if (f.shipCount <= 0) delete draft.fleets[f.id];
     }
 
     if (empires.includes(draft.empire.id)) {
       const sys = draft.galaxy.systems[sysId];
+      const sysName = sys?.name ?? "a contested system";
+      const playerId = draft.empire.id;
+      const parts: string[] = [];
+      // Player side first, then each foreign empire alphabetically.
+      const orderedEmpires = empires.slice().sort((a, b) => {
+        if (a === playerId) return -1;
+        if (b === playerId) return 1;
+        return a.localeCompare(b);
+      });
+      for (const empId of orderedEmpires) {
+        const e = empireById(draft, empId);
+        const label = empId === playerId ? "you" : e?.name ?? "unknown";
+        const b = before[empId] ?? 0;
+        const a = after[empId] ?? 0;
+        parts.push(`${label} ${b}→${a}`);
+      }
       draft.eventLog.push({
         turn: draft.turn,
         eventId: "combat",
         choiceId: null,
-        text: `Combat in ${sys?.name ?? "a contested system"}.`,
+        text: `Combat at ${sysName}: ${parts.join(", ")}.`,
       });
     }
   }

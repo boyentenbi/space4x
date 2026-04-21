@@ -299,6 +299,53 @@ describe("setFleetDestination action", () => {
   });
 });
 
+describe("combat chronicle", () => {
+  it("records before/after ship counts per faction for player-involved combat", () => {
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      name: "Rival Empire",
+      capitalBodyId: "b_ai",
+      systemIds: [aiHome.id],
+      expansionism: "pragmatist",
+    });
+    const playerFleet: Fleet = {
+      id: "f_p",
+      empireId: "e_player",
+      systemId: "s_ai",
+      shipCount: 4,
+    };
+    const aiFleet: Fleet = {
+      id: "f_a",
+      empireId: "e_ai",
+      systemId: "s_ai",
+      shipCount: 3,
+    };
+    const state = makeState({
+      systems: [home, aiHome],
+      bodies: [cap, aiBody],
+      hyperlanes: [["s_home", "s_ai"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [playerFleet, aiFleet],
+      wars: [["e_ai", "e_player"].sort() as [string, string]],
+    });
+    const next = reduce(state, { type: "endTurn" });
+    const combat = next.eventLog.find((e) => e.eventId === "combat");
+    expect(combat?.text).toContain("s_ai"); // system name fallback = id here
+    expect(combat?.text).toContain("you 4→");
+    expect(combat?.text).toContain("Rival Empire 3→");
+  });
+});
+
 describe("per-empire phases", () => {
   it("processes player first, then AIs, clearing currentPhaseEmpireId at end", () => {
     const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
