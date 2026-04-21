@@ -360,14 +360,13 @@ describe("AI scoreState value function", () => {
       fleets: [siegeFleet],
       wars: [["e_ai", "e_player"].sort() as [string, string]],
     });
-    // Player raw = 1 system × 200 = 200; occupation debit = 200 × 2/3
-    // ≈ 133.3; + 15 political-flow baseline. So player score ≈ 82.
+    // Player = 1 × 200 system − 200 × 2/3 occupation debit + 15
+    // political − 5 outpost upkeep ≈ 77.
     const playerScore = scoreState(state, "e_player");
-    expect(playerScore).toBeGreaterThan(75);
+    expect(playerScore).toBeGreaterThan(70);
     expect(playerScore).toBeLessThan(90);
-    // AI score = 1 system × 200 + ship (pragmatist 300 at war,
-    // stuck @ 20% since cap=0 with 0-pop body) = 60 + 15 political
-    // + 133 occupation credit − 10 energy upkeep = ≈ 398.
+    // AI = 1 × 200 system + stuck 1-ship @ at-war (300 × 0.2) = 60
+    // + 200 × 2/3 occupation credit + 15 political − 10 upkeep ≈ 398.
     const aiScore = scoreState(state, "e_ai");
     expect(aiScore).toBeGreaterThan(390);
     expect(aiScore).toBeLessThan(410);
@@ -396,10 +395,8 @@ describe("AI scoreState value function", () => {
       empire: player,
       fleets: [fleet],
     });
-    // 1 system × 200 = 200 assets.
-    // Ships: 2 ships, pragmatist (base 200) × no-war (×1.0) = 200 each.
-    // Compute cap = 0 (body has 0 pops → 0.25/pop × 0 = 0) → all
-    // ships are "stuck" @ 20% value: 2 × 40 = 80.
+    // 1 system × 200 (COLONIZE_HAMMERS) = 200 assets.
+    // Ships: 2 × 200 × (no-war 1.0) × stuck 20% (cap=0) = 80.
     // + political/turn baseline × 15 = 15.
     // − energy upkeep (2 ships + 1 outpost = 3) × 5 horizon = −15.
     // Total = 280.

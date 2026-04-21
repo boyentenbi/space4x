@@ -115,7 +115,7 @@ const COMPUTE_PER_POP_HAB: Partial<Record<HabitabilityTier, number>> = {
   garden: 0.25,
 };
 
-export const HAMMERS_PER_POP = 1;
+export const HAMMERS_PER_POP = 0.5;
 export const POP_GROWTH_FOOD_COST = 50;
 
 // Expected turns until this body grows by +1 pop, or a status string.
@@ -1032,46 +1032,121 @@ function resolveCombat(draft: GameState): void {
       damageOutMult[empId] = !emp || emp.resources.energy <= 0 ? 0 : 1;
     }
 
-    // Iterate attrition rounds until only one side (or none) remains
-    // with ships. Bounded loop so a pathological zero-damage state
-    // can't hang (e.g., if all sides have energy deficit).
+    // Work out which empires are actually at war with at least one
+    // other empire here AND can deal damage. If only one such empire
+    // remains, nothing fights.
+    const belligerents = empires.filter((a) => {
+      if (damageOutMult[a] === 0) return false;
+      return empires.some(
+        (b) => b !== a && damageOutMult[b] === 1 && atWar(draft, a, b),
+      );
+    });
+    const canDealDamage = empires.filter((e) =>
+      empires.some((o) => o !== e && atWar(draft, e, o)),
+    );
+    if (canDealDamage.length < 2) continue;
+
+    const shipsOf = (empId: string): number =>
+      fleets
+        .filter((f) => f.empireId === empId && f.shipCount > 0)
+        .reduce((s, f) => s + f.shipCount, 0);
+
     let anyFightHappened = false;
-    for (let round = 0; round < 100; round++) {
-      const empireShips: Record<string, number> = {};
-      for (const f of fleets) {
-        if (f.shipCount > 0) {
-          empireShips[f.empireId] = (empireShips[f.empireId] ?? 0) + f.shipCount;
+
+    // Fast path: exactly two at-war empires contesting the system →
+    // closed-form Lanchester square. Winner survivors = sqrt(A² - B²);
+    // loser annihilated. Asymmetric damage output (one side in energy
+    // deficit) reduces to "the fighting side keeps all its ships".
+    if (canDealDamage.length === 2) {
+      const [idA, idB] = canDealDamage;
+      const shipsA = shipsOf(idA);
+      const shipsB = shipsOf(idB);
+      const canA = damageOutMult[idA] === 1 && shipsA > 0;
+      const canB = damageOutMult[idB] === 1 && shipsB > 0;
+
+      let survivorId: string | null = null;
+      let survivorCount = 0;
+      let fight = false;
+
+      if (canA && !canB) {
+        // Only A can fight; B is shot to pieces without returning fire.
+        survivorId = idA;
+        survivorCount = shipsA;
+        fight = shipsB > 0;
+      } else if (canB && !canA) {
+        survivorId = idB;
+        survivorCount = shipsB;
+        fight = shipsA > 0;
+      } else if (canA && canB) {
+        fight = true;
+        if (shipsA > shipsB) {
+          survivorId = idA;
+          survivorCount = Math.floor(Math.sqrt(shipsA * shipsA - shipsB * shipsB));
+        } else if (shipsB > shipsA) {
+          survivorId = idB;
+          survivorCount = Math.floor(Math.sqrt(shipsB * shipsB - shipsA * shipsA));
+        } else {
+          // Mutual annihilation.
+          survivorId = null;
+          survivorCount = 0;
         }
       }
-      const liveEmpires = Object.keys(empireShips);
-      if (liveEmpires.length < 2) break;
 
-      const damageIn: Record<string, number> = {};
-      let totalDamage = 0;
-      for (const empId of liveEmpires) {
-        let enemyDamage = 0;
-        for (const otherId of liveEmpires) {
-          if (otherId === empId) continue;
-          if (atWar(draft, empId, otherId)) {
-            enemyDamage += empireShips[otherId] * damageOutMult[otherId];
+      if (fight) {
+        anyFightHappened = true;
+        for (const f of fleets) {
+          if (f.empireId !== idA && f.empireId !== idB) continue;
+          if (f.shipCount <= 0) continue;
+          if (f.empireId === survivorId) {
+            const totalForSide = f.empireId === idA ? shipsA : shipsB;
+            const share = f.shipCount / totalForSide;
+            f.shipCount = Math.max(0, Math.round(share * survivorCount));
+          } else {
+            f.shipCount = 0;
           }
         }
-        damageIn[empId] = enemyDamage * 0.3;
-        totalDamage += enemyDamage;
       }
-      if (totalDamage === 0) break; // nobody can hurt anybody
-      anyFightHappened = true;
+    } else {
+      // Fallback: 3+ at-war empires contesting (rare). Iterative
+      // attrition until only one side has ships left.
+      for (let round = 0; round < 100; round++) {
+        const empireShips: Record<string, number> = {};
+        for (const f of fleets) {
+          if (f.shipCount > 0) {
+            empireShips[f.empireId] = (empireShips[f.empireId] ?? 0) + f.shipCount;
+          }
+        }
+        const liveEmpires = Object.keys(empireShips);
+        if (liveEmpires.length < 2) break;
 
-      for (const f of fleets) {
-        if (f.shipCount <= 0) continue;
-        if ((damageIn[f.empireId] ?? 0) <= 0) continue;
-        const empTotal = empireShips[f.empireId];
-        if (empTotal === 0) continue;
-        const share = f.shipCount / empTotal;
-        const losses = Math.max(1, Math.ceil(damageIn[f.empireId] * share));
-        f.shipCount = Math.max(0, f.shipCount - losses);
+        const damageIn: Record<string, number> = {};
+        let totalDamage = 0;
+        for (const empId of liveEmpires) {
+          let enemyDamage = 0;
+          for (const otherId of liveEmpires) {
+            if (otherId === empId) continue;
+            if (atWar(draft, empId, otherId)) {
+              enemyDamage += empireShips[otherId] * damageOutMult[otherId];
+            }
+          }
+          damageIn[empId] = enemyDamage * 0.3;
+          totalDamage += enemyDamage;
+        }
+        if (totalDamage === 0) break;
+        anyFightHappened = true;
+
+        for (const f of fleets) {
+          if (f.shipCount <= 0) continue;
+          if ((damageIn[f.empireId] ?? 0) <= 0) continue;
+          const empTotal = empireShips[f.empireId];
+          if (empTotal === 0) continue;
+          const share = f.shipCount / empTotal;
+          const losses = Math.max(1, Math.ceil(damageIn[f.empireId] * share));
+          f.shipCount = Math.max(0, f.shipCount - losses);
+        }
       }
     }
+    void belligerents;
     if (!anyFightHappened) continue;
 
     // After-counts per empire; then drop empty fleets.
