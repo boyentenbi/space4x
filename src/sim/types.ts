@@ -82,6 +82,13 @@ export interface StarSystem {
   starKind: StarKind;
   bodyIds: string[];
   ownerId: string | null;  // Empire id, null = unclaimed.
+  // Ongoing occupation by a foreign at-war fleet when the owner has
+  // no defender present. Counts turns; at OCCUPATION_TURNS_TO_FLIP the
+  // system transfers to the occupier and this field clears.
+  occupation?: {
+    empireId: string;
+    turns: number;
+  };
 }
 
 // Hyperlanes connect systems. Undirected; stored as unordered pairs of system ids.

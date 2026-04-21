@@ -988,6 +988,157 @@ function resolveCombat(draft: GameState): void {
   }
 }
 
+// Turns an unopposed enemy presence must hold before a system flips.
+export const OCCUPATION_TURNS_TO_FLIP = 3;
+
+// After combat each turn, advance or clear occupation counters and
+// flip systems that crossed the threshold. Then prune any empires
+// left with zero systems.
+function processOccupation(draft: GameState): void {
+  const flips: Array<{ systemId: string; fromOwnerId: string; toOwnerId: string }> = [];
+
+  for (const sys of Object.values(draft.galaxy.systems)) {
+    if (!sys.ownerId) {
+      // Unclaimed space can't be occupied — just cleared.
+      if (sys.occupation) sys.occupation = undefined;
+      continue;
+    }
+    const ownerId = sys.ownerId;
+    const fleetsHere = Object.values(draft.fleets).filter(
+      (f) => f.systemId === sys.id && f.shipCount > 0,
+    );
+    const defenderPresent = fleetsHere.some((f) => f.empireId === ownerId);
+    if (defenderPresent) {
+      sys.occupation = undefined;
+      continue;
+    }
+    // Which foreign empires have ships here, at war with the owner?
+    const invaderEmpireIds = new Set<string>();
+    for (const f of fleetsHere) {
+      if (f.empireId !== ownerId && atWar(draft, ownerId, f.empireId)) {
+        invaderEmpireIds.add(f.empireId);
+      }
+    }
+    if (invaderEmpireIds.size === 0) {
+      sys.occupation = undefined;
+      continue;
+    }
+    if (invaderEmpireIds.size > 1) {
+      // Contested — nobody can occupy until one side wins out.
+      sys.occupation = undefined;
+      continue;
+    }
+    const invaderId = Array.from(invaderEmpireIds)[0];
+    if (sys.occupation && sys.occupation.empireId === invaderId) {
+      sys.occupation.turns += 1;
+    } else {
+      sys.occupation = { empireId: invaderId, turns: 1 };
+      if (ownerId === draft.empire.id || invaderId === draft.empire.id) {
+        const invader = empireById(draft, invaderId);
+        draft.eventLog.push({
+          turn: draft.turn,
+          eventId: "occupation_begun",
+          choiceId: null,
+          text: `${invader?.name ?? "Enemy"} fleet is occupying ${sys.name}.`,
+        });
+      }
+    }
+    if (sys.occupation.turns >= OCCUPATION_TURNS_TO_FLIP) {
+      flips.push({ systemId: sys.id, fromOwnerId: ownerId, toOwnerId: invaderId });
+    }
+  }
+
+  for (const flip of flips) {
+    flipSystem(draft, flip.systemId, flip.fromOwnerId, flip.toOwnerId);
+  }
+}
+
+function flipSystem(
+  draft: GameState,
+  systemId: string,
+  fromOwnerId: string,
+  toOwnerId: string,
+): void {
+  const sys = draft.galaxy.systems[systemId];
+  if (!sys) return;
+  const oldOwner = empireById(draft, fromOwnerId);
+  const newOwner = empireById(draft, toOwnerId);
+  if (!oldOwner || !newOwner) return;
+
+  sys.ownerId = toOwnerId;
+  sys.occupation = undefined;
+  oldOwner.systemIds = oldOwner.systemIds.filter((id) => id !== systemId);
+  if (!newOwner.systemIds.includes(systemId)) newOwner.systemIds.push(systemId);
+
+  // If the old owner lost their capital, the capital pointer dangles —
+  // pick a new capital from whatever they have left (if anything).
+  if (oldOwner.capitalBodyId) {
+    const capBody = draft.galaxy.bodies[oldOwner.capitalBodyId];
+    if (capBody && capBody.systemId === systemId) {
+      oldOwner.capitalBodyId = null;
+      for (const sid of oldOwner.systemIds) {
+        const s = draft.galaxy.systems[sid];
+        if (!s) continue;
+        for (const bid of s.bodyIds) {
+          const b = draft.galaxy.bodies[bid];
+          if (b && b.pops > 0) {
+            oldOwner.capitalBodyId = b.id;
+            break;
+          }
+        }
+        if (oldOwner.capitalBodyId) break;
+      }
+    }
+  }
+
+  // Log for the player if they're on either side of it.
+  const playerId = draft.empire.id;
+  if (fromOwnerId === playerId || toOwnerId === playerId) {
+    const winner = toOwnerId === playerId ? "You" : newOwner.name;
+    const loser = fromOwnerId === playerId ? "you" : oldOwner.name;
+    draft.eventLog.push({
+      turn: draft.turn,
+      eventId: "system_conquered",
+      choiceId: null,
+      text: `${sys.name} has fallen — ${winner} took it from ${loser}.`,
+    });
+  }
+}
+
+// Remove empires that hold zero systems. Player elimination flips the
+// gameOver flag; AI elimination drops them from the roster and cleans
+// up their fleets + wars.
+function checkEliminations(draft: GameState): void {
+  if (draft.empire.systemIds.length === 0 && !draft.gameOver) {
+    draft.gameOver = true;
+    draft.eventLog.push({
+      turn: draft.turn,
+      eventId: "empire_eliminated",
+      choiceId: null,
+      text: `Your empire has fallen. There is nothing left to command.`,
+    });
+  }
+  const survivors: Empire[] = [];
+  for (const ai of draft.aiEmpires) {
+    if (ai.systemIds.length > 0) {
+      survivors.push(ai);
+    } else {
+      // Clean up fleets + wars.
+      for (const fid of Object.keys(draft.fleets)) {
+        if (draft.fleets[fid]?.empireId === ai.id) delete draft.fleets[fid];
+      }
+      draft.wars = draft.wars.filter(([a, b]) => a !== ai.id && b !== ai.id);
+      draft.eventLog.push({
+        turn: draft.turn,
+        eventId: "empire_eliminated",
+        choiceId: null,
+        text: `${ai.name} has fallen.`,
+      });
+    }
+  }
+  draft.aiEmpires = survivors;
+}
+
 export function fleetsInSystem(state: GameState, systemId: string): Fleet[] {
   return Object.values(state.fleets).filter((f) => f.systemId === systemId);
 }
@@ -2000,6 +2151,12 @@ export function reduce(state: GameState, action: Action): GameState {
         // Combat in contested systems runs after all empires have
         // ticked and fleets have moved.
         resolveCombat(draft);
+
+        // After combat: tick occupation counters on undefended owned
+        // systems and flip any that crossed the threshold. Then
+        // check for eliminations (empires with no systems left).
+        processOccupation(draft);
+        checkEliminations(draft);
       });
 
       // Random event for the player only (for now).

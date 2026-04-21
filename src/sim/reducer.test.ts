@@ -373,6 +373,129 @@ describe("processFleetOrders via endTurn", () => {
   });
 });
 
+describe("conquering", () => {
+  function wartimeSetup(): GameState {
+    // Player owns s_home, AI owns s_target. Both are at war.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const target = makeSystem({ id: "s_target", bodyIds: ["b_target"], ownerId: "e_ai" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const aiBody = makeBody({ id: "b_target", systemId: "s_target", pops: 20 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+      // Overkill compute so the attacking fleet can walk in unimpeded
+      // across consecutive end-turns in the test.
+      resources: { food: 500, energy: 500, political: 20 },
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_target",
+      systemIds: [target.id],
+    });
+    // Player has a fleet already sitting in the AI's system — no
+    // defender present since the AI has no fleets.
+    const invader: Fleet = {
+      id: "f_invader",
+      empireId: "e_player",
+      systemId: "s_target",
+      shipCount: 1,
+    };
+    return makeState({
+      systems: [home, target],
+      bodies: [cap, aiBody],
+      hyperlanes: [["s_home", "s_target"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [invader],
+      wars: [["e_ai", "e_player"].sort() as [string, string]],
+    });
+  }
+
+  it("ticks the occupation counter while a foreign fleet sits unopposed", () => {
+    const state = wartimeSetup();
+    const t1 = reduce(state, { type: "endTurn" });
+    const t2 = reduce(t1, { type: "endTurn" });
+    expect(t2.galaxy.systems["s_target"]?.occupation?.turns).toBe(2);
+    // Still owned by AI until the threshold.
+    expect(t2.galaxy.systems["s_target"]?.ownerId).toBe("e_ai");
+  });
+
+  it("flips ownership after OCCUPATION_TURNS_TO_FLIP turns", () => {
+    let s = wartimeSetup();
+    for (let i = 0; i < 3; i++) s = reduce(s, { type: "endTurn" });
+    const sys = s.galaxy.systems["s_target"];
+    expect(sys?.ownerId).toBe("e_player");
+    expect(sys?.occupation).toBeUndefined();
+    // Player now owns both systems.
+    expect(s.empire.systemIds).toContain("s_target");
+    // AI is eliminated (lost its only system).
+    expect(s.aiEmpires.find((e) => e.id === "e_ai")).toBeUndefined();
+  });
+
+  it("doesn't start an occupation on unowned space", () => {
+    // Invader fleet sitting in an unclaimed system should NOT accumulate
+    // occupation — unowned systems aren't conquerable.
+    const unclaimed = makeSystem({ id: "s_free", bodyIds: [], ownerId: null });
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const player = makeEmpire({ id: "e_player", capitalBodyId: "b_cap", systemIds: [home.id] });
+    const fleet: Fleet = {
+      id: "f",
+      empireId: "e_player",
+      systemId: "s_free",
+      shipCount: 1,
+    };
+    const state = makeState({
+      systems: [unclaimed, home],
+      bodies: [cap],
+      hyperlanes: [["s_home", "s_free"]],
+      empire: player,
+      fleets: [fleet],
+    });
+    const next = reduce(state, { type: "endTurn" });
+    expect(next.galaxy.systems["s_free"]?.occupation).toBeUndefined();
+    expect(next.galaxy.systems["s_free"]?.ownerId).toBeNull();
+  });
+
+  it("sets gameOver when the player loses their last system", () => {
+    // Flip: AI invades the player's home, player has no defenders.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_ai",
+      systemIds: [aiHome.id],
+    });
+    const invader: Fleet = {
+      id: "f_ai",
+      empireId: "e_ai",
+      systemId: "s_home",
+      shipCount: 1,
+    };
+    let s = makeState({
+      systems: [home, aiHome],
+      bodies: [cap, aiBody],
+      hyperlanes: [["s_home", "s_ai"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [invader],
+      wars: [["e_ai", "e_player"].sort() as [string, string]],
+    });
+    for (let i = 0; i < 3; i++) s = reduce(s, { type: "endTurn" });
+    expect(s.galaxy.systems["s_home"]?.ownerId).toBe("e_ai");
+    expect(s.empire.systemIds.length).toBe(0);
+    expect(s.gameOver).toBe(true);
+  });
+});
+
 describe("splitFleet action", () => {
   it("peels off a co-located fleet with its own destination", () => {
     const home = makeSystem({ id: "s_home", bodyIds: [], ownerId: "e_player" });
