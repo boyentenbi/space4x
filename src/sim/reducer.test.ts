@@ -486,6 +486,102 @@ describe("combat chronicle", () => {
 });
 
 describe("AI project selection (decision only)", () => {
+  it("queues an outpost on an adjacent unclaimed system's star", () => {
+    // AI owns s_home. s_target is unclaimed and has only a star body.
+    // The right first move is build_outpost on that star — it claims
+    // the system and sets up future colonising.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_home"], ownerId: "e_ai" });
+    const target = makeSystem({ id: "s_target", bodyIds: ["b_star"], ownerId: null });
+    const homeBody = makeBody({ id: "b_home", systemId: "s_home", pops: 30 });
+    const star = makeBody({
+      id: "b_star",
+      systemId: "s_target",
+      kind: "star",
+      habitability: "stellar",
+      pops: 0,
+      space: 0,
+    });
+    const player = makeEmpire({ id: "e_player", systemIds: [] });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_home",
+      systemIds: ["s_home"],
+      resources: { food: 500, energy: 500, political: 50 },
+    });
+    const state = makeState({
+      systems: [home, target],
+      bodies: [homeBody, star],
+      hyperlanes: [["s_home", "s_target"]],
+      empire: player,
+      aiEmpires: [ai],
+    });
+
+    const decided = produce(state, (d) => {
+      const emp = empireById(d, "e_ai");
+      if (emp) aiPlanProject(d, emp);
+    });
+    const aiPost = empireById(decided, "e_ai");
+    const outpost = aiPost?.projects.find(
+      (p) => p.kind === "empire_project" && p.projectId === "build_outpost",
+    );
+    expect(outpost).toBeDefined();
+    if (outpost && outpost.kind === "empire_project") {
+      expect(outpost.targetBodyId).toBe("b_star");
+    }
+  });
+
+  it("colonises the temperate planet once the system is already claimed", () => {
+    // AI already owns s_target (via a prior outpost, simulated by
+    // ownerId being set). The system contains a star + a temperate
+    // planet. The AI should queue colonize on the planet.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_home"], ownerId: "e_ai" });
+    const target = makeSystem({
+      id: "s_target",
+      bodyIds: ["b_star", "b_temp"],
+      ownerId: "e_ai",
+    });
+    const homeBody = makeBody({ id: "b_home", systemId: "s_home", pops: 30 });
+    const star = makeBody({
+      id: "b_star",
+      systemId: "s_target",
+      kind: "star",
+      habitability: "stellar",
+      pops: 0,
+      space: 0,
+    });
+    const tempBody = makeBody({
+      id: "b_temp",
+      systemId: "s_target",
+      habitability: "temperate",
+      pops: 0,
+    });
+    const player = makeEmpire({ id: "e_player", systemIds: [] });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_home",
+      systemIds: ["s_home", "s_target"],
+      resources: { food: 500, energy: 500, political: 50 },
+    });
+    const state = makeState({
+      systems: [home, target],
+      bodies: [homeBody, star, tempBody],
+      hyperlanes: [["s_home", "s_target"]],
+      empire: player,
+      aiEmpires: [ai],
+    });
+
+    const decided = produce(state, (d) => {
+      const emp = empireById(d, "e_ai");
+      if (emp) aiPlanProject(d, emp);
+    });
+    const aiPost = empireById(decided, "e_ai");
+    const colonize = aiPost?.projects.find((p) => p.kind === "colonize");
+    expect(colonize).toBeDefined();
+    if (colonize && colonize.kind === "colonize") {
+      expect(colonize.targetBodyId).toBe("b_temp");
+    }
+  });
+
   it("prefers colonising the temperate body over the frozen one when both are in an owned system", () => {
     // AI owns one system that contains both a temperate body (space
     // large, food-producing) and a frozen body (small, no food, only

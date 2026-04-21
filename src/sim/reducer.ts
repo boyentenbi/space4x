@@ -1623,9 +1623,13 @@ export function scoreState(state: GameState, empireId: string): number {
       order.kind === "empire_project" &&
       order.projectId === "build_outpost"
     ) {
-      // A finished outpost = one more claimed system (worth
-      // COLONIZE_HAMMERS for the system asset).
-      score += COLONIZE_HAMMERS * progressWeight;
+      // A finished outpost claims a system — worth its colonise cost
+      // equivalent plus a frontier premium so the AI prefers expansion
+      // over ship-spam when both are equally affordable. The premium
+      // is a stop-gap until we do multi-step rollouts that'd see the
+      // future colonise value naturally.
+      const FRONTIER_PREMIUM = 150;
+      score += (COLONIZE_HAMMERS + FRONTIER_PREMIUM) * progressWeight;
     } else {
       // Generic empire_project — fall back to 70% of raw hammer cost.
       score += order.hammersRequired * 0.7 * progressWeight;
