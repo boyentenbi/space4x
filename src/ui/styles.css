@@ -360,6 +360,7 @@ button.res-cell:hover:not(:disabled) {
 }
 
 .siege-pip.filled {
+  background: #ff5a5a;
   border-color: transparent;
 }
 

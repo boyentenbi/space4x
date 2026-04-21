@@ -395,24 +395,20 @@ export function GalaxyMap({
                 strokeLinejoin="round"
               />
             )}
-            {/* Occupation ring — pulsing, in the occupier's empire
-                color so it reads as "this empire is taking it". */}
-            {sys.occupation && (() => {
-              const occupier = empireById.get(sys.occupation.empireId);
-              if (!occupier) return null;
-              return (
-                <polygon
-                  className="siege-ring"
-                  points={polygonPoints(hexCorners(x, y, HEX_SIZE - 0.5))}
-                  fill="none"
-                  stroke={occupier.color}
-                  strokeWidth={1.6}
-                  strokeDasharray="2.5 1.5"
-                  strokeLinejoin="round"
-                  opacity={0.85}
-                />
-              );
-            })()}
+            {/* Occupation ring — pulsing red, reads unambiguously as
+                "your system is being taken" regardless of who's doing it. */}
+            {sys.occupation && (
+              <polygon
+                className="siege-ring"
+                points={polygonPoints(hexCorners(x, y, HEX_SIZE - 0.5))}
+                fill="none"
+                stroke="#ff5a5a"
+                strokeWidth={1.6}
+                strokeDasharray="2.5 1.5"
+                strokeLinejoin="round"
+                opacity={0.85}
+              />
+            )}
             {/* Flavor-site star glyph — small, above the main star dot. */}
             {hasFlavor && (
               <polygon

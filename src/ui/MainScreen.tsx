@@ -626,10 +626,7 @@ export function MainScreen() {
               const occ = focusSystem.occupation;
               const occupier = empireById(state, occ.empireId);
               return (
-                <div
-                  className="siege-banner"
-                  style={{ borderColor: occupier?.color ?? "#ff8a8a" }}
-                >
+                <div className="siege-banner">
                   <span>
                     Under siege by {occupier?.name ?? "unknown force"} — flips in{" "}
                     {OCCUPATION_TURNS_TO_FLIP - occ.turns} turn
@@ -640,11 +637,6 @@ export function MainScreen() {
                       <span
                         key={i}
                         className={`siege-pip ${i < occ.turns ? "filled" : ""}`}
-                        style={
-                          i < occ.turns
-                            ? { background: occupier?.color ?? "#ff8a8a" }
-                            : undefined
-                        }
                       />
                     ))}
                   </span>
