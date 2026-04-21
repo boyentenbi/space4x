@@ -299,6 +299,88 @@ describe("setFleetDestination action", () => {
   });
 });
 
+describe("per-empire phases", () => {
+  it("processes player first, then AIs, clearing currentPhaseEmpireId at end", () => {
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+    });
+    const ai = makeEmpire({ id: "e_ai", capitalBodyId: "b_ai", systemIds: [aiHome.id] });
+    const state = makeState({
+      systems: [home, aiHome],
+      bodies: [cap, aiBody],
+      hyperlanes: [["s_home", "s_ai"]],
+      empire: player,
+      aiEmpires: [ai],
+    });
+    const afterBegin = reduce(state, { type: "beginRound" });
+    expect(afterBegin.currentPhaseEmpireId).toBe("e_player");
+
+    const afterPlayer = reduce(afterBegin, { type: "runPhase" });
+    expect(afterPlayer.currentPhaseEmpireId).toBe("e_ai");
+
+    const afterAi = reduce(afterPlayer, { type: "runPhase" });
+    expect(afterAi.currentPhaseEmpireId).toBe(null);
+  });
+
+  it("prevents pass-through: enemy fleets heading to each other's systems fight before swapping", () => {
+    // Player fleet at s_home routed to s_ai (enemy). AI already set its
+    // own fleet heading toward s_home (via aiPlanMoves each turn). Since
+    // player phase runs first, player's fleet steps to s_ai (AI's
+    // system), combat resolves before AI phase moves its fleet — so
+    // they can't pass-through silently any more.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_ai",
+      systemIds: [aiHome.id],
+      expansionism: "pragmatist", // won't initiate war on its own
+    });
+    const playerFleet: Fleet = {
+      id: "f_player",
+      empireId: "e_player",
+      systemId: "s_home",
+      shipCount: 1,
+      destinationSystemId: "s_ai",
+    };
+    const aiFleet: Fleet = {
+      id: "f_ai",
+      empireId: "e_ai",
+      systemId: "s_ai",
+      shipCount: 1,
+      destinationSystemId: "s_home",
+    };
+    const state = makeState({
+      systems: [home, aiHome],
+      bodies: [cap, aiBody],
+      hyperlanes: [["s_home", "s_ai"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [playerFleet, aiFleet],
+      wars: [["e_ai", "e_player"].sort() as [string, string]],
+    });
+
+    const next = reduce(state, { type: "endTurn" });
+    // After one round the two 1-ship fleets should both be dead from
+    // combat — pre-refactor they'd have passed through and survived.
+    expect(next.fleets["f_player"]).toBeUndefined();
+    expect(next.fleets["f_ai"]).toBeUndefined();
+  });
+});
+
 describe("processFleetOrders via endTurn", () => {
   it("steps a fleet one hop per turn along the stored path", () => {
     // Three systems in a line: home - mid - far. All unowned except home.

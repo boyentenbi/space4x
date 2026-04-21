@@ -371,6 +371,7 @@ export function MainScreen() {
   const state = useGame((s) => s.state);
   const dispatch = useGame((s) => s.dispatch);
   const reset = useGame((s) => s.reset);
+  const endTurn = useGame((s) => s.endTurn);
 
   const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -528,8 +529,8 @@ export function MainScreen() {
         )}
         <button
           className="endturn-card"
-          onClick={() => dispatch({ type: "endTurn" })}
-          disabled={!!pendingEvent}
+          onClick={() => endTurn()}
+          disabled={!!pendingEvent || !!state.currentPhaseEmpireId || state.gameOver}
           title="End turn"
         >
           <span className="turn-num">T{state.turn}</span>
@@ -771,6 +772,16 @@ export function MainScreen() {
         <div className="right-column">
           <div className="galaxy-panel">
             <span className="panel-label">Galaxy</span>
+            {state.currentPhaseEmpireId && (() => {
+              const e = empireById(state, state.currentPhaseEmpireId);
+              if (!e) return null;
+              return (
+                <div className="phase-banner" style={{ borderColor: e.color }}>
+                  <span className="phase-banner-dot" style={{ background: e.color }} />
+                  {e.id === state.empire.id ? "Your turn resolving…" : `${e.name} acting…`}
+                </div>
+              );
+            })()}
             <GalaxyMap
               galaxy={state.galaxy}
               empires={allEmpires(state)}

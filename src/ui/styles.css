@@ -330,6 +330,40 @@ button.res-cell:hover:not(:disabled) {
   pointer-events: none;
 }
 
+.phase-banner {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(10, 12, 18, 0.85);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text);
+  letter-spacing: 0.04em;
+  z-index: 4;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+
+.phase-banner-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  animation: phase-dot-pulse 1s ease-in-out infinite;
+}
+
+@keyframes phase-dot-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1.0; }
+}
+
 .galaxy-panel .panel-stats {
   position: absolute;
   bottom: 6px;

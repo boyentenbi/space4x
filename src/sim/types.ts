@@ -290,6 +290,11 @@ export interface GameState {
   // Ordered pairs of warring empires. Each pair is sorted by id so
   // lookups are canonical; membership is symmetric.
   wars: Array<[string, string]>;
+  // Whose phase is currently resolving during a round. Null/undefined
+  // between rounds. The store orchestrates round progression by
+  // dispatching runPhase actions with pacing, advancing this id through
+  // the turn order until it wraps back to null at end-of-round.
+  currentPhaseEmpireId?: string | null;
   eventQueue: PendingEvent[];
   eventLog: Array<{ turn: number; eventId: string; choiceId: string | null; text: string }>;
   // Modal queue: a project just finished for the player and we want to

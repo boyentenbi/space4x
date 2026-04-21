@@ -32,7 +32,9 @@ export type Action =
       expansionism: Expansionism;
       politic: Politic;
     }
-  | { type: "endTurn" }
+  | { type: "endTurn" }            // Synchronous shortcut: run a full round.
+  | { type: "beginRound" }         // Paced round: tick everyone, set currentPhaseEmpireId.
+  | { type: "runPhase" }           // Advance the current empire's phase; finalize if last.
   | { type: "resolveEvent"; eventId: string; choiceId: string }
   | { type: "queueColonize"; byEmpireId: string; targetBodyId: string }
   | { type: "queueEmpireProject"; byEmpireId: string; projectId: string; targetBodyId?: string }
@@ -227,6 +229,7 @@ export function initialState(): GameState {
     aiEmpires: [],
     fleets: {},
     wars: [],
+    currentPhaseEmpireId: null,
     eventQueue: [],
     eventLog: [],
     projectCompletions: [],
@@ -1500,13 +1503,14 @@ function aiPlanProject(draft: GameState, empire: Empire): void {
 // Each hop costs `shipCount` compute from the empire's per-turn budget.
 // If the empire can't afford a hop, the fleet stays put this turn with
 // its route intact and retries next turn.
-function processFleetOrders(draft: GameState): void {
+function processFleetOrders(draft: GameState, onlyEmpireId?: string): void {
   const fleetIds = Object.keys(draft.fleets);
   for (const fid of fleetIds) {
     const fleet = draft.fleets[fid];
     if (!fleet) continue;
     if (!fleet.destinationSystemId) continue;
     if (fleet.shipCount <= 0) continue;
+    if (onlyEmpireId && fleet.empireId !== onlyEmpireId) continue;
     if (fleet.systemId === fleet.destinationSystemId) {
       fleet.destinationSystemId = undefined;
       continue;
@@ -2113,63 +2117,101 @@ export function reduce(state: GameState, action: Action): GameState {
     case "splitFleet":
       return produce(state, (draft) => applySplitFleet(draft, action));
 
+    case "beginRound": {
+      if (state.eventQueue.length > 0) return state;
+      return applyBeginRound(state);
+    }
+
+    case "runPhase": {
+      if (!state.currentPhaseEmpireId) return state;
+      return applyRunPhase(state);
+    }
+
     case "endTurn": {
       if (state.eventQueue.length > 0) return state;
-
-      let next = produce(state, (draft) => {
-        draft.turn += 1;
-        draft.rngSeed = nextSeed(draft.rngSeed);
-
-        const growthRand = mulberry32(draft.rngSeed ^ 0xa5a5a5a5);
-        const diplomacyRand = mulberry32(draft.rngSeed ^ 0xd1910ac7);
-
-        // AI planning before ticks, so newly-queued orders drain this turn.
-        for (const ai of draft.aiEmpires) {
-          aiPlanProject(draft, ai);
-        }
-
-        // Tick every empire (player + AIs).
-        tickEmpire(draft, draft.empire, growthRand);
-        for (const ai of draft.aiEmpires) {
-          tickEmpire(draft, ai, growthRand);
-        }
-
-        // AI diplomacy THEN movement: fresh wars can immediately use
-        // their new freedom to cross borders this same turn.
-        for (const ai of draft.aiEmpires) {
-          aiPlanDiplomacy(draft, ai, diplomacyRand);
-        }
-        for (const ai of draft.aiEmpires) {
-          aiPlanMoves(draft, ai);
-        }
-
-        // Auto-step any fleet carrying a multi-turn route. Player-set
-        // routes live here; AI fleets use immediate-target logic above
-        // but can also follow routes if one is ever assigned.
-        processFleetOrders(draft);
-
-        // Combat in contested systems runs after all empires have
-        // ticked and fleets have moved.
-        resolveCombat(draft);
-
-        // After combat: tick occupation counters on undefended owned
-        // systems and flip any that crossed the threshold. Then
-        // check for eliminations (empires with no systems left).
-        processOccupation(draft);
-        checkEliminations(draft);
-      });
-
-      // Random event for the player only (for now).
-      const rand = mulberry32(next.rngSeed);
-      if (rand() < 0.55) {
-        const event = pickRandomEvent(next, next.rngSeed);
-        if (event) {
-          next = produce(next, (draft) => {
-            draft.eventQueue.push({ eventId: event.id, seed: next.rngSeed });
-          });
-        }
+      // Synchronous cascade — used in tests and as a fallback; the
+      // store orchestrates a paced version for the actual UI.
+      let next = applyBeginRound(state);
+      while (next.currentPhaseEmpireId) {
+        next = applyRunPhase(next);
       }
       return next;
     }
   }
+}
+
+// Per-round kickoff: advance the turn counter, AI project-planning,
+// tick every empire, and arm the phase cycle at the player.
+function applyBeginRound(state: GameState): GameState {
+  return produce(state, (draft) => {
+    draft.turn += 1;
+    draft.rngSeed = nextSeed(draft.rngSeed);
+
+    const growthRand = mulberry32(draft.rngSeed ^ 0xa5a5a5a5);
+
+    // AI project planning runs before ticks so newly-queued orders
+    // drain this turn (mirrors how the player queues before endTurn).
+    for (const ai of draft.aiEmpires) {
+      aiPlanProject(draft, ai);
+    }
+
+    tickEmpire(draft, draft.empire, growthRand);
+    for (const ai of draft.aiEmpires) {
+      tickEmpire(draft, ai, growthRand);
+    }
+
+    draft.currentPhaseEmpireId = draft.empire.id;
+  });
+}
+
+// A single empire's phase: AI decisions (if applicable), step that
+// empire's fleets, resolve combat, advance the phase pointer. When
+// the last empire has acted, finalize the round (occupation, eliminations,
+// random event for the player) and clear the pointer.
+function applyRunPhase(state: GameState): GameState {
+  const currentId = state.currentPhaseEmpireId;
+  if (!currentId) return state;
+
+  let next = produce(state, (draft) => {
+    const isAI = draft.empire.id !== currentId;
+    const diplomacyRand = mulberry32(draft.rngSeed ^ 0xd1910ac7);
+
+    if (isAI) {
+      const ai = draft.aiEmpires.find((e) => e.id === currentId);
+      if (ai) {
+        aiPlanDiplomacy(draft, ai, diplomacyRand);
+        aiPlanMoves(draft, ai);
+      }
+    }
+
+    processFleetOrders(draft, currentId);
+    resolveCombat(draft);
+
+    const order = [draft.empire.id, ...draft.aiEmpires.map((e) => e.id)];
+    const idx = order.indexOf(currentId);
+    const isLast = idx === -1 || idx === order.length - 1;
+    if (isLast) {
+      processOccupation(draft);
+      checkEliminations(draft);
+      draft.currentPhaseEmpireId = null;
+    } else {
+      draft.currentPhaseEmpireId = order[idx + 1];
+    }
+  });
+
+  // Random event pick happens outside produce so it can consult the
+  // post-round rng. Only fires when we've just finalized (no next phase).
+  if (next.currentPhaseEmpireId === null || next.currentPhaseEmpireId === undefined) {
+    const rand = mulberry32(next.rngSeed);
+    if (rand() < 0.55) {
+      const event = pickRandomEvent(next, next.rngSeed);
+      if (event) {
+        next = produce(next, (draft) => {
+          draft.eventQueue.push({ eventId: event.id, seed: next.rngSeed });
+        });
+      }
+    }
+  }
+
+  return next;
 }
