@@ -16,6 +16,7 @@ import type {
   Politic,
   Resources,
   ResourceKey,
+  StarSystem,
 } from "./types";
 
 // Every empire-scoped action carries `byEmpireId` so the player and the
