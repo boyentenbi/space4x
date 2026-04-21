@@ -367,10 +367,11 @@ describe("AI scoreState value function", () => {
     expect(playerScore).toBeLessThan(90);
     // AI score = 1 system × 200 + ship (pragmatist 200 × at-war 1.5
     // = 300, mobile since cap ≥ 1) + 15 political-flow + 200 × 2/3
-    // occupation credit (≈ 133). Total ≈ 648.
+    // occupation credit (≈ 133) − 10 energy upkeep flow (1 ship + 1
+    // outpost = 2 per turn × 5 horizon). Total ≈ 638.
     const aiScore = scoreState(state, "e_ai");
-    expect(aiScore).toBeGreaterThan(640);
-    expect(aiScore).toBeLessThan(655);
+    expect(aiScore).toBeGreaterThan(630);
+    expect(aiScore).toBeLessThan(645);
   });
 
   it("values systems and ships in hammer-equivalent units", () => {
@@ -402,8 +403,9 @@ describe("AI scoreState value function", () => {
     // ship is "mobile"; the other is "stuck" @ 20% value.
     // → 1 × 200 + 1 × 40 = 240.
     // + political/turn baseline × 15 = 15.
-    // Total = 455.
-    expect(scoreState(state, "e_player")).toBe(455);
+    // − energy upkeep (2 ships + 1 outpost = 3) × 5 horizon = −15.
+    // Total = 440.
+    expect(scoreState(state, "e_player")).toBe(440);
   });
 
   it("scoreState increases after queueing colonize on a second body in an owned system", () => {
@@ -898,6 +900,87 @@ describe("per-empire phases", () => {
     // combat — pre-refactor they'd have passed through and survived.
     expect(next.fleets["f_player"]).toBeUndefined();
     expect(next.fleets["f_ai"]).toBeUndefined();
+  });
+});
+
+describe("energy upkeep + deficit", () => {
+  it("a fleet with empire energy at 0 or less doesn't move", () => {
+    // Zero-pop body produces no energy, so fleet + outpost upkeep is
+    // the only draw. Start at 0 energy; after tick, stockpile goes
+    // negative and the fleet can't move.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const mid = makeSystem({ id: "s_mid", bodyIds: [], ownerId: null });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 0 });
+    const empire = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+      resources: { food: 500, energy: 0, political: 20 },
+    });
+    const fleet: Fleet = {
+      id: "f",
+      empireId: "e_player",
+      systemId: "s_home",
+      shipCount: 1,
+      destinationSystemId: "s_mid",
+    };
+    const state = makeState({
+      systems: [home, mid],
+      bodies: [cap],
+      hyperlanes: [["s_home", "s_mid"]],
+      empire,
+      fleets: [fleet],
+    });
+    const next = reduce(state, { type: "endTurn" });
+    // Fleet stayed home, route preserved.
+    expect(next.fleets["f"]?.systemId).toBe("s_home");
+    expect(next.fleets["f"]?.destinationSystemId).toBe("s_mid");
+  });
+
+  it("energy-deficit empire deals zero combat damage", () => {
+    // Two empires share a system, at war. Player has lots of energy;
+    // AI is broke. After combat, the AI should have taken all the
+    // casualties while the player took none.
+    const contested = makeSystem({ id: "s_contest", bodyIds: [], ownerId: null });
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+      resources: { food: 500, energy: 500, political: 20 },
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: null,
+      systemIds: [],
+      resources: { food: 0, energy: 0, political: 0 },
+    });
+    const playerFleet: Fleet = {
+      id: "f_p",
+      empireId: "e_player",
+      systemId: "s_contest",
+      shipCount: 5,
+    };
+    const aiFleet: Fleet = {
+      id: "f_a",
+      empireId: "e_ai",
+      systemId: "s_contest",
+      shipCount: 5,
+    };
+    const state = makeState({
+      systems: [contested, home],
+      bodies: [cap],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [playerFleet, aiFleet],
+      wars: [["e_ai", "e_player"].sort() as [string, string]],
+    });
+    const next = runOnePhase(state);
+    // Player loses nothing (AI dealt 0 damage); AI took proper
+    // attrition from the player's 5 ships.
+    expect(next.fleets["f_p"]?.shipCount).toBe(5);
+    expect((next.fleets["f_a"]?.shipCount ?? 0)).toBeLessThan(5);
   });
 });
 

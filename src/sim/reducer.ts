@@ -1,5 +1,6 @@
 import { current, produce } from "immer";
 import { LEADERS, POLICIES, originById, policyById, projectById, speciesById, traitById, EMPIRE_PROJECTS } from "./content";
+import { BALANCE } from "../content/balance";
 import { pickRandomEvent, resolveEventChoice, RESOURCE_KEYS } from "./events";
 import { generateGalaxy } from "./galaxy";
 import { mulberry32, nextSeed } from "./rng";
@@ -555,6 +556,14 @@ export function resourceBreakdownFor(
       }
     }
   }
+  // Energy upkeep: ships + outposts drain the stockpile each turn.
+  // Shown as negative rows in the breakdown so the deficit is legible.
+  if (resource === "energy") {
+    const shipCost = fleetEnergyUpkeep(state, empire);
+    if (shipCost > 0) flat.push({ label: "Fleet upkeep", value: -shipCost });
+    const outpostCost = outpostEnergyUpkeep(empire);
+    if (outpostCost > 0) flat.push({ label: "Outpost upkeep", value: -outpostCost });
+  }
   const total = perBody.reduce((s, row) => s + row.contribution, 0) + flat.reduce((s, row) => s + row.value, 0);
   return { resource, perBody, flat, total };
 }
@@ -770,6 +779,9 @@ export function perTurnIncomeOf(state: GameState, empire: Empire): Resources {
   }
   // Baseline political tick (empires always get +1 regardless of traits).
   income.political += 1;
+  // Energy upkeep — subtracted so the sidebar delta reflects net flow.
+  income.energy -= fleetEnergyUpkeep(state, empire);
+  income.energy -= outpostEnergyUpkeep(empire);
   return income;
 }
 
@@ -1001,16 +1013,28 @@ function resolveCombat(draft: GameState): void {
     const empireShips: Record<string, number> = {};
     for (const f of fleets) empireShips[f.empireId] = (empireShips[f.empireId] ?? 0) + f.shipCount;
 
+    // Damage DEALT is gated on positive energy — an empire in deficit
+    // deals zero, so its ships are present but harmless this turn.
+    // This is how "target their energy → kneecap their military"
+    // reads in combat: their attack damage vanishes, ours lands.
+    const damageOutMult: Record<string, number> = {};
+    for (const empId of empires) {
+      const emp = empireById(draft, empId);
+      damageOutMult[empId] = !emp || emp.resources.energy <= 0 ? 0 : 1;
+    }
+
     const damageIn: Record<string, number> = {};
     let anyFight = false;
     for (const empId of empires) {
-      let enemyShips = 0;
+      let enemyDamage = 0;
       for (const otherId of empires) {
         if (otherId === empId) continue;
-        if (atWar(draft, empId, otherId)) enemyShips += empireShips[otherId];
+        if (atWar(draft, empId, otherId)) {
+          enemyDamage += empireShips[otherId] * damageOutMult[otherId];
+        }
       }
-      damageIn[empId] = enemyShips * 0.3;
-      if (enemyShips > 0) anyFight = true;
+      damageIn[empId] = enemyDamage * 0.3;
+      if (enemyDamage > 0) anyFight = true;
     }
     if (!anyFight) continue;
 
@@ -1500,8 +1524,20 @@ function killStarvingPop(draft: GameState, empire: Empire): string | null {
   return target.name;
 }
 
+// Per-turn energy cost of an empire's standing fleet.
+export function fleetEnergyUpkeep(state: GameState, empire: Empire): number {
+  return totalFleetShipsFor(state, empire) * BALANCE.shipEnergyUpkeep;
+}
+
+// Per-turn energy cost of each owned system's outpost.
+export function outpostEnergyUpkeep(empire: Empire): number {
+  return empire.systemIds.length * BALANCE.outpostEnergyUpkeep;
+}
+
 function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number): void {
-  // 1. Stock income.
+  // 1. Stock income (net — perTurnIncomeOf already subtracts energy
+  //    upkeep from ships + outposts, so going negative here is the
+  //    signal that fleets can't move / can't deal damage this round).
   const income = perTurnIncomeOf(draft, empire);
   for (const k of RESOURCE_KEYS) {
     empire.resources[k] += income[k];
@@ -1873,6 +1909,10 @@ function processFleetOrders(draft: GameState, onlyEmpireId?: string): void {
     if (!fleet.destinationSystemId) continue;
     if (fleet.shipCount <= 0) continue;
     if (onlyEmpireId && fleet.empireId !== onlyEmpireId) continue;
+    // Empire in energy deficit can't fuel movement. Destination stays
+    // set; the fleet just doesn't step this turn.
+    const fleetOwner = empireById(draft, fleet.empireId);
+    if (!fleetOwner || fleetOwner.resources.energy <= 0) continue;
     if (fleet.systemId === fleet.destinationSystemId) {
       fleet.destinationSystemId = undefined;
       continue;
