@@ -1506,6 +1506,22 @@ export function scoreState(state: GameState, empireId: string): number {
     const potential = order.hammersRequired * 0.7 * (0.3 + 0.7 * progress);
     score += potential;
   }
+  // Occupations — partial transfers in flight. A system 2 turns into a
+  // 3-turn siege is 2/3 of the way to changing hands; credit/debit both
+  // sides accordingly so the AI sees conquering and defending as real
+  // value changes.
+  for (const sys of Object.values(state.galaxy.systems)) {
+    const occ = sys.occupation;
+    if (!occ) continue;
+    const progress = occ.turns / OCCUPATION_TURNS_TO_FLIP;
+    if (occ.empireId === empireId) {
+      // We're the occupier — partial gain of an enemy system.
+      score += COLONIZE_HAMMERS * progress;
+    } else if (sys.ownerId === empireId) {
+      // We're being occupied — partial loss of our system.
+      score -= COLONIZE_HAMMERS * progress;
+    }
+  }
   return score;
 }
 

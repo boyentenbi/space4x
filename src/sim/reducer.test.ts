@@ -31,13 +31,12 @@ function makeBody(overrides: Partial<Body> & { id: string; systemId: string }): 
 
 function makeSystem(overrides: Partial<StarSystem> & { id: string; bodyIds: string[] }): StarSystem {
   return {
-    id: overrides.id,
-    name: overrides.name ?? overrides.id,
-    q: overrides.q ?? 0,
-    r: overrides.r ?? 0,
-    starKind: overrides.starKind ?? "yellow_main",
-    bodyIds: overrides.bodyIds,
-    ownerId: overrides.ownerId ?? null,
+    name: overrides.id,
+    q: 0,
+    r: 0,
+    starKind: "yellow_main",
+    ownerId: null,
+    ...overrides,
   };
 }
 
@@ -301,6 +300,44 @@ describe("setFleetDestination action", () => {
 });
 
 describe("AI scoreState value function", () => {
+  it("partially credits in-progress occupations on both sides", () => {
+    // System is owned by e_player but e_ai has a 2-turn occupation going.
+    const contested = makeSystem({
+      id: "s_contested",
+      bodyIds: [],
+      ownerId: "e_player",
+      occupation: { empireId: "e_ai", turns: 2 },
+    });
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 10 });
+    const player = makeEmpire({
+      id: "e_player",
+      systemIds: [contested.id],
+      resources: { food: 0, energy: 0, political: 0 },
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      systemIds: [aiHome.id],
+      resources: { food: 0, energy: 0, political: 0 },
+    });
+    const state = makeState({
+      systems: [contested, aiHome],
+      bodies: [aiBody],
+      empire: player,
+      aiEmpires: [ai],
+    });
+    // Player raw = 1 system × 200 = 200; occupation debit = 200 × 2/3 ≈ 133.3.
+    // So player score ≈ 66.67.
+    const playerScore = scoreState(state, "e_player");
+    expect(playerScore).toBeGreaterThan(60);
+    expect(playerScore).toBeLessThan(75);
+    // AI raw = 1 system × 200 = 200; occupation credit = 200 × 2/3 ≈ 133.3.
+    // So AI score ≈ 333.3.
+    const aiScore = scoreState(state, "e_ai");
+    expect(aiScore).toBeGreaterThan(325);
+    expect(aiScore).toBeLessThan(340);
+  });
+
   it("values systems and ships in hammer-equivalent units", () => {
     const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
     const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
