@@ -442,6 +442,84 @@ describe("combat chronicle", () => {
   });
 });
 
+describe("AI fleet routing", () => {
+  // Minimal 2-hex map: AI home + enemy system, one hyperlane between.
+  // Nothing else exists so any "stay / move / arrive" outcome is
+  // unambiguous — no third system the AI might route to instead.
+  function twoHexSetup(opts: {
+    aiFleetAt: "s_ai" | "s_target";
+    occupation?: { turns: number };
+  }): GameState {
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const target = makeSystem({
+      id: "s_target",
+      bodyIds: ["b_target"],
+      ownerId: "e_player",
+      ...(opts.occupation
+        ? { occupation: { empireId: "e_ai", turns: opts.occupation.turns } }
+        : {}),
+    });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const targetBody = makeBody({ id: "b_target", systemId: "s_target", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_target",
+      systemIds: ["s_target"],
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_ai",
+      systemIds: ["s_ai"],
+      expansionism: "pragmatist",
+    });
+    const aiFleet: Fleet = {
+      id: "f_ai",
+      empireId: "e_ai",
+      systemId: opts.aiFleetAt,
+      shipCount: 1,
+    };
+    return makeState({
+      systems: [aiHome, target],
+      bodies: [aiBody, targetBody],
+      hyperlanes: [["s_ai", "s_target"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [aiFleet],
+      wars: [["e_ai", "e_player"].sort() as [string, string]],
+    });
+  }
+
+  it("routes a fleet to an adjacent at-war enemy system", () => {
+    const state = twoHexSetup({ aiFleetAt: "s_ai" });
+    const next = reduce(state, { type: "endTurn" });
+    expect(next.fleets["f_ai"]?.systemId).toBe("s_target");
+  });
+
+  it("keeps an AI fleet in place while it's partway through occupying (turns=1)", () => {
+    const state = twoHexSetup({
+      aiFleetAt: "s_target",
+      occupation: { turns: 1 },
+    });
+    const next = reduce(state, { type: "endTurn" });
+    // Fleet must still be at s_target and still own the siege.
+    expect(next.fleets["f_ai"]?.systemId).toBe("s_target");
+    expect(next.galaxy.systems["s_target"]?.occupation?.empireId).toBe("e_ai");
+    expect(next.galaxy.systems["s_target"]?.occupation?.turns).toBe(2);
+  });
+
+  it("keeps an AI fleet in place while it's partway through occupying (turns=2)", () => {
+    const state = twoHexSetup({
+      aiFleetAt: "s_target",
+      occupation: { turns: 2 },
+    });
+    const next = reduce(state, { type: "endTurn" });
+    // Siege completes this round — ownership flips to AI.
+    expect(next.fleets["f_ai"]?.systemId).toBe("s_target");
+    expect(next.galaxy.systems["s_target"]?.ownerId).toBe("e_ai");
+    expect(next.galaxy.systems["s_target"]?.occupation).toBeUndefined();
+  });
+});
+
 describe("per-empire phases", () => {
   it("processes player first, then AIs, clearing currentPhaseEmpireId at end", () => {
     const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });

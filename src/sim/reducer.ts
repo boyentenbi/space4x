@@ -1753,6 +1753,19 @@ function aiPlanMoves(draft: GameState, empire: Empire): void {
   );
 
   for (const fleet of ourFleets) {
+    // Don't abandon an ongoing siege — if we're the active occupier of
+    // the system we're sitting in, stay and let the occupation counter
+    // continue ticking. Clear any leftover destination and skip.
+    const sysHere = draft.galaxy.systems[fleet.systemId];
+    if (sysHere?.occupation?.empireId === empire.id) {
+      applySetFleetDestination(draft, {
+        byEmpireId: empire.id,
+        fleetId: fleet.id,
+        toSystemId: null,
+      });
+      continue;
+    }
+
     // Single BFS from the fleet, stopping at the nearest enemy system.
     const start = fleet.systemId;
     const visited = new Set<string>([start]);
