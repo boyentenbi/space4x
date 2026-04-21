@@ -262,9 +262,16 @@ function spawnShipsInSystem(
   count: number,
 ): void {
   if (count <= 0) return;
-  // Look for an existing fleet for this empire at this system.
+  // Merge into an existing same-empire fleet at this system ONLY if
+  // that fleet isn't in the middle of a route. Dropping the new ship
+  // onto a moving fleet would silently inflate its ship count past the
+  // compute budget and cancel its move — confusing for the player.
   for (const f of Object.values(draft.fleets)) {
-    if (f.empireId === empireId && f.systemId === systemId) {
+    if (
+      f.empireId === empireId &&
+      f.systemId === systemId &&
+      !f.destinationSystemId
+    ) {
       f.shipCount += count;
       return;
     }
