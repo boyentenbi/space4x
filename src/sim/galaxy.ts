@@ -57,10 +57,10 @@ function rollStarKind(r: Rand): StarKind {
 const MAX_POPS_BY_HAB: Record<HabitabilityTier, [number, number]> = {
   garden: [80, 120],
   temperate: [40, 70],
-  harsh: [10, 20],
-  frozen: [5, 12],
-  molten: [5, 12],
-  barren: [5, 12],
+  harsh: [4, 8],
+  frozen: [2, 5],
+  molten: [2, 5],
+  barren: [2, 5],
   stellar: [0, 0], // stars hold no pops
 };
 
