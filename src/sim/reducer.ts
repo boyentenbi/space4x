@@ -2207,17 +2207,21 @@ export const TILE_VALUE = 10;
 // since empty space is potential, not production.
 export const MAX_POPS_VALUE = 8;
 
-// Per-archetype intrinsic value of a ship, measured in the same
-// hammer-equivalent units as COLONIZE_HAMMERS. Scaled alongside the
-// 2.5× hammer rebase so a frigate (500 hammers to build) reads to
-// the AI as roughly one-system-equivalent of intrinsic value, with
-// conquerors above that and pragmatists below.
+// Per-archetype intrinsic value of a ship, measured in hammer-
+// equivalent units. Derived from the actual build_frigate cost so
+// retuning the project content automatically retunes the AI's ship
+// valuation. Conquerors price a ship above its raw cost (they value
+// fleet pressure); pragmatists at cost; isolationists slightly
+// above (they want enough to deter, not raid).
+const SHIP_VALUE_MULT: Record<Expansionism, number> = {
+  conqueror: 1.5,
+  pragmatist: 1.0,
+  isolationist: 1.25,
+};
 function shipValueFor(empire: Empire): number {
-  switch (empire.expansionism) {
-    case "conqueror":    return 750;
-    case "pragmatist":   return 500;
-    case "isolationist": return 625;
-  }
+  const frigate = projectById("build_frigate");
+  const cost = frigate?.hammersRequired ?? COLONIZE_HAMMERS;
+  return cost * SHIP_VALUE_MULT[empire.expansionism];
 }
 
 export function scoreState(state: GameState, empireId: string): number {
