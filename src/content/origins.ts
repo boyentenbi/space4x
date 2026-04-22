@@ -32,10 +32,11 @@ export const ORIGINS: Origin[] = [
     startingPops: 10,
     startingStoryModifiers: {
       colony_seeders: [
-        // Hives pack vertically; plus every fertile adult breeds,
-        // so the swarm's organic growth runs a notch faster than a
-        // standard sapient's.
-        { kind: "maxPopsMult", value: 1.5 },
+        // Every fertile adult breeds, so the swarm's organic growth
+        // runs a notch faster than a standard sapient's. Pop cap is
+        // intentionally left unchanged — bumping maxPops would also
+        // push the (1 − pops/cap) damping back and effectively
+        // compound with the growth bonus, which we don't want here.
         { kind: "popGrowthMult", value: 1.15 },
       ],
     },
