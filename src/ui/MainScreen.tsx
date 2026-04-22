@@ -472,6 +472,16 @@ export function MainScreen() {
   const dispatch = useGame((s) => s.dispatch);
   const reset = useGame((s) => s.reset);
   const endTurn = useGame((s) => s.endTurn);
+  const goBack = useGame((s) => s.goBack);
+  const goForward = useGame((s) => s.goForward);
+  const autoplayOn = useGame((s) => s.autoplayOn);
+  const setAutoplay = useGame((s) => s.setAutoplay);
+  const historyIndex = useGame((s) => s.historyIndex);
+  const historyLen = useGame((s) => s.history.length);
+  const canGoBack = historyIndex > 0;
+  const canGoForward =
+    historyIndex < historyLen - 1 ||
+    (!state.currentPhaseEmpireId && state.eventQueue.length === 0 && !state.gameOver);
 
   const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -491,6 +501,28 @@ export function MainScreen() {
   const origin = originById(state.empire.originId);
   const species = speciesById(state.empire.speciesId);
   const pendingEvent = state.eventQueue[0] ?? null;
+
+  // Arrow-key navigation: hold left to step backwards through history,
+  // hold right to step forward (scrubbing history, or advancing a new
+  // turn when already at the head). Browser auto-repeats keydown while
+  // held, so we don't need our own timer.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Ignore when typing into inputs / textareas so shortcut doesn't
+      // fight the user in text fields.
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        goBack();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        goForward();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [goBack, goForward]);
 
   const capital = state.empire.capitalBodyId
     ? state.galaxy.bodies[state.empire.capitalBodyId]
@@ -636,6 +668,36 @@ export function MainScreen() {
           <span className="turn-num">T{state.turn}</span>
           <span>End Turn</span>
         </button>
+
+        {/* Time-travel + autoplay row. Back/forward step through the
+            history ring (or advance a new turn when already at the
+            head); autoplay loops endTurn on a timer. Keyboard: hold
+            ← / → to scrub without clicking. */}
+        <div className="time-controls">
+          <button
+            className="time-btn"
+            onClick={goBack}
+            disabled={!canGoBack}
+            title="Back one turn (←)"
+          >
+            ←
+          </button>
+          <button
+            className={`time-btn autoplay ${autoplayOn ? "on" : ""}`}
+            onClick={() => setAutoplay(!autoplayOn)}
+            title="Toggle autoplay"
+          >
+            {autoplayOn ? "⏸" : "▶"}
+          </button>
+          <button
+            className="time-btn"
+            onClick={goForward}
+            disabled={!canGoForward}
+            title="Forward one turn (→)"
+          >
+            →
+          </button>
+        </div>
 
         <div className="res-grid">
           {RESOURCE_ORDER.map((k) => (

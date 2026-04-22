@@ -131,6 +131,41 @@ button:disabled {
   color: var(--accent);
 }
 
+/* Time-travel controls: thin pill row of back / autoplay / forward
+   buttons sitting below the End Turn card. */
+.time-controls {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+}
+.time-btn {
+  flex: 1 1 0;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.time-btn:hover:not(:disabled) {
+  background: rgba(126, 200, 255, 0.12);
+}
+.time-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.time-btn.autoplay.on {
+  background: rgba(126, 200, 255, 0.22);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+
 /* ==================================================================
    Sidebar resource grid — 2x3, compact cells.
    ================================================================== */
