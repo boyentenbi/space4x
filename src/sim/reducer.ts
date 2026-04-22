@@ -2452,15 +2452,23 @@ function aiEnumerateProjectActions(state: GameState, empire: Empire): Action[] {
     });
   }
 
-  // Archetype character filter — isolationists refuse to claim new
-  // systems (either by outpost or any future colonize-into-unclaimed
-  // mechanic). Applied as a post-filter so the enumerator itself stays
-  // content-driven; character is a separate layer.
+  // Archetype character filter — isolationists are stingy about
+  // claiming new systems, but they'll still reach out for worthwhile
+  // prizes. Refuse outposts unless the target star's system has at
+  // least one garden or temperate body (i.e. actually worth settling),
+  // which keeps them passive in peripheral space while still letting
+  // them grab juicy frontiers.
   if (empire.expansionism === "isolationist") {
     return actions.filter((a) => {
       if (a.type !== "queueEmpireProject") return true;
       if (a.projectId !== "build_outpost") return true;
-      return false;
+      const star = a.targetBodyId ? state.galaxy.bodies[a.targetBodyId] : null;
+      const sys = star ? state.galaxy.systems[star.systemId] : null;
+      if (!sys) return false;
+      return sys.bodyIds.some((bid) => {
+        const b = state.galaxy.bodies[bid];
+        return b && (b.habitability === "garden" || b.habitability === "temperate");
+      });
     });
   }
   return actions;
