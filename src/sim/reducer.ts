@@ -346,9 +346,13 @@ export function growthEstimate(
 // Each leader brings their own portrait + archetype + name/manifesto.
 // The origin is chosen per species (simple mapping for MVP — eventually
 // leaders can carry their own origin preference too).
+// Default origin picked when seeding an AI of the given species.
+// Must satisfy the origin's allowedSpeciesIds — e.g. insectoids
+// can't use Steady Evolution (humans-only), so they default to
+// Colony Seeders.
 const AI_ORIGIN_BY_SPECIES: Record<string, string> = {
   humans: "steady_evolution",
-  insectoid: "steady_evolution",
+  insectoid: "colony_seeders",
   machine: "graceful_handover",
 };
 const AI_COLOR_OVERRIDES: Record<string, string> = {
