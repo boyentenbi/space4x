@@ -504,24 +504,52 @@ export function MainScreen() {
 
   // Arrow-key navigation: hold left to step backwards through history,
   // hold right to step forward (scrubbing history, or advancing a new
-  // turn when already at the head). Browser auto-repeats keydown while
-  // held, so we don't need our own timer.
+  // turn when already at the head). Uses our own keydown→interval
+  // repeat (OS auto-repeat is typically a 300-500ms delay then ~30/s,
+  // too slow for scrubbing dozens of turns). Step every 40ms while
+  // held — ~25 turns/second.
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      // Ignore when typing into inputs / textareas so shortcut doesn't
-      // fight the user in text fields.
+    const STEP_INTERVAL_MS = 40;
+    const held: Record<string, ReturnType<typeof setInterval> | null> = {
+      ArrowLeft: null,
+      ArrowRight: null,
+    };
+    const stepFor = (key: string) => {
+      if (key === "ArrowLeft") goBack();
+      else if (key === "ArrowRight") goForward();
+    };
+    const onDown = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        goBack();
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        goForward();
+      e.preventDefault();
+      if (held[e.key]) return; // ignore OS auto-repeats while held
+      stepFor(e.key);
+      held[e.key] = setInterval(() => stepFor(e.key), STEP_INTERVAL_MS);
+    };
+    const onUp = (e: KeyboardEvent) => {
+      const timer = held[e.key];
+      if (timer) {
+        clearInterval(timer);
+        held[e.key] = null;
       }
     };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    const onBlur = () => {
+      for (const k of Object.keys(held)) {
+        const timer = held[k];
+        if (timer) clearInterval(timer);
+        held[k] = null;
+      }
+    };
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+      window.removeEventListener("blur", onBlur);
+      onBlur();
+    };
   }, [goBack, goForward]);
 
   const capital = state.empire.capitalBodyId

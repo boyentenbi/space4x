@@ -6,9 +6,9 @@ import type { GameState } from "./sim/types";
 const STORAGE_KEY = "space4x:save:v22";
 
 // Cap on the state history ring. Each end-turn + each dispatched
-// action pushes one entry; 200 is enough for the player to scrub
-// back across a meaningful chunk of play without bloating memory.
-const HISTORY_MAX = 200;
+// action pushes one entry. Set generously — a GameState is not huge
+// and scrubbing back across a long session is a useful dev loop.
+const HISTORY_MAX = 1000;
 
 function loadSaved(): GameState | null {
   try {
