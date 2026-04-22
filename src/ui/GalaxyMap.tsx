@@ -219,8 +219,12 @@ export function GalaxyMap({
 
   // Per-empire perimeter + interior edges so each empire's territory
   // renders as one contiguous region with faint internal lines.
+  // perimeterSegments also keeps the originating systemId alongside
+  // each edge, which the split-component renderer uses to colour the
+  // outline per-region instead of per-empire.
   const perimeterByOwner = new Map<string, Edge[]>();
   const interiorByOwner = new Map<string, Edge[]>();
+  const perimeterSegments: Array<{ sysId: string; x1: number; y1: number; x2: number; y2: number }> = [];
   for (const sys of systems) {
     const ownerId = sys.ownerId;
     if (!ownerId) continue;
@@ -241,6 +245,7 @@ export function GalaxyMap({
       } else {
         if (!perimeterByOwner.has(ownerId)) perimeterByOwner.set(ownerId, []);
         perimeterByOwner.get(ownerId)!.push({ x1: ax, y1: ay, x2: bx, y2: by });
+        perimeterSegments.push({ sysId: sys.id, x1: ax, y1: ay, x2: bx, y2: by });
       }
     }
   }
@@ -314,90 +319,113 @@ export function GalaxyMap({
         );
       })()}
 
-      {/* Territory fill: one translucent blob per owner. */}
-      <g className="territory-fill">
-        {systems.map((sys) => {
+      {/* Component coloring: when the player empire is split into 2+
+          connected regions, each region gets its own tint on the
+          territory fill and perimeter instead of the empire's base
+          colour. For single-component empires (and for every other
+          empire), ownership colour is used unchanged. */}
+      {(() => {
+        const splitIntoComponents =
+          !!playerComponents && new Set(playerComponents.values()).size >= 2;
+        // Resolve the color used to fill / outline the given system.
+        const colorFor = (sys: StarSystem): string | null => {
           if (!sys.ownerId) return null;
           const empire = empireById.get(sys.ownerId);
           if (!empire) return null;
-          const { x, y } = hexToPixel(sys.q, sys.r);
-          return (
-            <polygon
-              key={`fill-${sys.id}`}
-              points={polygonPoints(hexCorners(x, y, HEX_SIZE - 1))}
-              fill={`${empire.color}22`}
-              stroke="none"
-            />
-          );
-        })}
-      </g>
-
-      {/* Interior edges between hexes owned by the same empire — faint. */}
-      <g className="territory-interior">
-        {Array.from(interiorByOwner.entries()).flatMap(([ownerId, edges]) => {
-          const empire = empireById.get(ownerId);
-          if (!empire) return [];
-          return buildPolylines(edges).map((pl, i) => (
-            <path
-              key={`${ownerId}-i-${i}`}
-              d={polylineD(pl)}
-              fill="none"
-              stroke={empire.color}
-              strokeWidth={0.6}
-              strokeLinejoin="round"
-              opacity={0.35}
-            />
-          ));
-        })}
-      </g>
-
-      {/* Perimeter outline per owner. */}
-      <g className="territory-border">
-        {Array.from(perimeterByOwner.entries()).flatMap(([ownerId, edges]) => {
-          const empire = empireById.get(ownerId);
-          if (!empire) return [];
-          return buildPolylines(edges).map((pl, i) => (
-            <path
-              key={`${ownerId}-p-${i}`}
-              d={polylineD(pl)}
-              fill="none"
-              stroke={empire.color}
-              strokeWidth={1.6}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-            />
-          ));
-        })}
-      </g>
-
-      {/* Component indicator: a small colored ring inside each player-
-          owned hex, with a distinct colour per connected component.
-          Only rendered when the player's empire is actually split —
-          i.e., there are 2+ components. For single-component empires
-          the ring would carry no information, so it's suppressed. */}
-      {playerComponents && (() => {
-        const ids = new Set(playerComponents.values());
-        if (ids.size < 2) return null;
+          if (splitIntoComponents) {
+            const cid = playerComponents?.get(sys.id);
+            if (cid) return componentColor(cid);
+          }
+          return empire.color;
+        };
         return (
-          <g className="territory-components">
-            {systems.map((sys) => {
-              const cid = playerComponents.get(sys.id);
-              if (!cid) return null;
-              const { x, y } = hexToPixel(sys.q, sys.r);
-              return (
-                <circle
-                  key={`comp-${sys.id}`}
-                  cx={x}
-                  cy={y}
-                  r={HEX_SIZE * 0.55}
-                  fill="none"
-                  stroke={componentColor(cid)}
-                  strokeWidth={1.5}
-                  opacity={0.85}
-                />
-              );
-            })}
-          </g>
+          <>
+            {/* Territory fill: one translucent blob per owner/component. */}
+            <g className="territory-fill">
+              {systems.map((sys) => {
+                const c = colorFor(sys);
+                if (!c) return null;
+                const { x, y } = hexToPixel(sys.q, sys.r);
+                return (
+                  <polygon
+                    key={`fill-${sys.id}`}
+                    points={polygonPoints(hexCorners(x, y, HEX_SIZE - 1))}
+                    fill={`${c}33`}
+                    stroke="none"
+                  />
+                );
+              })}
+            </g>
+
+            {/* Interior edges: one faint line per cross-hex edge, coloured
+                by the owning empire (or per-component when split). Edges
+                between two different-component hexes are left empire-
+                coloured so the split reads visually through the boundary. */}
+            <g className="territory-interior">
+              {Array.from(interiorByOwner.entries()).flatMap(([ownerId, edges]) => {
+                const empire = empireById.get(ownerId);
+                if (!empire) return [];
+                return buildPolylines(edges).map((pl, i) => (
+                  <path
+                    key={`${ownerId}-i-${i}`}
+                    d={polylineD(pl)}
+                    fill="none"
+                    stroke={empire.color}
+                    strokeWidth={0.6}
+                    strokeLinejoin="round"
+                    opacity={0.35}
+                  />
+                ));
+              })}
+            </g>
+
+            {/* Perimeter: outline per system. For the player-when-split
+                case we render per-hex outline segments keyed by each
+                system's component colour, so the border visibly changes
+                between regions. Otherwise fall back to the empire-wide
+                polyline outline the map has always used. */}
+            {splitIntoComponents ? (
+              <g className="territory-border">
+                {perimeterSegments.map(({ sysId, x1, y1, x2, y2 }, i) => {
+                  const sys = galaxy.systems[sysId];
+                  if (!sys) return null;
+                  const c = colorFor(sys);
+                  if (!c) return null;
+                  return (
+                    <line
+                      key={`border-seg-${i}`}
+                      x1={x1}
+                      y1={y1}
+                      x2={x2}
+                      y2={y2}
+                      stroke={c}
+                      strokeWidth={1.4}
+                      strokeLinecap="round"
+                      opacity={0.9}
+                    />
+                  );
+                })}
+              </g>
+            ) : (
+              <g className="territory-border">
+                {Array.from(perimeterByOwner.entries()).flatMap(([ownerId, edges]) => {
+                  const empire = empireById.get(ownerId);
+                  if (!empire) return [];
+                  return buildPolylines(edges).map((pl, i) => (
+                    <path
+                      key={`${ownerId}-p-${i}`}
+                      d={polylineD(pl)}
+                      fill="none"
+                      stroke={empire.color}
+                      strokeWidth={1.6}
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                    />
+                  ));
+                })}
+              </g>
+            )}
+          </>
         );
       })()}
 

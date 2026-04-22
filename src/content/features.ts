@@ -11,20 +11,17 @@ export const FEATURES: Feature[] = [
     description:
       "A colossal reproductive caste enthroned beneath the hive. Her output is the empire's entire reproductive supply — ordinary workers lay nothing, so every egg that hatches somewhere in your territory came, in the end, from her. She gives the swarm a decisive early lead, but her flat output doesn't scale; the only path past her is to absorb species that can breed on their own.",
     art: "/projects/brood_mother.png",
-    modifiers: [
-      // Workers don't reproduce; the queen supplies everything.
-      // Organic growth is zeroed empire-wide, so the only way to
-      // grow past the queen's flat output is to conquer another
-      // species whose pops can reproduce.
+    empireModifiers: [
+      // Workers empire-wide don't reproduce — no hive can breed
+      // without her. Organic growth is zeroed everywhere.
       { kind: "popGrowthMult", value: 0 },
-      // +1 pop/turn per body. Fantastic early-game (a 3-body hive
-      // sees +3 pops/turn out of a starting 30), but linear with
-      // body count — an organic empire compounding over pops will
-      // overtake this once it's established.
+    ],
+    bodyModifiers: [
+      // She lays eggs where she lives, not in every nest. +1 pop/
+      // turn only on the body she's installed on. Linear with
+      // feature count (i.e. currently 1), so an organic empire
+      // compounding over its pops will eventually overtake this.
       { kind: "popGrowthAdd", value: 1 },
-      // No food upkeep: she's meant to be a generous early-game
-      // boost, not a costly investment. Her limit is structural
-      // (she doesn't scale), not economic.
     ],
   },
 ];

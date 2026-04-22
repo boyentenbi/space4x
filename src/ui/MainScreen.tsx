@@ -360,6 +360,10 @@ function BodyRow({
           {body.features.map((fid) => {
             const feat = featureById(fid);
             if (!feat) return null;
+            const allMods = [
+              ...(feat.empireModifiers ?? []),
+              ...(feat.bodyModifiers ?? []),
+            ];
             return (
               <div key={fid} className="feature-card" title={feat.description}>
                 <div className="feature-card-head">
@@ -368,9 +372,9 @@ function BodyRow({
                   )}
                   <span className="feature-card-name">{feat.name}</span>
                 </div>
-                {feat.modifiers.length > 0 && (
+                {allMods.length > 0 && (
                   <div className="feature-card-mods">
-                    {feat.modifiers.map((m, i) => (
+                    {allMods.map((m, i) => (
                       <ModifierChip key={i} mod={m} />
                     ))}
                   </div>

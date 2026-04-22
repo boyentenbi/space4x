@@ -288,11 +288,16 @@ export const BASE_ORGANIC_GROWTH_RATE = Math.pow(2, 1 / ORGANIC_DOUBLING_TURNS) 
 // Deterministic per-turn pop delta for one body given an empire's
 // current modifiers. Returns 0 for uncolonized, full, or food-starved
 // bodies. Units: pops/turn (fractional).
+//
+// Empire-wide modifiers (species, origin, policies, feature
+// empireModifiers) affect every body; feature bodyModifiers add
+// only on the body they're installed on.
 export function bodyGrowthRate(empire: Empire, body: Body): number {
   const cap = maxPopsFor(empire, body);
   if (cap <= 0 || body.pops <= 0 || body.pops >= cap) return 0;
   const organic = BASE_ORGANIC_GROWTH_RATE * popGrowthMultiplier(empire) * body.pops;
-  const additive = popGrowthAdditive(empire);
+  const bodyMods = bodyFeatureModifiers(body);
+  const additive = popGrowthAdditive(empire) + sumDelta(bodyMods, "popGrowthAdd");
   const headroom = (cap - body.pops) / cap;
   return Math.max(0, (organic + additive) * headroom);
 }
@@ -550,6 +555,10 @@ export function politicModifiers(p: Politic): Modifier[] {
 // (start of tickEmpire) and at state-change points (newGame, conquest)
 // so the empire's effective modifier set always matches the features
 // it actually controls — no drift if a body changes hands.
+//
+// Only a feature's *empireModifiers* are stamped here. Its
+// bodyModifiers stay local and are applied via bodyFeatureModifiers
+// at growth-calc time; they don't leak into empireModifiers().
 export function syncFeatureModifiers(state: GameState, empire: Empire): void {
   for (const key of Object.keys(empire.storyModifiers)) {
     if (key.startsWith("feature:")) delete empire.storyModifiers[key];
@@ -557,10 +566,23 @@ export function syncFeatureModifiers(state: GameState, empire: Empire): void {
   for (const body of ownedBodiesOf(state, empire)) {
     for (const fid of body.features ?? []) {
       const feat = featureById(fid);
-      if (!feat) continue;
-      empire.storyModifiers[`feature:${fid}`] = [...feat.modifiers];
+      if (!feat || !feat.empireModifiers || feat.empireModifiers.length === 0) continue;
+      empire.storyModifiers[`feature:${fid}`] = [...feat.empireModifiers];
     }
   }
+}
+
+// Modifiers contributed by every feature *installed on this body* —
+// applied only to calculations for this specific body (the queen
+// lays where she lives, not across the whole empire).
+function bodyFeatureModifiers(body: Body): Modifier[] {
+  const out: Modifier[] = [];
+  for (const fid of body.features ?? []) {
+    const feat = featureById(fid);
+    if (!feat || !feat.bodyModifiers) continue;
+    out.push(...feat.bodyModifiers);
+  }
+  return out;
 }
 
 // All modifiers that apply to an empire: species innates + trait mods +
@@ -2075,7 +2097,10 @@ function tickEmpire(draft: GameState, empire: Empire): void {
       if (pool.food <= 0) continue;
       const headroom = cap > 0 ? (cap - body.pops) / cap : 0;
       const organic = BASE_ORGANIC_GROWTH_RATE * growthMult * body.pops;
-      const delta = (organic + growthAdd) * headroom;
+      // Body-local additive (e.g. the queen on her host body) stacks
+      // on top of the empire-wide additive pool.
+      const localAdd = sumDelta(bodyFeatureModifiers(body), "popGrowthAdd");
+      const delta = (organic + growthAdd + localAdd) * headroom;
       if (delta <= 0) continue;
       const capped = Math.min(delta, cap - body.pops);
       body.pops += capped;

@@ -220,15 +220,20 @@ export interface Origin {
 // storyModifiers under the key "policy:<id>".
 // Content-defined feature. Features are physical installations that
 // live on a specific body — a Brood Mother, a Precursor Vault, an
-// Orbital Habitat. They contribute their `modifiers` to the owning
-// empire while the body is in their hands, and survive conquest
-// (the infrastructure stays; the conqueror inherits its effect).
+// Orbital Habitat. Modifiers come in two scopes:
+//   - empireModifiers: apply empire-wide while the feature is owned
+//     (e.g. "all hive workers stop reproducing").
+//   - bodyModifiers: apply only to calculations on the host body
+//     (e.g. "this body gains +1 pop/turn flat" — the queen only
+//     lays where she's enthroned).
+// Features survive conquest (the infrastructure is physically there).
 export interface Feature {
   id: string;
   name: string;
   description: string;
   art?: string;
-  modifiers: Modifier[];
+  empireModifiers?: Modifier[];
+  bodyModifiers?: Modifier[];
 }
 
 export interface Policy {
