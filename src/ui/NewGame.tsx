@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { ORIGINS, SPECIES, TRAITS } from "../sim/content";
+import { FEATURES, ORIGINS, SPECIES, TRAITS } from "../sim/content";
 import { expansionismModifiers, politicModifiers } from "../sim/reducer";
-import type { Expansionism, Politic } from "../sim/types";
+import type { Expansionism, Modifier, Politic } from "../sim/types";
 import { useGame } from "../store";
 import { Thumb } from "./Thumb";
 import { ModifierChip } from "./modifierUi";
@@ -196,7 +196,22 @@ export function NewGame() {
           // Flatten every starter story-modifier bundle into one row of
           // chips so the player can see the origin's mechanical impact
           // (growth rates, caps, cost deltas) without reading paragraphs.
-          const mods = Object.values(o.startingStoryModifiers ?? {}).flat();
+          // Also pull in modifiers from any starter Features (Brood
+          // Mother, etc.) so an origin like Matriarchal Hive — which
+          // grants its mechanics via a feature, not a story bundle —
+          // doesn't read as a blank row.
+          const storyMods = Object.values(o.startingStoryModifiers ?? {}).flat();
+          const featureMods: Modifier[] = (o.startingFeatures ?? []).flatMap(
+            (fid) => {
+              const feat = FEATURES.find((f) => f.id === fid);
+              if (!feat) return [];
+              return [
+                ...(feat.empireModifiers ?? []),
+                ...(feat.bodyModifiers ?? []),
+              ];
+            },
+          );
+          const mods = [...storyMods, ...featureMods];
           return (
             <button
               key={o.id}

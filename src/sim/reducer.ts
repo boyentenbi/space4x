@@ -665,6 +665,13 @@ function flatEmpireIncome(mods: Modifier[], resource: ResourceKey): number {
 // Subsidies) layer on top via foodUpkeepDelta.
 export const FOOD_UPKEEP_PER_POP = 0.5;
 
+// Pops drift between bodies in the same connected component each
+// turn at this rate (per component). Lets concentrated growth on
+// one body — e.g. the Brood Mother's flat output stacking up at
+// the capital — gradually distribute across the empire's other
+// nests without needing manual transfer orders.
+export const MIGRATION_RATE_PER_COMPONENT = 1;
+
 // Effective food upkeep per pop, clamped at 0.
 export function foodUpkeepPerPop(empire: Empire): number {
   return Math.max(0, FOOD_UPKEEP_PER_POP + sumDelta(empireModifiers(empire), "foodUpkeepDelta"));
@@ -2108,7 +2115,44 @@ function tickEmpire(draft: GameState, empire: Empire): void {
     }
   }
 
-  // 7. Per-component famine. Each component with food < 0 starves one
+  // 7. Internal migration. Within each connected component, drift
+  //    MIGRATION_RATE_PER_COMPONENT pops/turn from the most-populated
+  //    body toward the body with the most absolute headroom. Models
+  //    natural movement along supply lines and lets concentrated
+  //    growth (e.g. the Brood Mother's capital-only output) gradually
+  //    spread to the empire's other colonies without manual orders.
+  for (const cid of compIds) {
+    const inComponent: Body[] = [];
+    for (const body of ownedBodiesOf(draft, empire)) {
+      if (components.get(body.systemId) !== cid) continue;
+      inComponent.push(body);
+    }
+    if (inComponent.length < 2) continue;
+    let source: Body | null = null;
+    let sink: Body | null = null;
+    for (const b of inComponent) {
+      const cap = maxPopsFor(empire, b);
+      if (b.pops >= 1 && (!source || b.pops > source.pops)) source = b;
+      // Sinks must already be colonised — migration shouldn't quietly
+      // settle uncolonised bodies (that's what colony ships are for).
+      // Pick the colonised body with the most absolute headroom.
+      const headroom = cap - b.pops;
+      if (
+        b.pops > 0 &&
+        headroom > 0 &&
+        (!sink || headroom > maxPopsFor(empire, sink) - sink.pops)
+      ) {
+        sink = b;
+      }
+    }
+    if (!source || !sink || source.id === sink.id) continue;
+    if (source.pops <= sink.pops) continue; // don't reverse-flow
+    const moved = Math.min(MIGRATION_RATE_PER_COMPONENT, source.pops);
+    source.pops -= moved;
+    sink.pops += moved;
+  }
+
+  // 8. Per-component famine. Each component with food < 0 starves one
   //    pop somewhere *in that component* and clamps food back to zero.
   //    A disconnected region runs out of food first; famines are local.
   for (const cid of compIds) {
