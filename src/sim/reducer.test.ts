@@ -1541,3 +1541,47 @@ describe("declareWar / makePeace round-trip", () => {
   });
 
 });
+
+// =====================================================================
+// Performance benchmark. Runs the full game loop (endTurn) across a
+// realistic-size galaxy for several turns and reports the per-turn
+// cost. Doesn't target a precise number — it exists so we can watch
+// the trend while swapping in heavier AI lookahead (e.g., the
+// planned 2-step look-ahead for war declarations) and so a future
+// change that blows up the cost catastrophically fails loudly.
+// =====================================================================
+describe("perf: endTurn cost", () => {
+  it("runs a realistic-size round within the budget", () => {
+    // Seed a fresh game via the real newGame path so the galaxy has
+    // content-driven size (~100 systems, 2 AIs, a few planets per
+    // system on average). newGame ignores prior state, so the first
+    // argument is just a type satisfier.
+    const START_SEED = 0xc0ffee;
+    let state = reduce({} as GameState, {
+      type: "newGame",
+      empireName: "Bench",
+      originId: "steady_evolution",
+      speciesId: "humans",
+      seed: START_SEED,
+      expansionism: "conqueror",
+      politic: "centrist",
+    });
+    const TURNS = 30;
+    // Warm-up turn so JIT overhead isn't counted.
+    state = reduce(state, { type: "endTurn" });
+    const start = performance.now();
+    for (let i = 0; i < TURNS; i++) {
+      state = reduce(state, { type: "endTurn" });
+    }
+    const elapsed = performance.now() - start;
+    const perTurn = elapsed / TURNS;
+    // eslint-disable-next-line no-console
+    console.log(
+      `[bench] ${TURNS} turns in ${elapsed.toFixed(0)}ms (${perTurn.toFixed(1)}ms/turn)`,
+    );
+    // Loose ceiling. Current cost is typically a few ms/turn; this is
+    // ~20× that, so a catastrophic regression (like accidentally
+    // cubic AI search) trips it without flaking on CI.
+    expect(perTurn).toBeLessThan(200);
+  });
+});
