@@ -949,6 +949,26 @@ export function popsBreakdownFor(state: GameState, empire: Empire): StatBreakdow
       habitability: body.habitability,
     };
   });
+  // Growth this turn — sums to the +Δ the sidebar shows next to the
+  // pops counter. Logistic throttling (pops/cap) is already baked into
+  // each row, which is why the per-body numbers don't match a naive
+  // multiplication of modifiers × pops.
+  const growthRows: StatBreakdownSection["rows"] = [];
+  const components = computeComponents(state, empire);
+  for (const body of ownedBodiesOf(state, empire)) {
+    const rate = bodyGrowthRate(empire, body);
+    if (rate === 0) continue;
+    const cid = components.get(body.systemId);
+    const pool = cid ? empire.componentPools[cid] : null;
+    const starved = !pool || pool.food <= 0;
+    growthRows.push({
+      id: body.id,
+      name: body.name,
+      detail: starved ? "starved (no food)" : "+Δ pops/turn",
+      value: starved ? 0 : rate,
+      habitability: body.habitability,
+    });
+  }
   const modRows: StatBreakdownSection["rows"] = [];
   for (const lm of labelledModifiers(empire)) {
     if (lm.mod.kind === "maxPopsMult") {
@@ -978,6 +998,7 @@ export function popsBreakdownFor(state: GameState, empire: Empire): StatBreakdow
     total,
     sections: [
       ...(bodyRows.length > 0 ? [{ label: "Per body", rows: bodyRows }] : []),
+      ...(growthRows.length > 0 ? [{ label: "Growth this turn", rows: growthRows }] : []),
       ...(modRows.length > 0 ? [{ label: "Cap + growth modifiers", rows: modRows }] : []),
     ],
   };
