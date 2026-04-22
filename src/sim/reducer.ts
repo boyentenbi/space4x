@@ -672,12 +672,14 @@ function flatEmpireIncome(mods: Modifier[], resource: ResourceKey): number {
 // Subsidies) layer on top via foodUpkeepDelta.
 export const FOOD_UPKEEP_PER_POP = 0.5;
 
-// Pops drift between bodies in the same connected component each
-// turn at this rate (per component). Lets concentrated growth on
-// one body — e.g. the Brood Mother's flat output stacking up at
-// the capital — gradually distribute across the empire's other
-// nests without needing manual transfer orders.
-export const MIGRATION_RATE_PER_COMPONENT = 1;
+// Fraction of the source body's pops that migrate out per turn
+// within a connected component. Scales with empire size — a tiny
+// hive trickles pops, a big one moves meaningful numbers — while
+// still staying gentle at any scale. 0.02 ≈ "2% of the biggest
+// colony's population drifts elsewhere each turn," which is
+// slightly above the baseline organic-growth rate so migration
+// keeps up with accumulation.
+export const MIGRATION_RATE_PER_POP = 0.02;
 
 // Effective food upkeep per pop, clamped at 0.
 export function foodUpkeepPerPop(empire: Empire): number {
@@ -2130,11 +2132,12 @@ function tickEmpire(draft: GameState, empire: Empire): void {
   }
 
   // 7. Internal migration. Within each connected component, drift
-  //    MIGRATION_RATE_PER_COMPONENT pops/turn from the most-populated
-  //    body toward the body with the most absolute headroom. Models
-  //    natural movement along supply lines and lets concentrated
-  //    growth (e.g. the Brood Mother's capital-only output) gradually
-  //    spread to the empire's other colonies without manual orders.
+  //    MIGRATION_RATE_PER_POP × source.pops from the most-populated
+  //    body toward the body with the most absolute headroom. Scales
+  //    with empire size so late-game hives move meaningful numbers
+  //    while early colonies still trickle. Uncolonised bodies aren't
+  //    eligible sinks — colony ships remain the way to settle new
+  //    worlds.
   for (const cid of compIds) {
     const inComponent: Body[] = [];
     for (const body of ownedBodiesOf(draft, empire)) {
@@ -2147,9 +2150,6 @@ function tickEmpire(draft: GameState, empire: Empire): void {
     for (const b of inComponent) {
       const cap = maxPopsFor(empire, b);
       if (b.pops >= 1 && (!source || b.pops > source.pops)) source = b;
-      // Sinks must already be colonised — migration shouldn't quietly
-      // settle uncolonised bodies (that's what colony ships are for).
-      // Pick the colonised body with the most absolute headroom.
       const headroom = cap - b.pops;
       if (
         b.pops > 0 &&
@@ -2161,7 +2161,12 @@ function tickEmpire(draft: GameState, empire: Empire): void {
     }
     if (!source || !sink || source.id === sink.id) continue;
     if (source.pops <= sink.pops) continue; // don't reverse-flow
-    const moved = Math.min(MIGRATION_RATE_PER_COMPONENT, source.pops);
+    // Scales with source population; cap the flow at the imbalance so
+    // we don't overshoot the sink past the source in one turn.
+    const desired = MIGRATION_RATE_PER_POP * source.pops;
+    const maxFair = (source.pops - sink.pops) / 2;
+    const moved = Math.min(desired, maxFair, source.pops);
+    if (moved <= 0) continue;
     source.pops -= moved;
     sink.pops += moved;
   }
