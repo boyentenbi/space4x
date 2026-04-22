@@ -481,11 +481,12 @@ describe("AI scoreState value function", () => {
     expect(playerScore).toBeGreaterThan(260);
     expect(playerScore).toBeLessThan(280);
     // AI = 1 × 500 system + (10 tile + 80 max-pops)
-    // + stuck 1-ship @ at-war (300 × 0.2) = 60
-    // + 500 × 2/3 occupation credit + 15 political − 10 upkeep ≈ 988.
+    // + stuck 1-ship @ at-war (500 pragmatist × 1.5 × 0.2) = 150
+    // + 500 × 2/3 occupation credit (≈333) + 15 political − 10 upkeep
+    // ≈ 1078.
     const aiScore = scoreState(state, "e_ai");
-    expect(aiScore).toBeGreaterThan(980);
-    expect(aiScore).toBeLessThan(1000);
+    expect(aiScore).toBeGreaterThan(1070);
+    expect(aiScore).toBeLessThan(1090);
   });
 
   it("values systems and ships in hammer-equivalent units", () => {
@@ -514,12 +515,13 @@ describe("AI scoreState value function", () => {
     // 1 system × 500 (COLONIZE_HAMMERS, 2.5x'd after hammers rebase)
     //   = 500 assets.
     // + Per-body: 1 × 10 (TILE_VALUE) + 10 space × 8 (MAX_POPS_VALUE) = 90.
-    // Ships: 2 × 200 × (no-war 1.0) × stuck 20% (cap=0) = 80.
+    // Ships: 2 × 500 (pragmatist, 2.5x'd alongside hammers) × (no-war
+    //   1.0) × stuck 20% (cap=0) = 200.
     // + political/turn baseline × 15 = 15.
     // − outpost upkeep (1 outpost × 1 energy) × 5 horizon = −5.
     //   (Fleet upkeep was dropped; only outposts drain energy now.)
-    // Total = 680.
-    expect(scoreState(state, "e_player")).toBe(680);
+    // Total = 800.
+    expect(scoreState(state, "e_player")).toBe(800);
   });
 
   it("queueing colonize deducts COLONIZE_POP_COST from the capital", () => {

@@ -2207,15 +2207,16 @@ export const TILE_VALUE = 10;
 // since empty space is potential, not production.
 export const MAX_POPS_VALUE = 8;
 
-// Per-archetype intrinsic value of a ship. Conquerors want navies;
-// isolationists want enough to defend; pragmatists sit in the middle.
-// This is the base number before at-war multipliers and over-cap
-// diminishing returns.
+// Per-archetype intrinsic value of a ship, measured in the same
+// hammer-equivalent units as COLONIZE_HAMMERS. Scaled alongside the
+// 2.5× hammer rebase so a frigate (500 hammers to build) reads to
+// the AI as roughly one-system-equivalent of intrinsic value, with
+// conquerors above that and pragmatists below.
 function shipValueFor(empire: Empire): number {
   switch (empire.expansionism) {
-    case "conqueror":    return 300;
-    case "pragmatist":   return 200;
-    case "isolationist": return 250;
+    case "conqueror":    return 750;
+    case "pragmatist":   return 500;
+    case "isolationist": return 625;
   }
 }
 
