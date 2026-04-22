@@ -2749,15 +2749,6 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
   }
 
   for (const fleet of ourFleets) {
-    // A fleet already committed to a destination keeps going — we
-    // don't re-evaluate it every turn (that used to burn ~half the
-    // per-turn AI budget and could flip-flop a fleet mid-march).
-    // The commit is cleared by processFleetOrders on arrival or if
-    // the path becomes blocked.
-    if (fleet.destinationSystemId && fleet.destinationSystemId !== fleet.systemId) {
-      continue;
-    }
-
     // One BFS from the fleet's current system gives every reachable
     // destination in a single O(nodes + edges) pass. Cache by source
     // system: fleets co-located have identical reachable sets.
