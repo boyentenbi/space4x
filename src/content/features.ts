@@ -9,19 +9,22 @@ export const FEATURES: Feature[] = [
     id: "brood_mother",
     name: "Brood Mother",
     description:
-      "A colossal reproductive caste enthroned beneath the hive. Her output is the empire's entire reproductive supply — ordinary workers lay nothing, so every egg that hatches somewhere in your territory came, in the end, from her. She eats accordingly.",
+      "A colossal reproductive caste enthroned beneath the hive. Her output is the empire's entire reproductive supply — ordinary workers lay nothing, so every egg that hatches somewhere in your territory came, in the end, from her. She gives the swarm a decisive early lead, but her flat output doesn't scale; the only path past her is to absorb species that can breed on their own.",
     art: "/projects/brood_mother.png",
     modifiers: [
       // Workers don't reproduce; the queen supplies everything.
+      // Organic growth is zeroed empire-wide, so the only way to
+      // grow past the queen's flat output is to conquer another
+      // species whose pops can reproduce.
       { kind: "popGrowthMult", value: 0 },
-      // +1 pop/turn per body (throttled by headroom via the growth
-      // formula). Roughly what a population of ~80 pops would produce
-      // via organic growth at the baseline doubling time.
+      // +1 pop/turn per body. Fantastic early-game (a 3-body hive
+      // sees +3 pops/turn out of a starting 30), but linear with
+      // body count — an organic empire compounding over pops will
+      // overtake this once it's established.
       { kind: "popGrowthAdd", value: 1 },
-      // Calibrated so she eats roughly what it would cost to feed the
-      // equivalent organic population (≈ target pop count × base
-      // upkeep). Big drain, but not crippling on a well-fed garden.
-      { kind: "flat", resource: "food", value: -40 },
+      // No food upkeep: she's meant to be a generous early-game
+      // boost, not a costly investment. Her limit is structural
+      // (she doesn't scale), not economic.
     ],
   },
 ];
