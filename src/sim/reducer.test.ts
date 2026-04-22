@@ -487,15 +487,17 @@ describe("AI scoreState value function", () => {
     //   upkeep × 5 = -5) = 10
     // - occupation debit (200 × 0.6 = 120)
     // - AT_WAR_COST (pragmatist × 1 enemy = 500)
-    // ≈ -410.
+    // - enemy-ship threat (1 AI ship × 500 × 1.2 = 600)
+    // ≈ -1010.
     const playerScore = scoreState(state, "e_player");
-    expect(playerScore).toBeGreaterThan(-420);
-    expect(playerScore).toBeLessThan(-400);
+    expect(playerScore).toBeGreaterThan(-1020);
+    expect(playerScore).toBeLessThan(-1000);
     // AI = body intrinsic (200)
     // + empire flats (10)
     // + stuck 1-ship @ at-war (500 pragmatist × 1.2 × 0.2) = 120
     // + occupation credit (200 × 0.6 = 120)
     // - AT_WAR_COST (pragmatist × 1 enemy = 500)
+    // - enemy-ship threat (player has no ships = 0)
     // ≈ -50.
     const aiScore = scoreState(state, "e_ai");
     expect(aiScore).toBeGreaterThan(-60);

@@ -2473,6 +2473,33 @@ export function scoreState(state: GameState, empireId: string): number {
   // into the value function.
   const enemies = enemiesOf(state, empire.id);
   score -= enemies.length * AT_WAR_COST_PER_ENEMY[empire.expansionism];
+  // Enemy threat term: every enemy ship is a future headache, priced
+  // at the same rate we value our own ships. Without this, combat
+  // reads as pure cost (we lose ships and can't credit kills), so
+  // the AI would decline even winning engagements. With it, 1:1
+  // trades are neutral and favourable trades are net-positive.
+  //
+  // We weight by the *biggest single enemy's* fleet rather than the
+  // sum: two 5-ship enemies aren't as scary as one 10-ship enemy
+  // because they can't combine forces, so the cost shouldn't stack
+  // linearly. Encourages the AI to grind down the biggest threat
+  // first rather than nickel-and-dime weaker sides equally.
+  if (enemies.length > 0) {
+    const enemyShipCost = shipValueFor(empire) * 1.2; // at war by def
+    const enemyShipTotals: Record<string, number> = {};
+    for (const eid of enemies) enemyShipTotals[eid] = 0;
+    for (const f of Object.values(state.fleets)) {
+      if (f.shipCount <= 0) continue;
+      if (enemyShipTotals[f.empireId] !== undefined) {
+        enemyShipTotals[f.empireId] += f.shipCount;
+      }
+    }
+    let maxEnemyShips = 0;
+    for (const eid of enemies) {
+      if (enemyShipTotals[eid] > maxEnemyShips) maxEnemyShips = enemyShipTotals[eid];
+    }
+    score -= maxEnemyShips * enemyShipCost;
+  }
   // In-flight projects: preview what they'll be worth at completion,
   // scaled by progress for cancel risk.
   for (const order of allOrdersOf(state, empire)) {
