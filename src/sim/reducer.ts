@@ -535,7 +535,7 @@ export function expansionismModifiers(ex: Expansionism): Modifier[] {
 
 // Politic lean:
 //  - Collectivist:  state over individual — centralized authority
-//                   translates to +0.5 political/turn and a mild
+//                   translates to +0.1 political/turn and a mild
 //                   coordinated-labour bonus of +0.1 hammers/pop.
 //  - Centrist:      baseline.
 //  - Individualist: liberty over state — reserved for an innovation /
@@ -544,7 +544,7 @@ export function politicModifiers(p: Politic): Modifier[] {
   switch (p) {
     case "collectivist":
       return [
-        { kind: "flat", resource: "political", value: 0.5 },
+        { kind: "flat", resource: "political", value: 0.1 },
         { kind: "hammersPerPopDelta", value: 0.1 },
       ];
     case "centrist":
