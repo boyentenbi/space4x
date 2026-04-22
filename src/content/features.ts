@@ -15,11 +15,13 @@ export const FEATURES: Feature[] = [
       // Workers don't reproduce; the queen supplies everything.
       { kind: "popGrowthMult", value: 0 },
       // +1 pop/turn per body (throttled by headroom via the growth
-      // formula). Across a multi-body empire this is prolific.
+      // formula). Roughly what a population of ~80 pops would produce
+      // via organic growth at the baseline doubling time.
       { kind: "popGrowthAdd", value: 1 },
-      // She consumes heroically — the empire pays 5 food/turn to
-      // keep her alive. Starve her and the whole hive collapses.
-      { kind: "flat", resource: "food", value: -5 },
+      // Calibrated so she eats roughly what it would cost to feed the
+      // equivalent organic population (≈ target pop count × base
+      // upkeep). Big drain, but not crippling on a well-fed garden.
+      { kind: "flat", resource: "food", value: -40 },
     ],
   },
 ];

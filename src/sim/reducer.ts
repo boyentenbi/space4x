@@ -639,9 +639,13 @@ function flatEmpireIncome(mods: Modifier[], resource: ResourceKey): number {
   return v;
 }
 
+// Base food each pop eats per turn. Modifiers (e.g. Agricultural
+// Subsidies) layer on top via foodUpkeepDelta.
+export const FOOD_UPKEEP_PER_POP = 0.5;
+
 // Effective food upkeep per pop, clamped at 0.
 export function foodUpkeepPerPop(empire: Empire): number {
-  return Math.max(0, 1 + sumDelta(empireModifiers(empire), "foodUpkeepDelta"));
+  return Math.max(0, FOOD_UPKEEP_PER_POP + sumDelta(empireModifiers(empire), "foodUpkeepDelta"));
 }
 
 // Effective hammer yield per pop — empire-wide baseline (no hab bonus).
