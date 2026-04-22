@@ -317,7 +317,15 @@ export function growthEstimate(
   state: GameState,
   empire: Empire,
   body: Body,
-): { kind: "full" } | { kind: "starved" } | { kind: "growing"; perTurn: number } {
+):
+  | { kind: "uncolonized" }
+  | { kind: "full" }
+  | { kind: "starved" }
+  | { kind: "growing"; perTurn: number } {
+  // A body with no pops hasn't been colonised — it doesn't grow no
+  // matter what food the region has. Return a dedicated state so the
+  // UI can skip the pill rather than mislabel it as "starved".
+  if (body.pops <= 0) return { kind: "uncolonized" };
   const cap = maxPopsFor(empire, body);
   if (body.pops >= cap) return { kind: "full" };
   const cid = componentOfSystem(state, empire, body.systemId);
