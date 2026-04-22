@@ -64,7 +64,7 @@ export type Action =
 // Colonization tunables. Pop counts + space caps are now on a 10x
 // scale (so a starter temperate world runs ~40 pops instead of 4),
 // which gives per-turn growth a smoother feel.
-export const COLONIZE_HAMMERS = 200;
+export const COLONIZE_HAMMERS = 500;
 export const COLONIZE_POLITICAL = 5;
 // Pops the colony ship "carries": deducted from the capital when the
 // order is queued, delivered to the target when it completes. Net zero
@@ -267,7 +267,7 @@ const COMPUTE_PER_POP_HAB: Partial<Record<HabitabilityTier, number>> = {
   garden: 0.25,
 };
 
-export const HAMMERS_PER_POP = 0.4;
+export const HAMMERS_PER_POP = 1;
 export const POP_GROWTH_FOOD_COST = 50;
 
 // Deterministic logistic growth. Per turn, a body grows by

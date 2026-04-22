@@ -147,8 +147,10 @@ describe("deterministic pop growth", () => {
   it("applies the logistic formula exactly in one tick", () => {
     // Formula: ΔPops = (BASE_ORGANIC_GROWTH_RATE × mult × pops + additive)
     //                   × (1 − pops/cap)
-    // Defaults (humans): BASE = 0.05, popGrowthMult = 1.25, additive = 0.
-    // For pops = 20, cap = 40: (0.05 × 1.25 × 20) × 0.5 = 0.625.
+    // Test empire is a bare-defaults makeEmpire — no origin modifiers
+    // applied (makeEmpire bypasses newGame's storyModifiers
+    // installation), so popGrowthMult stays at 1 and additive at 0.
+    // For pops = 20, cap = 40: (0.05 × 1 × 20) × 0.5 = 0.5.
     const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
     const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 20, maxPops: 40 });
     const player = makeEmpire({
@@ -159,7 +161,7 @@ describe("deterministic pop growth", () => {
     });
     const state = makeState({ systems: [home], bodies: [cap], empire: player });
     const ticked = runOnePhase(state, "e_player");
-    expect(ticked.galaxy.bodies["b_cap"].pops).toBeCloseTo(20.625, 5);
+    expect(ticked.galaxy.bodies["b_cap"].pops).toBeCloseTo(20.5, 5);
   });
 
   it("Matriarchal-Hive-style modifiers: zero organic, positive additive", () => {
@@ -439,18 +441,18 @@ describe("AI scoreState value function", () => {
       fleets: [siegeFleet],
       wars: [["e_ai", "e_player"].sort() as [string, string]],
     });
-    // Player = 1 × 200 system + (10 tile + 10 space × 8 max-pops)
-    // − 200 × 2/3 occupation debit + 15 political − 5 outpost upkeep
-    // ≈ 167.
+    // Player = 1 × 500 (COLONIZE_HAMMERS) system + (10 tile + 80 max-pops)
+    // − 500 × 2/3 occupation debit + 15 political − 5 outpost upkeep
+    // ≈ 267.
     const playerScore = scoreState(state, "e_player");
-    expect(playerScore).toBeGreaterThan(160);
-    expect(playerScore).toBeLessThan(180);
-    // AI = 1 × 200 system + (10 tile + 10 space × 8 max-pops)
+    expect(playerScore).toBeGreaterThan(260);
+    expect(playerScore).toBeLessThan(280);
+    // AI = 1 × 500 system + (10 tile + 80 max-pops)
     // + stuck 1-ship @ at-war (300 × 0.2) = 60
-    // + 200 × 2/3 occupation credit + 15 political − 10 upkeep ≈ 488.
+    // + 500 × 2/3 occupation credit + 15 political − 10 upkeep ≈ 988.
     const aiScore = scoreState(state, "e_ai");
-    expect(aiScore).toBeGreaterThan(480);
-    expect(aiScore).toBeLessThan(500);
+    expect(aiScore).toBeGreaterThan(980);
+    expect(aiScore).toBeLessThan(1000);
   });
 
   it("values systems and ships in hammer-equivalent units", () => {
@@ -476,14 +478,15 @@ describe("AI scoreState value function", () => {
       empire: player,
       fleets: [fleet],
     });
-    // 1 system × 200 (COLONIZE_HAMMERS) = 200 assets.
+    // 1 system × 500 (COLONIZE_HAMMERS, 2.5x'd after hammers rebase)
+    //   = 500 assets.
     // + Per-body: 1 × 10 (TILE_VALUE) + 10 space × 8 (MAX_POPS_VALUE) = 90.
     // Ships: 2 × 200 × (no-war 1.0) × stuck 20% (cap=0) = 80.
     // + political/turn baseline × 15 = 15.
     // − outpost upkeep (1 outpost × 1 energy) × 5 horizon = −5.
     //   (Fleet upkeep was dropped; only outposts drain energy now.)
-    // Total = 380.
-    expect(scoreState(state, "e_player")).toBe(380);
+    // Total = 680.
+    expect(scoreState(state, "e_player")).toBe(680);
   });
 
   it("queueing colonize deducts COLONIZE_POP_COST from the capital", () => {

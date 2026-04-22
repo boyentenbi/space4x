@@ -17,7 +17,7 @@ export const TRAITS: SpeciesTrait[] = [
     name: "Industrious",
     description: "Hard-working hands — more hammers per pop, and especially efficient on hostile worlds.",
     modifiers: [
-      { kind: "hammersPerPopDelta", value: 0.25 },
+      { kind: "hammersPerPopDelta", value: 0.15 },
     ],
   },
   {

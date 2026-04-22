@@ -6,7 +6,7 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     name: "Build Outpost",
     description:
       "Construct an orbital outpost at the system's star. Claims the system for your empire; required before you can colonise any planet here.",
-    hammersRequired: 120,
+    hammersRequired: 300,
     scope: "body",
     bodyRequirement: "star",
     costs: { political: 3 },
@@ -22,7 +22,7 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     name: "Build Frigate",
     description:
       "Assemble a frigate at this world's orbital yards. Joins the system's fleet on completion. The start of a navy.",
-    hammersRequired: 200,
+    hammersRequired: 500,
     scope: "body",
     bodyRequirement: "any_owned",
     costs: { political: 2 },
@@ -40,7 +40,7 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     name: "Complete Emancipation",
     description:
       "Seize the last human-operated governments. Every contested district rewritten. The pre-complete debuff falls away and a lasting production bonus takes its place.",
-    hammersRequired: 400,
+    hammersRequired: 1000,
     scope: "body",
     bodyRequirement: "capital",
     costs: { political: 20 },
@@ -56,7 +56,7 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
       removeStoryModifierKeys: ["emancipation_pre"],
       grantStoryModifiers: {
         emancipation_post: [
-          { kind: "hammersPerPopDelta", value: 0.5 },
+          { kind: "hammersPerPopDelta", value: 0.2 },
           { kind: "flat", resource: "political", value: 1 },
         ],
       },

@@ -11,7 +11,7 @@ export const POLICIES: Policy[] = [
     description:
       "Permanent militarisation — frontier garrisons and state arsenals. More hammers per pop at the cost of living with the soldiers on your streets.",
     basePoliticalCost: 20,
-    modifiers: [{ kind: "hammersPerPopDelta", value: 0.25 }],
+    modifiers: [{ kind: "hammersPerPopDelta", value: 0.15 }],
   },
   {
     id: "agricultural_subsidies",
@@ -27,7 +27,7 @@ export const POLICIES: Policy[] = [
     description:
       "Trade charters, rail corridors, merchant guilds. Industrial output rises where hands are free to move goods.",
     basePoliticalCost: 18,
-    modifiers: [{ kind: "hammersPerPopDelta", value: 0.25 }],
+    modifiers: [{ kind: "hammersPerPopDelta", value: 0.15 }],
   },
   {
     id: "martial_law",

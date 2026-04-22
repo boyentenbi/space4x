@@ -13,6 +13,13 @@ export const ORIGINS: Origin[] = [
     allowedSpeciesIds: ["humans"],
     startingResources: { energy: 1000, food: 1000, political: 5 },
     startingPops: 50,
+    startingStoryModifiers: {
+      steady_evolution: [
+        // Tens of thousands of years of adaptation — humans grow a
+        // little faster than a standard sapient.
+        { kind: "popGrowthMult", value: 1.15 },
+      ],
+    },
     art: "/origins/steady_evolution.png",
   },
   {
@@ -23,6 +30,14 @@ export const ORIGINS: Origin[] = [
     allowedSpeciesIds: ["insectoid"],
     startingResources: { energy: 600, food: 1200, political: 3 },
     startingPops: 30,
+    startingStoryModifiers: {
+      colony_seeders: [
+        // Hives pack vertically + eat little — insect life-support
+        // is efficient but not free.
+        { kind: "maxPopsMult", value: 1.5 },
+        { kind: "foodUpkeepDelta", value: -0.2 },
+      ],
+    },
     art: "/origins/colony_seeders.png",
   },
   {
@@ -33,10 +48,17 @@ export const ORIGINS: Origin[] = [
     allowedSpeciesIds: ["insectoid"],
     startingResources: { energy: 600, food: 1200, political: 3 },
     startingPops: 30,
+    startingStoryModifiers: {
+      // Insectoid body plan baseline — shared with the Colony Seeders
+      // sibling origin. The queen-driven growth comes from the Brood
+      // Mother feature below, not from story modifiers.
+      matriarchal_hive: [
+        { kind: "maxPopsMult", value: 1.5 },
+        { kind: "foodUpkeepDelta", value: -0.2 },
+      ],
+    },
     // Brood Mother is installed as a Feature on the capital at new-
-    // game (see Origin.startingFeatures + newGame in reducer.ts), so
-    // its modifiers flow through the Feature system rather than a
-    // startingStoryModifiers bundle.
+    // game (see Origin.startingFeatures + newGame in reducer.ts).
     startingFeatures: ["brood_mother"],
     art: "/projects/brood_mother.png",
   },
@@ -50,7 +72,12 @@ export const ORIGINS: Origin[] = [
     startingPops: 40,
     startingStoryModifiers: {
       handover_legacy: [
-        { kind: "hammersPerPopDelta", value: 0.25 },
+        // Machine-run industry + the predecessors' infrastructure =
+        // a real industrial edge, but the biological workforce still
+        // grows slowly and networked deliberation drags on politics.
+        { kind: "hammersPerPopDelta", value: 0.2 },
+        { kind: "popGrowthMult", value: 0.6 },
+        { kind: "flat", resource: "political", value: -0.5 },
       ],
     },
     art: "/origins/graceful_handover.png",
@@ -64,6 +91,15 @@ export const ORIGINS: Origin[] = [
     startingResources: { energy: 1200, food: 200, political: 3 },
     startingPops: 30,
     startingStoryModifiers: {
+      // Baseline machine costs (slower biological growth, drag on
+      // political consensus) — same numbers as Handover, minus the
+      // inherited industrial infrastructure.
+      machine_baseline: [
+        { kind: "popGrowthMult", value: 0.6 },
+        { kind: "flat", resource: "political", value: -0.5 },
+      ],
+      // Pre-complete debuff layered on top; lifted when the player
+      // finishes the Complete Emancipation project.
       emancipation_pre: [
         { kind: "popGrowthMult", value: 0.6 },
         { kind: "flat", resource: "political", value: -1 },

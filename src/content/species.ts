@@ -1,8 +1,8 @@
 import type { Species } from "../sim/types";
 
-// Species carry only their innate modifiers for now. Picking traits is a
-// separate selection step we may add later; the TRAITS content file is
-// kept around for that.
+// Species carry only flavour + politic constraints now. Mechanical
+// effects live on origins — species are the "kind of creature you
+// are," origins are the "kind of civilisation you became."
 export const SPECIES: Species[] = [
   {
     id: "humans",
@@ -17,9 +17,7 @@ export const SPECIES: Species[] = [
       "/portraits/humans_3.png",
     ],
     color: "#2a5a8c",
-    modifiers: [
-      { kind: "popGrowthMult", value: 1.25 },
-    ],
+    modifiers: [],
   },
   {
     id: "insectoid",
@@ -34,10 +32,7 @@ export const SPECIES: Species[] = [
       "/portraits/insectoid_3.png",
     ],
     color: "#8b5bc8",
-    modifiers: [
-      { kind: "maxPopsMult", value: 1.5 },
-      { kind: "foodUpkeepDelta", value: -0.25 },
-    ],
+    modifiers: [],
     // Hive-minded: cannot run an individualist politic.
     allowedPolitics: ["collectivist", "centrist"],
   },
@@ -54,10 +49,6 @@ export const SPECIES: Species[] = [
       "/portraits/machine_3.png",
     ],
     color: "#62d4e6",
-    modifiers: [
-      { kind: "hammersPerPopDelta", value: 0.25 },
-      { kind: "popGrowthMult", value: 0.6 },
-      { kind: "flat", resource: "political", value: -0.5 },
-    ],
+    modifiers: [],
   },
 ];
