@@ -31,6 +31,7 @@ function makeBody(overrides: Partial<Body> & { id: string; systemId: string }): 
     hammers: overrides.hammers ?? 0,
     queue: overrides.queue ?? [],
     flavorFlags: overrides.flavorFlags ?? [],
+    features: overrides.features ?? [],
   };
 }
 
@@ -116,7 +117,7 @@ function makeState(overrides: {
   const fleetsRec: Record<string, Fleet> = {};
   for (const f of overrides.fleets ?? []) fleetsRec[f.id] = f;
   return {
-    schemaVersion: 21,
+    schemaVersion: 22,
     turn: overrides.turn ?? 1,
     rngSeed: 1,
     galaxy: {

@@ -230,6 +230,7 @@ export function generateGalaxy(opts: GenOptions): Galaxy {
         hammers: 0,
         queue: [],
         flavorFlags: [],
+        features: [],
       };
       bodyIds.push(starId);
 
@@ -251,6 +252,7 @@ export function generateGalaxy(opts: GenOptions): Galaxy {
           hammers: 0,
           queue: [],
           flavorFlags: rollFlavorFlags(rand),
+          features: [],
         };
         bodyIds.push(bodyId);
       }
@@ -352,6 +354,7 @@ export function assignStarterSystem(
       hammers: 0,
       queue: [],
       flavorFlags: [],
+      features: [],
     };
   }
 

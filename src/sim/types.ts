@@ -65,6 +65,12 @@ export interface Body {
   hammers: number;         // Per-turn production flow (resets each tick).
   queue: BuildOrder[];     // Projects hammers flow into.
   flavorFlags: string[];   // e.g. "precursor_ruins", "rare_crystals".
+  // Features installed on this body (e.g. "brood_mother"). Each
+  // feature is content-defined in src/content/features.ts and
+  // contributes its modifiers to the owning empire while the body is
+  // in that empire's hands. Features survive ownership transfer
+  // (the infrastructure is physically here). Defaults to [].
+  features: string[];
 }
 
 // Discriminated union so future project types (data center, fleet, etc.)
@@ -202,12 +208,29 @@ export interface Origin {
   // Project id(s) auto-queued on the empire at game start — e.g. an
   // Emancipation empire begins already working toward completing it.
   startingProjectIds?: string[];
+  // Feature id(s) pre-installed on the empire's capital body at new
+  // game — e.g. Matriarchal Hive spawns with a Brood Mother already
+  // enthroned on the home world.
+  startingFeatures?: string[];
 }
 
 // Content-defined policy. Adopted at empire level for a one-shot
 // political capital cost that scales with the empire's hyperlane
 // diameter (spread-out empires pay more). Modifiers layer into
 // storyModifiers under the key "policy:<id>".
+// Content-defined feature. Features are physical installations that
+// live on a specific body — a Brood Mother, a Precursor Vault, an
+// Orbital Habitat. They contribute their `modifiers` to the owning
+// empire while the body is in their hands, and survive conquest
+// (the infrastructure stays; the conqueror inherits its effect).
+export interface Feature {
+  id: string;
+  name: string;
+  description: string;
+  art?: string;
+  modifiers: Modifier[];
+}
+
 export interface Policy {
   id: string;
   name: string;
@@ -303,7 +326,7 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 21;
+  schemaVersion: 22;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;

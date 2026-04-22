@@ -3,14 +3,14 @@ import { initialState, reduce, type Action } from "./sim/reducer";
 import { speciesById } from "./sim/content";
 import type { GameState } from "./sim/types";
 
-const STORAGE_KEY = "space4x:save:v21";
+const STORAGE_KEY = "space4x:save:v22";
 
 function loadSaved(): GameState | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as GameState;
-    if (parsed.schemaVersion !== 21) return null;
+    if (parsed.schemaVersion !== 22) return null;
     // Refresh species-derived fields so content tweaks (colors, portrait
     // art, etc.) propagate to existing saves without a schema bump.
     const species = speciesById(parsed.empire.speciesId);
@@ -31,7 +31,7 @@ function persist(state: GameState) {
 
 // Pacing between empire phases when the player presses End Turn.
 // Keeps the round readable — you see each empire act in sequence.
-const PHASE_DELAY_MS = 200;
+const PHASE_DELAY_MS = 100;
 
 interface Store {
   state: GameState;

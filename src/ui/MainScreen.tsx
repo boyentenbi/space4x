@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useGame } from "../store";
-import { originById, speciesById } from "../sim/content";
+import { featureById, originById, speciesById } from "../sim/content";
 import {
   allEmpires,
   allOrdersOf,
@@ -348,6 +348,15 @@ function BodyRow({
           {body.flavorFlags.map((f) => (
             <span key={f} className="chip flavor">{f.replace(/_/g, " ")}</span>
           ))}
+          {body.features.map((fid) => {
+            const feat = featureById(fid);
+            if (!feat) return null;
+            return (
+              <span key={fid} className="chip feature" title={feat.description}>
+                {feat.name}
+              </span>
+            );
+          })}
         </div>
       )}
 

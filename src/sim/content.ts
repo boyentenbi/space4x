@@ -4,10 +4,11 @@ import { SPECIES } from "../content/species";
 import { TRAITS } from "../content/traits";
 import { EVENTS } from "../content/events";
 import { EMPIRE_PROJECTS, empireProjectById } from "../content/projects";
+import { FEATURES, featureById } from "../content/features";
 import { LEADERS, leaderById, leadersForSpecies } from "../content/leaders";
 import { POLICIES, policyById } from "../content/policies";
 
-export { ORIGINS, SPECIES, TRAITS, EVENTS, EMPIRE_PROJECTS, LEADERS, POLICIES, empireProjectById, leaderById, leadersForSpecies, policyById };
+export { ORIGINS, SPECIES, TRAITS, EVENTS, EMPIRE_PROJECTS, FEATURES, LEADERS, POLICIES, empireProjectById, featureById, leaderById, leadersForSpecies, policyById };
 
 export function originById(id: string): Origin | undefined {
   return ORIGINS.find((o) => o.id === id);

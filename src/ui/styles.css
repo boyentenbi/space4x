@@ -649,6 +649,7 @@ button.res-cell:hover:not(:disabled) {
 .body-row .chip.pos { color: var(--good); border-color: rgba(139, 220, 166, 0.3); }
 .body-row .chip.neg { color: var(--bad); border-color: rgba(255, 138, 138, 0.3); }
 .body-row .chip.flavor { color: var(--warn); border-color: rgba(255, 182, 115, 0.4); }
+.body-row .chip.feature { color: #c98ae0; border-color: rgba(201, 138, 224, 0.45); }
 
 .body-row .project-row {
   margin-top: 4px;

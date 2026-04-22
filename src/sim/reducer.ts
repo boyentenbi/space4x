@@ -1,5 +1,5 @@
 import { current, produce } from "immer";
-import { LEADERS, POLICIES, originById, policyById, projectById, speciesById, traitById, EMPIRE_PROJECTS } from "./content";
+import { LEADERS, POLICIES, featureById, originById, policyById, projectById, speciesById, traitById, EMPIRE_PROJECTS } from "./content";
 import { BALANCE } from "../content/balance";
 import { pickRandomEvent, resolveEventChoice, RESOURCE_KEYS } from "./events";
 import { generateGalaxy } from "./galaxy";
@@ -384,7 +384,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 21,
+    schemaVersion: 22,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -529,8 +529,27 @@ export function politicModifiers(p: Politic): Modifier[] {
   }
 }
 
+// Rebuild the "feature:*" entries in empire.storyModifiers from every
+// Feature currently installed on any owned body. Called each round
+// (start of tickEmpire) and at state-change points (newGame, conquest)
+// so the empire's effective modifier set always matches the features
+// it actually controls — no drift if a body changes hands.
+export function syncFeatureModifiers(state: GameState, empire: Empire): void {
+  for (const key of Object.keys(empire.storyModifiers)) {
+    if (key.startsWith("feature:")) delete empire.storyModifiers[key];
+  }
+  for (const body of ownedBodiesOf(state, empire)) {
+    for (const fid of body.features ?? []) {
+      const feat = featureById(fid);
+      if (!feat) continue;
+      empire.storyModifiers[`feature:${fid}`] = [...feat.modifiers];
+    }
+  }
+}
+
 // All modifiers that apply to an empire: species innates + trait mods +
-// archetype leans + story bundles granted by origin/projects.
+// archetype leans + story bundles (granted by origin, projects, or
+// features via syncFeatureModifiers).
 export function empireModifiers(empire: Empire): Modifier[] {
   const species = speciesById(empire.speciesId);
   const out: Modifier[] = [];
@@ -1933,6 +1952,11 @@ export function outpostEnergyUpkeep(empire: Empire): number {
 }
 
 function tickEmpire(draft: GameState, empire: Empire): void {
+  // 0. Resync feature modifiers from current body.features. Handles
+  //    conquest / body loss cleanly — a Brood Mother captured this
+  //    turn is already contributing, and one we lost has stopped.
+  syncFeatureModifiers(draft, empire);
+
   // 1. Reconcile component pools against current graph membership.
   //    New components get empty pools; pools for defunct components
   //    (merged or split away) are dropped. Pools for untransitable
@@ -2882,6 +2906,7 @@ export function reduce(state: GameState, action: Action): GameState {
             hammers: 0,
             queue: [],
             flavorFlags: [],
+            features: [],
           };
         }
         const updatedSys = {
@@ -2965,6 +2990,17 @@ export function reduce(state: GameState, action: Action): GameState {
             });
           }
         }
+        // Install any origin-provided starter Features on the capital
+        // (e.g. Matriarchal Hive arrives with a Brood Mother).
+        if (origin.startingFeatures && draft.empire.capitalBodyId) {
+          const capBody = draft.galaxy.bodies[draft.empire.capitalBodyId];
+          if (capBody) {
+            for (const fid of origin.startingFeatures) {
+              if (!capBody.features.includes(fid)) capBody.features.push(fid);
+            }
+          }
+        }
+        syncFeatureModifiers(draft, draft.empire);
         draft.empire.compute.cap = computeCapOf(draft, draft.empire);
         draft.empire.compute.used = 0;
         for (const bid of draft.galaxy.systems[playerStarter.systemId].bodyIds) {
@@ -3021,7 +3057,16 @@ export function reduce(state: GameState, action: Action): GameState {
                 });
               }
             }
+            if (originObj.startingFeatures && empire.capitalBodyId) {
+              const capBody = draft.galaxy.bodies[empire.capitalBodyId];
+              if (capBody) {
+                for (const fid of originObj.startingFeatures) {
+                  if (!capBody.features.includes(fid)) capBody.features.push(fid);
+                }
+              }
+            }
           }
+          syncFeatureModifiers(draft, empire);
           empire.compute.cap = computeCapOf(draft, empire);
           return empire;
         });

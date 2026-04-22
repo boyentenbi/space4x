@@ -33,14 +33,11 @@ export const ORIGINS: Origin[] = [
     allowedSpeciesIds: ["insectoid"],
     startingResources: { energy: 600, food: 1200, political: 3 },
     startingPops: 30,
-    startingStoryModifiers: {
-      matriarchal_hive: [
-        // Zero out organic (worker-driven) growth entirely; the queen
-        // supplies a flat stream of new pops per body instead.
-        { kind: "popGrowthMult", value: 0 },
-        { kind: "popGrowthAdd", value: 0.3 },
-      ],
-    },
+    // Brood Mother is installed as a Feature on the capital at new-
+    // game (see Origin.startingFeatures + newGame in reducer.ts), so
+    // its modifiers flow through the Feature system rather than a
+    // startingStoryModifiers bundle.
+    startingFeatures: ["brood_mother"],
     art: "/projects/brood_mother.png",
   },
   {
