@@ -954,6 +954,105 @@ describe("AI project selection (decision only)", () => {
       expect(colonizeOrder.targetBodyId).toBe("b_temp");
     }
   });
+
+  it("isolationist grabs an adjacent temperate-bearing system", () => {
+    // Same shape as the generic outpost test but the AI is
+    // isolationist. The target is lush (temperate planet beside the
+    // star), so pop potential dominates the score and an outpost
+    // should still win despite the low SYSTEM_CLAIM_MULT.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_home"], ownerId: "e_ai" });
+    const target = makeSystem({
+      id: "s_target",
+      bodyIds: ["b_star", "b_temp"],
+      ownerId: null,
+    });
+    const homeBody = makeBody({ id: "b_home", systemId: "s_home", pops: 30 });
+    const star = makeBody({
+      id: "b_star",
+      systemId: "s_target",
+      kind: "star",
+      habitability: "stellar",
+      pops: 0,
+      maxPops: 0,
+    });
+    const tempBody = makeBody({
+      id: "b_temp",
+      systemId: "s_target",
+      habitability: "temperate",
+      pops: 0,
+      maxPops: 100,
+    });
+    const player = makeEmpire({ id: "e_player", systemIds: [] });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_home",
+      systemIds: ["s_home"],
+      expansionism: "isolationist",
+      resources: { food: 500, energy: 500, political: 50 },
+    });
+    const state = makeState({
+      systems: [home, target],
+      bodies: [homeBody, star, tempBody],
+      hyperlanes: [["s_home", "s_target"]],
+      empire: player,
+      aiEmpires: [ai],
+    });
+    const decided = produce(state, (d) => {
+      const emp = empireById(d, "e_ai");
+      if (emp) aiPlanProject(d, emp);
+    });
+    const aiPost = empireById(decided, "e_ai");
+    const aiOrders = aiPost ? allOrdersOf(decided, aiPost) : [];
+    const outpost = aiOrders.find(
+      (p) => p.kind === "empire_project" && p.projectId === "build_outpost",
+    );
+    expect(outpost).toBeDefined();
+  });
+
+  it("isolationist ignores a barren adjacent system", () => {
+    // A star-only unclaimed system next door has no pop potential.
+    // Under the archetype-weighted scoring, an isolationist values
+    // the system-claim itself much less than a conqueror, so the
+    // outpost's value ≈ TILE_VALUE alone — enough to be
+    // outscored by the null-action baseline.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_home"], ownerId: "e_ai" });
+    const target = makeSystem({ id: "s_target", bodyIds: ["b_star"], ownerId: null });
+    const homeBody = makeBody({ id: "b_home", systemId: "s_home", pops: 30 });
+    const star = makeBody({
+      id: "b_star",
+      systemId: "s_target",
+      kind: "star",
+      habitability: "stellar",
+      pops: 0,
+      maxPops: 0,
+    });
+    const player = makeEmpire({ id: "e_player", systemIds: [] });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_home",
+      systemIds: ["s_home"],
+      expansionism: "isolationist",
+      resources: { food: 500, energy: 500, political: 50 },
+    });
+    const state = makeState({
+      systems: [home, target],
+      bodies: [homeBody, star],
+      hyperlanes: [["s_home", "s_target"]],
+      empire: player,
+      aiEmpires: [ai],
+    });
+    const decided = produce(state, (d) => {
+      const emp = empireById(d, "e_ai");
+      if (emp) aiPlanProject(d, emp);
+    });
+    const aiPost = empireById(decided, "e_ai");
+    const aiOrders = aiPost ? allOrdersOf(decided, aiPost) : [];
+    const outpost = aiOrders.find(
+      (p) => p.kind === "empire_project" && p.projectId === "build_outpost",
+    );
+    expect(outpost).toBeUndefined();
+  });
+
 });
 
 describe("AI fleet routing (decision only)", () => {
