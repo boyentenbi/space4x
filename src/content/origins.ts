@@ -15,9 +15,9 @@ export const ORIGINS: Origin[] = [
     startingPops: 50,
     startingStoryModifiers: {
       steady_evolution: [
-        // Tens of thousands of years of adaptation — humans grow a
-        // little faster than a standard sapient.
-        { kind: "popGrowthMult", value: 1.15 },
+        // Deep institutional memory means every decade adds a little
+        // more political capital than a less-settled civilisation.
+        { kind: "flat", resource: "political", value: 0.1 },
       ],
     },
     art: "/origins/steady_evolution.png",
@@ -32,10 +32,11 @@ export const ORIGINS: Origin[] = [
     startingPops: 30,
     startingStoryModifiers: {
       colony_seeders: [
-        // Hives pack vertically + eat little — insect life-support
-        // is efficient but not free.
+        // Hives pack vertically; plus every fertile adult breeds,
+        // so the swarm's organic growth runs a notch faster than a
+        // standard sapient's.
         { kind: "maxPopsMult", value: 1.5 },
-        { kind: "foodUpkeepDelta", value: -0.2 },
+        { kind: "popGrowthMult", value: 1.15 },
       ],
     },
     art: "/origins/colony_seeders.png",
@@ -48,17 +49,9 @@ export const ORIGINS: Origin[] = [
     allowedSpeciesIds: ["insectoid"],
     startingResources: { energy: 600, food: 1200, political: 3 },
     startingPops: 30,
-    startingStoryModifiers: {
-      // Insectoid body plan baseline — shared with the Colony Seeders
-      // sibling origin. The queen-driven growth comes from the Brood
-      // Mother feature below, not from story modifiers.
-      matriarchal_hive: [
-        { kind: "maxPopsMult", value: 1.5 },
-        { kind: "foodUpkeepDelta", value: -0.2 },
-      ],
-    },
-    // Brood Mother is installed as a Feature on the capital at new-
-    // game (see Origin.startingFeatures + newGame in reducer.ts).
+    // The origin itself grants nothing mechanical — everything of
+    // consequence comes from the Brood Mother feature on the capital.
+    // Lose her and you're worse off than a non-hive empire.
     startingFeatures: ["brood_mother"],
     art: "/projects/brood_mother.png",
   },
