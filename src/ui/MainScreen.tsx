@@ -44,6 +44,7 @@ import { EmpireProfileModal } from "./EmpireProfileModal";
 import { EmpireRosterModal } from "./EmpireRosterModal";
 import { FirstContactModal } from "./FirstContactModal";
 import { FleetModal } from "./FleetModal";
+import { ModifierChip } from "./modifierUi";
 import { PoliciesModal } from "./PoliciesModal";
 import { StatBreakdownModal } from "./StatBreakdownModal";
 import { COMPUTE_ICON, HAMMERS_ICON, POPS_ICON, RESOURCE_ICON, planetSpriteFor } from "./icons";
@@ -348,13 +349,33 @@ function BodyRow({
           {body.flavorFlags.map((f) => (
             <span key={f} className="chip flavor">{f.replace(/_/g, " ")}</span>
           ))}
+        </div>
+      )}
+
+      {/* Features installed on this body — each shows the name,
+          a thumbnail, and the modifiers it contributes so the
+          player can see what it's actually doing. */}
+      {body.features.length > 0 && (
+        <div className="body-features">
           {body.features.map((fid) => {
             const feat = featureById(fid);
             if (!feat) return null;
             return (
-              <span key={fid} className="chip feature" title={feat.description}>
-                {feat.name}
-              </span>
+              <div key={fid} className="feature-card" title={feat.description}>
+                <div className="feature-card-head">
+                  {feat.art && (
+                    <img className="feature-card-icon" src={feat.art} alt="" />
+                  )}
+                  <span className="feature-card-name">{feat.name}</span>
+                </div>
+                {feat.modifiers.length > 0 && (
+                  <div className="feature-card-mods">
+                    {feat.modifiers.map((m, i) => (
+                      <ModifierChip key={i} mod={m} />
+                    ))}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>

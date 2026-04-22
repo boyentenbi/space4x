@@ -649,7 +649,46 @@ button.res-cell:hover:not(:disabled) {
 .body-row .chip.pos { color: var(--good); border-color: rgba(139, 220, 166, 0.3); }
 .body-row .chip.neg { color: var(--bad); border-color: rgba(255, 138, 138, 0.3); }
 .body-row .chip.flavor { color: var(--warn); border-color: rgba(255, 182, 115, 0.4); }
-.body-row .chip.feature { color: #c98ae0; border-color: rgba(201, 138, 224, 0.45); }
+
+/* Features installed on a body — rendered as a richer mini-card
+   below the chip row so the player can see icon + name + effects
+   at a glance, rather than a bare pill that says nothing. */
+.body-row .body-features {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.body-row .feature-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid rgba(201, 138, 224, 0.45);
+  border-radius: 6px;
+  background: rgba(201, 138, 224, 0.08);
+}
+.body-row .feature-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.body-row .feature-card-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+.body-row .feature-card-name {
+  color: #d9b6ec;
+  font-weight: 600;
+  font-size: 12px;
+}
+.body-row .feature-card-mods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
 
 .body-row .project-row {
   margin-top: 4px;
