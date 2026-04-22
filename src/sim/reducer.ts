@@ -1595,19 +1595,18 @@ function processOccupation(draft: GameState): void {
   }
 
   // Systems don't mutate upstream of this call — the only writes so
-  // far are fleet movement + combat. Read the system list from the
-  // unproxied original to avoid creating 100+ Immer proxies per
-  // call; write via `draft.galaxy.systems[id]` only when we actually
-  // need to change occupation on a given system. This is the bulk
-  // of the AI's per-turn cost: Object.values on the draft's systems
-  // dominates because each entry becomes a Proxy.
-  const baseSystems = original(draft.galaxy.systems) ?? draft.galaxy.systems;
+  // far are fleet movement + combat. Read from the unproxied original
+  // to avoid creating 100+ Immer proxies; only iterate *owned* systems
+  // since unowned systems can't have occupation set (every occupation
+  // assignment in the codebase requires sys.ownerId). This is the
+  // bulk of the AI's per-turn cost.
+  const baseGalaxy = original(draft.galaxy) ?? draft.galaxy;
+  const baseSystems = baseGalaxy.systems;
+  // Walk ownerId directly off each system rather than going through
+  // empires; avoids extra original(empire) hops on the hot path.
   for (const sys of Object.values(baseSystems)) {
-    if (!sys.ownerId) {
-      if (sys.occupation) draft.galaxy.systems[sys.id].occupation = undefined;
-      continue;
-    }
     const ownerId = sys.ownerId;
+    if (!ownerId) continue;
     const fleetsHere = fleetsBySystem.get(sys.id) ?? [];
     const defenderPresent = fleetsHere.some((f) => f.empireId === ownerId);
     if (defenderPresent) {
