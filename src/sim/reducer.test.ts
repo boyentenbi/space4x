@@ -1584,4 +1584,40 @@ describe("perf: endTurn cost", () => {
     // cubic AI search) trips it without flaking on CI.
     expect(perTurn).toBeLessThan(200);
   });
+
+  it("breakdown: beginRound vs runPhase cycle", () => {
+    // Splits the per-turn cost into two halves: beginRound (AI
+    // project planning + tickEmpire for every empire) vs the
+    // runPhase cycle (per-empire diplomacy + aiPlanMoves). Purely
+    // informational — lets us see which half dominates when we
+    // decide where to spend optimisation / parallelism effort.
+    let state = reduce({} as GameState, {
+      type: "newGame",
+      empireName: "Bench",
+      originId: "steady_evolution",
+      speciesId: "humans",
+      seed: 0xc0ffee,
+      expansionism: "conqueror",
+      politic: "centrist",
+    });
+    state = reduce(state, { type: "endTurn" }); // warm-up
+    const TURNS = 30;
+    let totalBegin = 0;
+    let totalPhases = 0;
+    for (let i = 0; i < TURNS; i++) {
+      const t0 = performance.now();
+      state = reduce(state, { type: "beginRound" });
+      const t1 = performance.now();
+      while (state.currentPhaseEmpireId) {
+        state = reduce(state, { type: "runPhase" });
+      }
+      const t2 = performance.now();
+      totalBegin += t1 - t0;
+      totalPhases += t2 - t1;
+    }
+    // eslint-disable-next-line no-console
+    console.log(
+      `[bench:breakdown] avg beginRound=${(totalBegin / TURNS).toFixed(1)}ms avg runPhase-cycle=${(totalPhases / TURNS).toFixed(1)}ms`,
+    );
+  });
 });
