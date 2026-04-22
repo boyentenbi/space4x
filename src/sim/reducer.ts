@@ -275,7 +275,15 @@ export const POP_GROWTH_FOOD_COST = 50;
 // which means: compound growth proportional to current pops, plus any
 // flat additive streams (Matriarchal Hive's queen), both throttled as
 // the body fills. Pops are stored as floats; UI floors for display.
-export const BASE_ORGANIC_GROWTH_RATE = 0.05;
+//
+// Growth is parameterised in terms of the *doubling time* an empty
+// body would take to double its population if nothing else changed
+// (no cap, no modifiers). Tune this one number to rebalance how
+// patient or explosive the whole game feels. 60 turns ≈ mid-game
+// colonies meaningfully gain pops over a dozen rounds without
+// racing to cap.
+export const ORGANIC_DOUBLING_TURNS = 60;
+export const BASE_ORGANIC_GROWTH_RATE = Math.pow(2, 1 / ORGANIC_DOUBLING_TURNS) - 1;
 
 // Deterministic per-turn pop delta for one body given an empire's
 // current modifiers. Returns 0 for uncolonized, full, or food-starved

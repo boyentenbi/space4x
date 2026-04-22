@@ -147,10 +147,11 @@ describe("deterministic pop growth", () => {
   it("applies the logistic formula exactly in one tick", () => {
     // Formula: ΔPops = (BASE_ORGANIC_GROWTH_RATE × mult × pops + additive)
     //                   × (1 − pops/cap)
-    // Test empire is a bare-defaults makeEmpire — no origin modifiers
-    // applied (makeEmpire bypasses newGame's storyModifiers
-    // installation), so popGrowthMult stays at 1 and additive at 0.
-    // For pops = 20, cap = 40: (0.05 × 1 × 20) × 0.5 = 0.5.
+    // BASE_ORGANIC_GROWTH_RATE is derived from ORGANIC_DOUBLING_TURNS:
+    // r = 2^(1/60) − 1 ≈ 0.011619. Test empire is a bare-defaults
+    // makeEmpire — no origin modifiers applied, so popGrowthMult = 1
+    // and additive = 0. For pops = 20, cap = 40:
+    // (0.011619 × 1 × 20) × 0.5 ≈ 0.11619 → 20.11619.
     const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
     const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 20, maxPops: 40 });
     const player = makeEmpire({
@@ -161,7 +162,7 @@ describe("deterministic pop growth", () => {
     });
     const state = makeState({ systems: [home], bodies: [cap], empire: player });
     const ticked = runOnePhase(state, "e_player");
-    expect(ticked.galaxy.bodies["b_cap"].pops).toBeCloseTo(20.5, 5);
+    expect(ticked.galaxy.bodies["b_cap"].pops).toBeCloseTo(20.11619, 4);
   });
 
   it("Matriarchal-Hive-style modifiers: zero organic, positive additive", () => {
