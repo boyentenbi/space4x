@@ -54,19 +54,21 @@ function rollStarKind(r: Rand): StarKind {
 // variants hold specialist stations (compute / factory / solar)
 // with small crews — not many pops, but the pops that live there
 // produce disproportionately.
-const MAX_POPS_BY_HAB: Record<HabitabilityTier, [number, number]> = {
-  garden: [80, 120],
-  temperate: [40, 70],
-  harsh: [4, 8],
-  frozen: [2, 5],
-  molten: [2, 5],
-  barren: [2, 5],
-  stellar: [0, 0], // stars hold no pops
+// Fixed max-pops by habitability — every world of a given kind has
+// the same cap. Simpler than the old lo/hi rolls, and easier to
+// reason about for balance.
+const MAX_POPS_BY_HAB: Record<HabitabilityTier, number> = {
+  garden: 150,
+  temperate: 100,
+  harsh: 10,
+  frozen: 2,
+  molten: 2,
+  barren: 2,
+  stellar: 0, // stars hold no pops
 };
 
-function rollMaxPops(r: Rand, hab: HabitabilityTier): number {
-  const [lo, hi] = MAX_POPS_BY_HAB[hab];
-  return lo + Math.floor(r() * (hi - lo + 1));
+function rollMaxPops(_r: Rand, hab: HabitabilityTier): number {
+  return MAX_POPS_BY_HAB[hab];
 }
 
 // Count of *planets/moons* per system (star is added separately and
@@ -282,8 +284,7 @@ export function generateGalaxy(opts: GenOptions): Galaxy {
     const pick = nonStarBodyIds[Math.floor(rand() * nonStarBodyIds.length)];
     const body = bodies[pick];
     body.habitability = "temperate";
-    const [lo, hi] = MAX_POPS_BY_HAB.temperate;
-    if (body.maxPops < lo) body.maxPops = lo + Math.floor(rand() * (hi - lo + 1));
+    body.maxPops = MAX_POPS_BY_HAB.temperate;
     body.kind = "planet";
   }
 
