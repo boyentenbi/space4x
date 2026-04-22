@@ -6,6 +6,7 @@ import {
   allOrdersOf,
   atWar,
   availableBodyProjectsFor,
+  BENCH,
   canEnterSystem,
   empireById,
   reduce,
@@ -1604,6 +1605,7 @@ describe("perf: endTurn cost", () => {
     const TURNS = 30;
     let totalBegin = 0;
     let totalPhases = 0;
+    BENCH.reset();
     for (let i = 0; i < TURNS; i++) {
       const t0 = performance.now();
       state = reduce(state, { type: "beginRound" });
@@ -1615,9 +1617,18 @@ describe("perf: endTurn cost", () => {
       totalBegin += t1 - t0;
       totalPhases += t2 - t1;
     }
+    const avgBegin = totalBegin / TURNS;
+    const avgPhases = totalPhases / TURNS;
+    const avgScore = BENCH.scoreStateCalls / TURNS;
+    const avgScoreTime = BENCH.scoreStateTimeMs / TURNS;
+    const avgCand = BENCH.moveCandidateCalls / TURNS;
+    const avgCandTime = BENCH.moveCandidateTimeMs / TURNS;
     // eslint-disable-next-line no-console
     console.log(
-      `[bench:breakdown] avg beginRound=${(totalBegin / TURNS).toFixed(1)}ms avg runPhase-cycle=${(totalPhases / TURNS).toFixed(1)}ms`,
+      `[bench:breakdown] per turn avg:\n` +
+        `  beginRound=${avgBegin.toFixed(1)}ms  runPhase-cycle=${avgPhases.toFixed(1)}ms\n` +
+        `  scoreState calls=${avgScore.toFixed(0)} time=${avgScoreTime.toFixed(1)}ms (${(avgScoreTime / avgScore || 0).toFixed(2)}ms each)\n` +
+        `  moveCandidate calls=${avgCand.toFixed(0)} time=${avgCandTime.toFixed(1)}ms (${(avgCandTime / avgCand || 0).toFixed(2)}ms each)`,
     );
   });
 });

@@ -2320,9 +2320,30 @@ function systemOwnedScore(empire: Empire, sys: StarSystem, state: GameState): nu
   return total;
 }
 
+// Bench counters for the AI hot path. Tests (perf bench) reset at
+// the start of a measurement window and read at the end. In normal
+// play these are just integer bumps — negligible.
+export const BENCH = {
+  scoreStateCalls: 0,
+  scoreStateTimeMs: 0,
+  moveCandidateCalls: 0,
+  moveCandidateTimeMs: 0,
+  reset() {
+    this.scoreStateCalls = 0;
+    this.scoreStateTimeMs = 0;
+    this.moveCandidateCalls = 0;
+    this.moveCandidateTimeMs = 0;
+  },
+};
+
 export function scoreState(state: GameState, empireId: string): number {
+  const __t0 = performance.now();
   const empire = empireById(state, empireId);
-  if (!empire) return -Infinity;
+  if (!empire) {
+    BENCH.scoreStateCalls += 1;
+    BENCH.scoreStateTimeMs += performance.now() - __t0;
+    return -Infinity;
+  }
   let score = 0;
   // Owned bodies: each one's intrinsic value (star → STAR_BODY_VALUE,
   // other → maxPops × MAX_POPS_VALUE) + its current-turn flows ×
@@ -2441,6 +2462,8 @@ export function scoreState(state: GameState, empireId: string): number {
       score -= sysValue * occW;
     }
   }
+  BENCH.scoreStateCalls += 1;
+  BENCH.scoreStateTimeMs += performance.now() - __t0;
   return score;
 }
 
@@ -2681,6 +2704,7 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
     }
 
     const scoreCandidate = (mutate: (d: GameState) => void): number => {
+      const __t0 = performance.now();
       const projected = produce(baseline, (d) => {
         mutate(d);
         // 1-step forward sim: combat settles any new encounter, then
@@ -2689,7 +2713,10 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
         resolveCombat(d);
         processOccupation(d);
       });
-      return scoreState(projected, empire.id);
+      const score = scoreState(projected, empire.id);
+      BENCH.moveCandidateCalls += 1;
+      BENCH.moveCandidateTimeMs += performance.now() - __t0;
+      return score;
     };
 
     let bestScore = scoreCandidate(() => {}); // baseline: no change
