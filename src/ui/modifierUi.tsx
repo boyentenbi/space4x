@@ -49,10 +49,9 @@ export function renderModifier(mod: Modifier): ReactNode {
       );
     }
     case "popGrowthAdd": {
-      const pct = Math.round(mod.value * 100);
       return (
         <>
-          +{pct}% <img className="bonus-icon" src={POPS_ICON} alt="" /> growth (flat)
+          {signed(mod.value)} <img className="bonus-icon" src={POPS_ICON} alt="" /> /turn (flat)
         </>
       );
     }

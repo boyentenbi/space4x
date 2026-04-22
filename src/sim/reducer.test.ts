@@ -99,7 +99,7 @@ function makeState(overrides: {
   const fleetsRec: Record<string, Fleet> = {};
   for (const f of overrides.fleets ?? []) fleetsRec[f.id] = f;
   return {
-    schemaVersion: 19,
+    schemaVersion: 20,
     turn: overrides.turn ?? 1,
     rngSeed: 1,
     galaxy: {
@@ -124,6 +124,66 @@ function makeState(overrides: {
 // =====================================================================
 // Tests
 // =====================================================================
+
+describe("deterministic pop growth", () => {
+  it("applies the logistic formula exactly in one tick", () => {
+    // Formula: ΔPops = (BASE_ORGANIC_GROWTH_RATE × mult × pops + additive)
+    //                   × (1 − pops/cap)
+    // Defaults (humans): BASE = 0.05, popGrowthMult = 1.25, additive = 0.
+    // For pops = 20, cap = 40: (0.05 × 1.25 × 20) × 0.5 = 0.625.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 20, maxPops: 40 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+      resources: { food: 10000, energy: 10000, political: 10 },
+    });
+    const state = makeState({ systems: [home], bodies: [cap], empire: player });
+    const ticked = runOnePhase(state, "e_player");
+    expect(ticked.galaxy.bodies["b_cap"].pops).toBeCloseTo(20.625, 5);
+  });
+
+  it("Matriarchal-Hive-style modifiers: zero organic, positive additive", () => {
+    // popGrowthMult = 0 kills organic entirely; popGrowthAdd = 0.3 gives
+    // flat per-turn pops, throttled by headroom. For pops = 10, cap = 40:
+    //   (0 + 0.3) × (1 − 10/40) = 0.225.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 10, maxPops: 40 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+      resources: { food: 10000, energy: 10000, political: 10 },
+      storyModifiers: {
+        matriarchal_hive: [
+          { kind: "popGrowthMult", value: 0 },
+          { kind: "popGrowthAdd", value: 0.3 },
+        ],
+      },
+    });
+    const state = makeState({ systems: [home], bodies: [cap], empire: player });
+    const ticked = runOnePhase(state, "e_player");
+    expect(ticked.galaxy.bodies["b_cap"].pops).toBeCloseTo(10.225, 4);
+  });
+
+  it("does not grow an uncolonized (0-pop) body with only organic growth", () => {
+    // Organic growth compounds off existing pops, so a 0-pop body stays
+    // at 0 even on a big owned planet — you need to colonise it first.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap", "b_empty"], ownerId: "e_player" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const empty = makeBody({ id: "b_empty", systemId: "s_home", pops: 0 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+      resources: { food: 10000, energy: 10000, political: 10 },
+    });
+    const state = makeState({ systems: [home], bodies: [cap, empty], empire: player });
+    const ticked = runOnePhase(state, "e_player");
+    expect(ticked.galaxy.bodies["b_empty"].pops).toBe(0);
+  });
+});
 
 describe("availableBodyProjectsFor", () => {
   it("does NOT offer build_frigate on an uncolonized body (pops = 0)", () => {

@@ -19,14 +19,26 @@ export const ORIGINS: Origin[] = [
     id: "colony_seeders",
     name: "Colony Seeders",
     description:
-      "An insect colony was launched from a long-gone homeworld, one pod among thousands. You are what survived. The founding caste was functional but incomplete — the stock carried no brood mother. Without her, your hive grows slowly and every death is a wound. Somewhere in your genome is the blueprint to make one. Building her will cost heavily in food; hosting her afterward will cost still more. But the swarm she promises is the only way you become more than a foothold.",
+      "A decentralised insect lineage: every fertile adult seeds, every colony spreads. No single matriarch — just a lot of ordinary bugs, many of them reproductive. Your swarms grow the way weeds do: ubiquitously, and from every corner of the empire at once.",
     allowedSpeciesIds: ["insectoid"],
     startingResources: { energy: 600, food: 1200, political: 3 },
     startingPops: 30,
-    // Until the Brood Mother is built, the colony grows at half pace.
+    art: "/origins/colony_seeders.png",
+  },
+  {
+    id: "matriarchal_hive",
+    name: "Matriarchal Hive",
+    description:
+      "Your species carries no reproductive autonomy outside the matriarch. One queen, one hive, one pulse of eggs per cycle. Ordinary workers don't reproduce — the entire empire's growth rides on her output, distributed across every nest. She is prolific, but she is singular, and what flows from her is all you have.",
+    allowedSpeciesIds: ["insectoid"],
+    startingResources: { energy: 600, food: 1200, political: 3 },
+    startingPops: 30,
     startingStoryModifiers: {
-      seeded_colony: [
-        { kind: "popGrowthMult", value: 0.5 },
+      matriarchal_hive: [
+        // Zero out organic (worker-driven) growth entirely; the queen
+        // supplies a flat stream of new pops per body instead.
+        { kind: "popGrowthMult", value: 0 },
+        { kind: "popGrowthAdd", value: 0.3 },
       ],
     },
     art: "/origins/colony_seeders.png",

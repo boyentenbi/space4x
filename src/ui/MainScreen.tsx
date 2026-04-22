@@ -296,7 +296,7 @@ function BodyRow({
       <div className="body-stats">
         <span className="stat-pill">
           <img className="stat-icon" src={POPS_ICON} alt="" />
-          {body.pops}/{body.maxPops}
+          {Math.floor(body.pops)}/{body.maxPops}
         </span>
         {owned && body.hammers > 0 && (
           <span className="stat-pill" title={`${HAMMERS_PER_POP} hammer per pop`}>
@@ -311,9 +311,9 @@ function BodyRow({
           </span>
         )}
         {owned && growth && growth.kind === "growing" && (
-          <span className="stat-pill growth-pill" title="Turns until +1 pop (costs 5 food)">
+          <span className="stat-pill growth-pill" title="Pops gained per turn (costs 50 food per pop)">
             <img className="stat-icon" src={POPS_ICON} alt="" />
-            +1 ~{growth.turns}T
+            +{growth.perTurn.toFixed(2)}/T
           </span>
         )}
         {owned && growth && growth.kind === "starved" && (
@@ -622,7 +622,7 @@ export function MainScreen() {
           />
           <ResCell
             icon={POPS_ICON}
-            value={`${popsNow}/${popsCap}`}
+            value={`${Math.floor(popsNow)}/${popsCap}`}
             delta={expectedPopGrowth(state, state.empire)}
             onClick={() => setBreakdown(popsBreakdownFor(state, state.empire))}
           />

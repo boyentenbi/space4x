@@ -124,23 +124,32 @@ const COMPUTE_PER_POP_HAB: Partial<Record<HabitabilityTier, number>> = {
 export const HAMMERS_PER_POP = 0.4;
 export const POP_GROWTH_FOOD_COST = 50;
 
-// Expected turns until this body grows by +1 pop, or a status string.
-// Matches the actual growth roll: chance = headroom * 0.5 each turn,
-// so expected wait = 1/chance (rounded up). Gated on empire food.
-// Expected pop growth *rate* for an empire this turn — sum of per-body
-// growth chances, capped at 1 per body (single roll per body per turn).
-// Returns 0 if food is below the growth threshold (no body can grow).
+// Deterministic logistic growth. Per turn, a body grows by
+//   (BASE_ORGANIC_GROWTH_RATE × popGrowthMult × pops + additive) × (1 − pops/cap)
+// which means: compound growth proportional to current pops, plus any
+// flat additive streams (Matriarchal Hive's queen), both throttled as
+// the body fills. Pops are stored as floats; UI floors for display.
+export const BASE_ORGANIC_GROWTH_RATE = 0.05;
+
+// Deterministic per-turn pop delta for one body given an empire's
+// current modifiers. Returns 0 for uncolonized, full, or food-starved
+// bodies. Units: pops/turn (fractional).
+export function bodyGrowthRate(empire: Empire, body: Body): number {
+  const cap = maxPopsFor(empire, body);
+  if (cap <= 0 || body.pops <= 0 || body.pops >= cap) return 0;
+  const organic = BASE_ORGANIC_GROWTH_RATE * popGrowthMultiplier(empire) * body.pops;
+  const additive = popGrowthAdditive(empire);
+  const headroom = (cap - body.pops) / cap;
+  return Math.max(0, (organic + additive) * headroom);
+}
+
+// Sum of per-body pop growth across all owned bodies this turn.
+// Returns 0 if the empire is out of food (growth is gated there).
 export function expectedPopGrowth(state: GameState, empire: Empire): number {
-  if (empire.resources.food < POP_GROWTH_FOOD_COST) return 0;
-  const growthMult = popGrowthMultiplier(empire);
-  const growthAdd = popGrowthAdditive(empire);
+  if (empire.resources.food <= 0) return 0;
   let total = 0;
   for (const body of ownedBodiesOf(state, empire)) {
-    const cap = maxPopsFor(empire, body);
-    if (body.pops >= cap) continue;
-    const headroom = (cap - body.pops) / cap;
-    const chance = Math.min(1, Math.max(0, (headroom * 0.5 + growthAdd) * growthMult));
-    total += chance;
+    total += bodyGrowthRate(empire, body);
   }
   return total;
 }
@@ -149,17 +158,13 @@ export function growthEstimate(
   _state: GameState,
   empire: Empire,
   body: Body,
-): { kind: "full" } | { kind: "starved" } | { kind: "growing"; turns: number } {
+): { kind: "full" } | { kind: "starved" } | { kind: "growing"; perTurn: number } {
   const cap = maxPopsFor(empire, body);
   if (body.pops >= cap) return { kind: "full" };
-  if (empire.resources.food < POP_GROWTH_FOOD_COST) return { kind: "starved" };
-  const headroom = (cap - body.pops) / cap;
-  const chance = Math.max(
-    0,
-    Math.min(1, (headroom * 0.5 + popGrowthAdditive(empire)) * popGrowthMultiplier(empire)),
-  );
-  if (chance <= 0) return { kind: "full" };
-  return { kind: "growing", turns: Math.ceil(1 / chance) };
+  if (empire.resources.food <= 0) return { kind: "starved" };
+  const rate = bodyGrowthRate(empire, body);
+  if (rate <= 0) return { kind: "full" };
+  return { kind: "growing", perTurn: rate };
 }
 
 // ===== AI empire setup =====
@@ -226,7 +231,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 19,
+    schemaVersion: 20,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -765,8 +770,7 @@ export function popsBreakdownFor(state: GameState, empire: Empire): StatBreakdow
       modRows.push({ name: lm.label, detail: "growth rate", value: pct / 100 });
     }
     if (lm.mod.kind === "popGrowthAdd") {
-      const pct = Math.round(lm.mod.value * 100);
-      modRows.push({ name: lm.label, detail: "flat growth chance", value: pct / 100 });
+      modRows.push({ name: lm.label, detail: "flat pops/turn", value: lm.mod.value });
     }
   }
   const total = bodyRows.reduce((s, r) => s + r.value, 0);
@@ -1675,7 +1679,7 @@ export function outpostEnergyUpkeep(empire: Empire): number {
   return empire.systemIds.length * BALANCE.outpostEnergyUpkeep;
 }
 
-function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number): void {
+function tickEmpire(draft: GameState, empire: Empire): void {
   // 1. Stock income (net — perTurnIncomeOf already subtracts energy
   //    upkeep from ships + outposts, so going negative here is the
   //    signal that fleets can't move / can't deal damage this round).
@@ -1710,10 +1714,14 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
       break;
     }
   }
-  // 4. Pop growth — modifier-aware.
-  //    chance = (headroom * 0.5 + additive) * multiplier, clamped [0, 1].
-  //    Additive mods (e.g. Brood Mother) give a baseline of growth even
-  //    on near-full bodies; multiplicative mods scale the whole thing.
+  // 4. Pop growth — deterministic logistic.
+  //    ΔPops = (BASE × popGrowthMult × pops + additive) × (1 − pops/cap)
+  //    Organic term compounds off current pops (species that carry
+  //    popGrowthMult = 0, e.g. Matriarchal Hive, kill it entirely).
+  //    Additive term is a flat per-turn stream from effects like the
+  //    Hive's queen. Both throttle to zero as the body fills. Food
+  //    cost scales with actual growth: 50 food per pop grown; gated on
+  //    the empire having food at all.
   const growthMult = popGrowthMultiplier(empire);
   const growthAdd = popGrowthAdditive(empire);
   for (const sid of empire.systemIds) {
@@ -1730,14 +1738,15 @@ function tickEmpire(draft: GameState, empire: Empire, growthRand: () => number):
       // A body with zero pops has not been colonised — it doesn't
       // auto-populate just because the empire owns the system. Each
       // body requires its own explicit colonise action to bootstrap.
-      if (body.pops === 0) continue;
-      if (empire.resources.food < POP_GROWTH_FOOD_COST) continue;
-      const headroom = (cap - body.pops) / cap;
-      const chance = Math.max(0, Math.min(1, (headroom * 0.5 + growthAdd) * growthMult));
-      if (growthRand() < chance) {
-        body.pops = Math.min(cap, body.pops + 1);
-        empire.resources.food -= POP_GROWTH_FOOD_COST;
-      }
+      if (body.pops <= 0) continue;
+      if (empire.resources.food <= 0) continue;
+      const headroom = cap > 0 ? (cap - body.pops) / cap : 0;
+      const organic = BASE_ORGANIC_GROWTH_RATE * growthMult * body.pops;
+      const delta = (organic + growthAdd) * headroom;
+      if (delta <= 0) continue;
+      const capped = Math.min(delta, cap - body.pops);
+      body.pops += capped;
+      empire.resources.food -= POP_GROWTH_FOOD_COST * capped;
     }
   }
 
@@ -2794,17 +2803,15 @@ function applyBeginRound(state: GameState): GameState {
     draft.turn += 1;
     draft.rngSeed = nextSeed(draft.rngSeed);
 
-    const growthRand = mulberry32(draft.rngSeed ^ 0xa5a5a5a5);
-
     // AI project planning runs before ticks so newly-queued orders
     // drain this turn (mirrors how the player queues before endTurn).
     for (const ai of draft.aiEmpires) {
       aiPlanProject(draft, ai);
     }
 
-    tickEmpire(draft, draft.empire, growthRand);
+    tickEmpire(draft, draft.empire);
     for (const ai of draft.aiEmpires) {
-      tickEmpire(draft, ai, growthRand);
+      tickEmpire(draft, ai);
     }
 
     draft.currentPhaseEmpireId = draft.empire.id;

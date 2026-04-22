@@ -92,7 +92,7 @@ export function EmpireProfileModal({
           <div className="profile-stats">
             <span>{systemsOwned} system{systemsOwned === 1 ? "" : "s"}</span>
             <span>·</span>
-            <span>{pops} pops</span>
+            <span>{Math.floor(pops)} pops</span>
           </div>
         </div>
 
