@@ -4,6 +4,7 @@ import { featureById, originById, speciesById } from "../sim/content";
 import {
   allEmpires,
   allOrdersOf,
+  atWar,
   availableBodyProjectsFor,
   computeComponents,
   availableProjectsFor,
@@ -497,6 +498,16 @@ export function MainScreen() {
     fleetId: string;
     split: number | null;
   } | null>(null);
+  // Pending "declare war on arrival" confirmation. When the player
+  // picks a destination whose path passes through or lands on one or
+  // more foreign empires we're not at war with, we stash the move
+  // here and show a modal instead of dispatching immediately.
+  const [pendingWarMove, setPendingWarMove] = useState<{
+    fleetId: string;
+    toSystemId: string;
+    splitCount: number | null;
+    enemiesToDeclare: string[]; // empire ids we'd end up at war with
+  } | null>(null);
 
   const origin = originById(state.empire.originId);
   const species = speciesById(state.empire.speciesId);
@@ -619,6 +630,47 @@ export function MainScreen() {
     return p ?? [];
   })();
 
+  // Walk a path (excluding origin) and collect every foreign empire
+  // we aren't already at war with. These are the empires the move
+  // would declare war on by entering their space.
+  function enemiesAlongPath(path: string[]): string[] {
+    const uniq = new Set<string>();
+    for (const sid of path) {
+      const sys = state.galaxy.systems[sid];
+      if (!sys || !sys.ownerId) continue;
+      if (sys.ownerId === state.empire.id) continue;
+      if (atWar(state, state.empire.id, sys.ownerId)) continue;
+      uniq.add(sys.ownerId);
+    }
+    return [...uniq];
+  }
+
+  function dispatchCommitMove(
+    fleetId: string,
+    toSystemId: string,
+    splitCount: number | null,
+  ) {
+    if (splitCount !== null) {
+      dispatch({
+        type: "splitFleet",
+        byEmpireId: state.empire.id,
+        fleetId,
+        count: splitCount,
+        toSystemId,
+      });
+      // After a split the peel-off is a different fleet; exit move
+      // mode so the user picks up whichever group they care about.
+      setMoveMode(null);
+    } else {
+      dispatch({
+        type: "setFleetDestination",
+        byEmpireId: state.empire.id,
+        fleetId,
+        toSystemId,
+      });
+    }
+  }
+
   function handleSystemSelect(id: string | null) {
     // In move mode, any reachable system is a legal order target.
     // Fleet stays selected after ordering so the path is visible; tap
@@ -631,24 +683,18 @@ export function MainScreen() {
           split === null
             ? null
             : Math.max(1, Math.min(moveFleet.shipCount - 1, split));
-        if (count !== null) {
-          dispatch({
-            type: "splitFleet",
-            byEmpireId: state.empire.id,
+        const enemies = enemiesAlongPath(path);
+        if (enemies.length > 0) {
+          // Foreign territory on the way — stash the commit so the
+          // player can confirm the war declaration.
+          setPendingWarMove({
             fleetId: moveMode.fleetId,
-            count,
             toSystemId: id,
+            splitCount: count,
+            enemiesToDeclare: enemies,
           });
-          // After a split the peel-off is a different fleet; exit move
-          // mode so the user picks up whichever group they care about.
-          setMoveMode(null);
         } else {
-          dispatch({
-            type: "setFleetDestination",
-            byEmpireId: state.empire.id,
-            fleetId: moveMode.fleetId,
-            toSystemId: id,
-          });
+          dispatchCommitMove(moveMode.fleetId, id, count);
         }
         setSelectedSystemId(id);
         return;
@@ -1139,6 +1185,49 @@ export function MainScreen() {
       )}
       {breakdown && (
         <StatBreakdownModal breakdown={breakdown} onClose={() => setBreakdown(null)} />
+      )}
+      {pendingWarMove && (
+        <div className="modal-scrim" onClick={() => setPendingWarMove(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Declare war?</h2>
+            <div className="event-text">
+              This move will cross into foreign territory. By sending this
+              fleet onwards you will declare war on:
+            </div>
+            <ul style={{ margin: "8px 0 12px 20px" }}>
+              {pendingWarMove.enemiesToDeclare.map((eid) => {
+                const e = empireById(state, eid);
+                return (
+                  <li key={eid} style={{ color: e?.color ?? undefined }}>
+                    {e?.name ?? eid}
+                  </li>
+                );
+              })}
+            </ul>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="close-btn"
+                onClick={() => setPendingWarMove(null)}
+              >
+                cancel
+              </button>
+              <button
+                className="close-btn"
+                style={{ borderColor: "var(--bad)", color: "var(--bad)" }}
+                onClick={() => {
+                  dispatchCommitMove(
+                    pendingWarMove.fleetId,
+                    pendingWarMove.toSystemId,
+                    pendingWarMove.splitCount,
+                  );
+                  setPendingWarMove(null);
+                }}
+              >
+                declare war
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {rosterOpen && (
         <EmpireRosterModal

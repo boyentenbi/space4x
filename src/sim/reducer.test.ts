@@ -319,9 +319,13 @@ describe("canEnterSystem", () => {
     expect(canEnterSystem(state, moverId, "s_home")).toBe(true);
   });
 
-  it("blocks entry into neutral-owned systems", () => {
+  it("allows entry into neutral-owned systems (declares war on arrival)", () => {
+    // Pre-arrival reachability is now unrestricted — moving into a
+    // foreign-owned system IS the declaration of war. The actual
+    // entry point (processFleetOrders / scoreCandidate) calls
+    // maybeAutoDeclareWar to make that real.
     const { state, moverId, targetId } = setup({ targetOwner: "e_other" });
-    expect(canEnterSystem(state, moverId, targetId)).toBe(false);
+    expect(canEnterSystem(state, moverId, targetId)).toBe(true);
   });
 
   it("allows entry into at-war systems", () => {
@@ -413,7 +417,10 @@ describe("setFleetDestination action", () => {
     expect(next).toBe(state);
   });
 
-  it("refuses a destination with no legal path (neutral territory)", () => {
+  it("accepts a neutral destination (entry will auto-declare war)", () => {
+    // Foreign-owned systems are reachable now — the declaration of
+    // war happens when the fleet actually arrives, handled by the
+    // move pipeline (not by this commit path).
     const { state, fleetId, destId } = twoSystemSetup({ destOwner: "e_other" });
     const next = reduce(state, {
       type: "setFleetDestination",
@@ -421,7 +428,7 @@ describe("setFleetDestination action", () => {
       fleetId,
       toSystemId: destId,
     });
-    expect(next.fleets[fleetId]?.destinationSystemId).toBeUndefined();
+    expect(next.fleets[fleetId]?.destinationSystemId).toBe(destId);
   });
 
   it("accepts an at-war destination", () => {
@@ -479,18 +486,20 @@ describe("AI scoreState value function", () => {
     // + empire flats (+1 political baseline × 5 × 3 = 15, -1 outpost
     //   upkeep × 5 = -5) = 10
     // - occupation debit (200 × 0.6 = 120)
-    // ≈ 90.
+    // - AT_WAR_COST (pragmatist × 1 enemy = 500)
+    // ≈ -410.
     const playerScore = scoreState(state, "e_player");
-    expect(playerScore).toBeGreaterThan(80);
-    expect(playerScore).toBeLessThan(100);
+    expect(playerScore).toBeGreaterThan(-420);
+    expect(playerScore).toBeLessThan(-400);
     // AI = body intrinsic (200)
     // + empire flats (10)
     // + stuck 1-ship @ at-war (500 pragmatist × 1.2 × 0.2) = 120
     // + occupation credit (200 × 0.6 = 120)
-    // ≈ 450.
+    // - AT_WAR_COST (pragmatist × 1 enemy = 500)
+    // ≈ -50.
     const aiScore = scoreState(state, "e_ai");
-    expect(aiScore).toBeGreaterThan(440);
-    expect(aiScore).toBeLessThan(460);
+    expect(aiScore).toBeGreaterThan(-60);
+    expect(aiScore).toBeLessThan(-40);
   });
 
   it("values systems and ships in hammer-equivalent units", () => {
@@ -1541,6 +1550,36 @@ describe("declareWar / makePeace round-trip", () => {
     expect(atWar(peaceState, "e_player", "e_ai")).toBe(false);
   });
 
+  it("fleet entering a not-at-war empire's system auto-declares war", () => {
+    // Player fleet at s_home sets a destination at s_enemy (owned by
+    // e_ai, no war yet). After endTurn the fleet steps into s_enemy
+    // and the reducer adds (e_ai, e_player) to state.wars.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_home"], ownerId: "e_player" });
+    const enemy = makeSystem({ id: "s_enemy", bodyIds: ["b_enemy"], ownerId: "e_ai" });
+    const hBody = makeBody({ id: "b_home", systemId: "s_home", pops: 30 });
+    const eBody = makeBody({ id: "b_enemy", systemId: "s_enemy", pops: 30 });
+    const player = makeEmpire({ id: "e_player", capitalBodyId: "b_home", systemIds: ["s_home"] });
+    const ai = makeEmpire({ id: "e_ai", capitalBodyId: "b_enemy", systemIds: ["s_enemy"] });
+    const fleet: Fleet = {
+      id: "f1",
+      empireId: "e_player",
+      systemId: "s_home",
+      shipCount: 3,
+      destinationSystemId: "s_enemy",
+    };
+    const state = makeState({
+      systems: [home, enemy],
+      bodies: [hBody, eBody],
+      hyperlanes: [["s_home", "s_enemy"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [fleet],
+    });
+    expect(atWar(state, "e_player", "e_ai")).toBe(false);
+    const next = reduce(state, { type: "endTurn" });
+    // War was declared as the fleet crossed the border.
+    expect(atWar(next, "e_player", "e_ai")).toBe(true);
+  });
 });
 
 // =====================================================================

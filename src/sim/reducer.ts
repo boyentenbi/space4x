@@ -1823,19 +1823,50 @@ export function enemiesOf(state: GameState, empireId: string): string[] {
   return out;
 }
 
-// Can `moverEmpireId` legally enter `systemId`? Own territory, unowned
-// space, and enemy (at-war) territory all qualify. Neutral-owned space
-// is off-limits until war is declared.
-export function canEnterSystem(
+// When a fleet lands at a system owned by a foreign empire we aren't
+// already at war with, the entry IS a declaration. Push the war to
+// state.wars and log a chronicle entry if the player's involved.
+// Called by both the real fleet-movement path and the scoreCandidate
+// projection so the AI sees war as a downstream consequence of moves.
+export function maybeAutoDeclareWar(
   state: GameState,
   moverEmpireId: string,
   systemId: string,
-): boolean {
+): void {
   const sys = state.galaxy.systems[systemId];
-  if (!sys) return false;
-  if (!sys.ownerId) return true;
-  if (sys.ownerId === moverEmpireId) return true;
-  return atWar(state, moverEmpireId, sys.ownerId);
+  if (!sys) return;
+  const ownerId = sys.ownerId;
+  if (!ownerId || ownerId === moverEmpireId) return;
+  if (atWar(state, moverEmpireId, ownerId)) return;
+  const pair = sortedPair(moverEmpireId, ownerId);
+  state.wars.push(pair);
+  if (moverEmpireId === state.empire.id || ownerId === state.empire.id) {
+    const mover = empireById(state, moverEmpireId);
+    const defender = empireById(state, ownerId);
+    state.eventLog.push({
+      turn: state.turn,
+      eventId: "war_declared",
+      choiceId: null,
+      text: `${mover?.name ?? "?"} declared war on ${defender?.name ?? "?"} by entering ${sys.name}.`,
+    });
+  }
+}
+
+// Can `moverEmpireId` legally enter `systemId`? Own territory, unowned
+// space, and enemy (at-war) territory all qualify. Neutral-owned space
+// is off-limits until war is declared.
+// Any system is legally enterable. Entering a foreign-owned system
+// that you're not already at war with is itself the declaration —
+// the fleet movement path (processFleetOrders, and the scoreCandidate
+// projection in aiPlanMoves) calls maybeAutoDeclareWar on arrival.
+// The _moverEmpireId parameter is retained for signature stability;
+// the war check has moved to the entry point.
+export function canEnterSystem(
+  state: GameState,
+  _moverEmpireId: string,
+  systemId: string,
+): boolean {
+  return state.galaxy.systems[systemId] !== undefined;
 }
 
 // BFS shortest path between systems, respecting canEnterSystem for
@@ -2289,6 +2320,21 @@ export const MAX_POPS_VALUE = 2;
 // [1, OCCUPATION_TURNS_TO_FLIP] clamp to 0.
 const OCCUPATION_WEIGHT_BY_TURNS: readonly number[] = [0, 0.3, 0.6, 1.0];
 
+// Per-enemy cost of being at war, by archetype. Subtracted from
+// scoreState once per active war. Conquerors pay nothing (they
+// value fleet pressure for its own sake, already captured in
+// ship-value at-war premium). Pragmatists pay a moderate amount —
+// they'd rather stability. Isolationists pay a lot — any war is
+// an existential affront to their worldview. This is how "moving
+// into enemy territory auto-declares war" gets priced into the
+// value function: the move gains whatever conquest promises, but
+// takes a standing hit for having the enemy on your books.
+const AT_WAR_COST_PER_ENEMY: Record<Expansionism, number> = {
+  conqueror: 0,
+  pragmatist: 500,
+  isolationist: 2000,
+};
+
 // Per-archetype intrinsic value of a ship, measured in hammer-
 // equivalent units. Derived from the actual build_frigate cost so
 // retuning the project content automatically retunes the AI's ship
@@ -2422,6 +2468,11 @@ export function scoreState(state: GameState, empireId: string): number {
   }
   // Political stockpile: empire-wide, expensive to regenerate.
   score += empire.political * 15;
+  // Archetype-weighted cost of being at war. Entering foreign space
+  // auto-declares war; this term is how we price that consequence
+  // into the value function.
+  const enemies = enemiesOf(state, empire.id);
+  score -= enemies.length * AT_WAR_COST_PER_ENEMY[empire.expansionism];
   // In-flight projects: preview what they'll be worth at completion,
   // scaled by progress for cancel risk.
   for (const order of allOrdersOf(state, empire)) {
@@ -2693,20 +2744,9 @@ function processFleetOrders(draft: GameState, onlyEmpireId?: string): void {
       fleet.systemId = nextHop;
       if (nextHop === final) fleet.destinationSystemId = undefined;
     }
+    // Entering a foreign-owned system is a declaration of war.
+    maybeAutoDeclareWar(draft, fleet.empireId, nextHop);
   }
-}
-
-// Build adjacency from the hyperlane list. Repeated on every turn's
-// AI plan; cheap enough at current galaxy sizes.
-function buildHyperlaneAdj(draft: GameState): Map<string, string[]> {
-  const adj = new Map<string, string[]>();
-  for (const [a, b] of draft.galaxy.hyperlanes) {
-    if (!adj.has(a)) adj.set(a, []);
-    if (!adj.has(b)) adj.set(b, []);
-    adj.get(a)!.push(b);
-    adj.get(b)!.push(a);
-  }
-  return adj;
 }
 
 // Per-fleet greedy search over destinations. For each fleet, try
@@ -2814,13 +2854,18 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
       }
     }
 
-    // Each reachable destination (teleport approximation).
+    // Each reachable destination (teleport approximation). If the
+    // destination is a foreign-owned system we're not at war with yet,
+    // the mutate also pushes a war into the projection so scoreState
+    // sees the full consequence (new enemy, AT_WAR_COST, enabled
+    // occupation debit, etc).
     for (const dest of reachable) {
       const score = scoreCandidate((d) => {
         const f = d.fleets[fleet.id];
         if (!f) return;
         f.systemId = dest;
         f.destinationSystemId = undefined;
+        maybeAutoDeclareWar(d, empire.id, dest);
       });
       if (score > bestScore) {
         bestScore = score;
@@ -2838,51 +2883,16 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
   }
 }
 
-// Archetype-driven war declarations. Conquerors occasionally declare
-// war on a reachable neighbour; pragmatists and isolationists don't
-// initiate (they still fight back via combat resolution).
-function aiPlanDiplomacy(draft: GameState, empire: Empire, rand: () => number): void {
-  if (empire.expansionism !== "conqueror") return;
-  if (enemiesOf(draft, empire.id).length >= 1) return;
-  if (empire.systemIds.length === 0) return;
-
-  const adj = buildHyperlaneAdj(draft);
-
-  // BFS through our + unowned territory; any hit on a foreign-owned
-  // system counts as "in contact" for the purpose of starting a war.
-  const MAX_DEPTH = 6;
-  const contacted = new Set<string>();
-  const visited = new Set<string>();
-  let frontier = new Set<string>(empire.systemIds);
-  for (const id of frontier) visited.add(id);
-  for (let d = 0; d < MAX_DEPTH && frontier.size > 0; d++) {
-    const next = new Set<string>();
-    for (const id of frontier) {
-      for (const n of adj.get(id) ?? []) {
-        if (visited.has(n)) continue;
-        const sys = draft.galaxy.systems[n];
-        if (!sys) continue;
-        if (sys.ownerId && sys.ownerId !== empire.id) {
-          contacted.add(sys.ownerId);
-          continue; // don't traverse through them
-        }
-        visited.add(n);
-        next.add(n);
-      }
-    }
-    frontier = next;
-  }
-
-  if (contacted.size === 0) return;
-  if (rand() > 0.15) return;
-
-  const list = Array.from(contacted);
-  const pick = list[Math.floor(rand() * list.length)];
-  if (!pick) return;
-  applyDeclareWar(draft, {
-    byEmpireId: empire.id,
-    targetEmpireId: pick,
-  });
+// War declarations now emerge from fleet movements: moving a fleet
+// into a foreign-owned system declares war on that empire (handled
+// in processFleetOrders via maybeAutoDeclareWar and previewed in the
+// scoreCandidate projection so the AI can weigh it). Each archetype
+// pays a different AT_WAR_COST_PER_ENEMY on every active war, so the
+// value function naturally governs who picks fights and when. This
+// function is intentionally a no-op — retained only for the explicit
+// callsite in the phase loop until that can be cleaned up.
+function aiPlanDiplomacy(_draft: GameState, _empire: Empire, _rand: () => number): void {
+  // intentionally empty
 }
 
 // Pick starter systems that are spread apart: first one random interior,
