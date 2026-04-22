@@ -2227,22 +2227,39 @@ function tickEmpire(draft: GameState, empire: Empire): void {
 // credit proportional to completion, discounted so the AI still prefers
 // things that are actually built.
 // ===================================================================
-// Horizon weight on per-turn flows — roughly "how many turns of this
-// future stream do I value". Keeping it a single knob (rather than
-// per-resource) keeps the search simple.
+// Horizon weight on per-turn flows — "how many turns of this future
+// stream do I value". Different per-resource weights sit below; the
+// horizon multiplies all of them uniformly.
 export const FLOW_HORIZON = 5;
 
-// Flat per-body credit for any tile in an owned system — even a star
-// or a zero-space moon is worth something (project surface, denial,
-// flavour). Small on purpose: a lush temperate should still blow a
-// rock out of the water, which MAX_POPS_VALUE handles.
-export const TILE_VALUE = 10;
-// Per unit of effective pop-space in an owned system (or a system with
-// an outpost under way, scaled by progress). Values "room to grow" so
-// a lush system outscores a rocky one even before colonies land.
-// Calibrated below a filled-pop's flow value (~12/unit on temperate),
-// since empty space is potential, not production.
-export const MAX_POPS_VALUE = 8;
+// Per-resource weight on flow values. Political is scarce and hard to
+// generate, so each point is worth 3× a point of food / energy / hammers.
+// These slot into scoreState and into the occupation preview.
+export const FLOW_WEIGHTS = {
+  hammers: 1,
+  food: 1,
+  energy: 1,
+  political: 3,
+} as const;
+
+// Every body contributes to an owned system's intrinsic value. Stars
+// encode the "owning this node in the galaxy" value — what the old
+// sysClaim used to be — so a system-with-only-a-star is still worth
+// claiming for transit / denial. Planets and moons contribute via
+// pop potential: maxPops × MAX_POPS_VALUE. Actual population value
+// flows through this term's sibling (bodyFlowScore), not through the
+// intrinsic.
+export const STAR_BODY_VALUE = 600;
+// Score per unit of effective maxPops. Calibrated so a 50%-full
+// temperate (pops ~1.75/t food-eq ≈ 175 flow × horizon 5 = 875) sits
+// at roughly 80% flow / 20% potential with 100 maxPops (200 potential).
+export const MAX_POPS_VALUE = 2;
+
+// Occupation progress weighting: how close to a flip does the AI
+// think an active siege is worth? Indexed by occ.turns (1-based),
+// so turn 1 = 0.3, turn 2 = 0.6, turn 3 = 1.0. Indices outside
+// [1, OCCUPATION_TURNS_TO_FLIP] clamp to 0.
+const OCCUPATION_WEIGHT_BY_TURNS: readonly number[] = [0, 0.3, 0.6, 1.0];
 
 // Per-archetype intrinsic value of a ship, measured in hammer-
 // equivalent units. Derived from the actual build_frigate cost so
@@ -2261,46 +2278,79 @@ function shipValueFor(empire: Empire): number {
   return cost * SHIP_VALUE_MULT[empire.expansionism];
 }
 
-// How much an archetype intrinsically values "claimed territory" —
-// the bare fact of owning a system, independent of what's in it.
-// Conquerors and pragmatists care about raw tiles; isolationists
-// barely care (they want tall pop-rich worlds, not border flags),
-// which keeps them from grabbing barren systems while still
-// letting them pursue lush ones (MAX_POPS_VALUE × space does the
-// rest of the work there). Applied to COLONIZE_HAMMERS anywhere
-// scoreState uses it as a "system claim" proxy.
-const SYSTEM_CLAIM_MULT: Record<Expansionism, number> = {
-  conqueror: 1.0,
-  pragmatist: 1.0,
-  isolationist: 0.3,
-};
-function systemClaimValueFor(empire: Empire): number {
-  return COLONIZE_HAMMERS * SYSTEM_CLAIM_MULT[empire.expansionism];
+// A body's intrinsic contribution to its owning empire's score.
+// Stars carry STAR_BODY_VALUE (the "owning this system" premium —
+// what sysClaim used to be). Other bodies contribute via pop
+// potential: maxPopsFor × MAX_POPS_VALUE. Realized population shows
+// up through flows elsewhere; this term is pure potential.
+function bodyIntrinsicValue(empire: Empire, body: Body): number {
+  if (body.kind === "star") return STAR_BODY_VALUE;
+  return maxPopsFor(empire, body) * MAX_POPS_VALUE;
+}
+
+// Sum a system's current-turn flows (hammers + food/energy/political)
+// weighted per resource. Used both for the main score (over owned
+// bodies) and as the "expected flow from this system" preview for
+// occupation + outposts.
+function bodyFlowScore(empire: Empire, body: Body): number {
+  const hammers = body.pops * hammersPerPopFor(empire, body);
+  const income = bodyIncomeFor(empire, body);
+  return (
+    hammers * FLOW_WEIGHTS.hammers +
+    income.food * FLOW_WEIGHTS.food +
+    income.energy * FLOW_WEIGHTS.energy +
+    income.political * FLOW_WEIGHTS.political
+  );
+}
+
+// Full per-body score contribution as if the body were owned right
+// now: intrinsic potential + this-turn flow × horizon. The occupation
+// and outpost paths use this to preview what a system will be worth
+// once it flips / claims.
+function bodyOwnedScore(empire: Empire, body: Body): number {
+  return bodyIntrinsicValue(empire, body) + bodyFlowScore(empire, body) * FLOW_HORIZON;
+}
+
+function systemOwnedScore(empire: Empire, sys: StarSystem, state: GameState): number {
+  let total = 0;
+  for (const bid of sys.bodyIds) {
+    const body = state.galaxy.bodies[bid];
+    if (body) total += bodyOwnedScore(empire, body);
+  }
+  return total;
 }
 
 export function scoreState(state: GameState, empireId: string): number {
   const empire = empireById(state, empireId);
   if (!empire) return -Infinity;
   let score = 0;
-  // Hard assets (raw hammer-cost equivalent). Scaled per archetype:
-  // isolationists place less intrinsic value on owning the system
-  // itself, but their body-value math (below) still credits pop
-  // potential fully, so they chase lush claims rather than empty ones.
-  const sysClaim = systemClaimValueFor(empire);
-  score += empire.systemIds.length * sysClaim;
-  // Per-body value: a small flat for every tile, plus a scaling bonus
-  // for effective pop-space. Together these replace the old flat
-  // "system claim = 200" heuristic with something that prefers lush
-  // systems while still valuing barren ones. In-flight outposts
-  // contribute progress toward both components.
+  // Owned bodies: each one's intrinsic value (star → STAR_BODY_VALUE,
+  // other → maxPops × MAX_POPS_VALUE) + its current-turn flows ×
+  // horizon × resource weights. The old "system-claim" constant is
+  // encoded as the star's body value, so a system's total = sum over
+  // its bodies with no separate per-system flat.
   for (const sysId of empire.systemIds) {
     const sys = state.galaxy.systems[sysId];
     if (!sys) continue;
     for (const bid of sys.bodyIds) {
       const body = state.galaxy.bodies[bid];
       if (!body) continue;
-      score += TILE_VALUE + maxPopsFor(empire, body) * MAX_POPS_VALUE;
+      score += bodyOwnedScore(empire, body);
     }
+  }
+  // Empire-wide flows not attributed to any single body: baseline
+  // political tick, flat empire modifiers (e.g. Steady Evolution's
+  // +0.2 political), and outpost upkeep drain. These layer on top of
+  // the per-body flows already credited above.
+  {
+    const mods = empireModifiers(empire);
+    const pcFlat = 1 + flatEmpireIncome(mods, "political");
+    const foodFlat = flatEmpireIncome(mods, "food");
+    const energyFlat = flatEmpireIncome(mods, "energy");
+    const outpostDrain = empire.systemIds.length * BALANCE.outpostEnergyUpkeep;
+    score += pcFlat * FLOW_HORIZON * FLOW_WEIGHTS.political;
+    score += foodFlat * FLOW_HORIZON * FLOW_WEIGHTS.food;
+    score += (energyFlat - outpostDrain) * FLOW_HORIZON * FLOW_WEIGHTS.energy;
   }
   // Ships: archetype-weighted × at-war premium, with diminishing
   // returns once the fleet exceeds the per-turn compute cap (ships
@@ -2315,26 +2365,10 @@ export function scoreState(state: GameState, empireId: string): number {
     score += mobileShips * shipBase;
     score += stuckShips * shipBase * 0.2;
   }
-  // Future production flows: a system with 30 busy pops is worth
-  // markedly more than an empty one of the same colonize cost, and
-  // this is where that difference shows up.
-  let hammerRate = 0;
-  for (const body of ownedBodiesOf(state, empire)) {
-    hammerRate += body.pops * hammersPerPopFor(empire, body);
-  }
-  const flow = perTurnIncomeOf(state, empire);
-  score += hammerRate * FLOW_HORIZON;
-  score += flow.food * FLOW_HORIZON;
-  score += flow.energy * FLOW_HORIZON;
-  score += flow.political * FLOW_HORIZON * 3; // political is scarcer
-  // Political capital is expensive to regenerate — rough exchange rate.
+  // Political stockpile: empire-wide, expensive to regenerate.
   score += empire.political * 15;
-  // In-flight projects: anticipate what they will be worth when they
-  // complete, scaled by progress. For colonize, that's the new system
-  // plus the flows its body will generate once populated — which
-  // naturally values temperate/garden above harsh/hellscape because
-  // their effective space is higher and they produce food. No hab
-  // table, no hand-tuned weights — just the existing flow math.
+  // In-flight projects: preview what they'll be worth at completion,
+  // scaled by progress for cancel risk.
   for (const order of allOrdersOf(state, empire)) {
     const progress =
       order.hammersRequired > 0
@@ -2344,30 +2378,21 @@ export function scoreState(state: GameState, empireId: string): number {
     if (order.kind === "colonize") {
       const body = state.galaxy.bodies[order.targetBodyId];
       if (!body) continue;
+      // Project the body's score as if the 5 settlers had landed:
+      // maxPops-potential + flow from those landed pops.
       const pops = Math.min(COLONIZE_STARTER_POPS, maxPopsFor(empire, body));
       const hypothetical: Body = { ...body, pops };
-      const projectedIncome = bodyIncomeFor(empire, hypothetical);
-      const projectedHammers = pops * hammersPerPopFor(empire, body);
-      const flow =
-        (projectedHammers + projectedIncome.food + projectedIncome.energy) *
-        FLOW_HORIZON;
-      // Cost-of-work + anticipated flow, progress-weighted for
-      // cancel risk.
-      score += (COLONIZE_HAMMERS + flow) * progressWeight;
-      // Colony-ship pops are already drawn from the capital — credit
-      // the target's future flow at full weight so the net-zero pop
-      // transfer doesn't show up as a loss. On a temperate→temperate
-      // transfer this cleanly offsets the lower capital flow; on a
-      // transfer to a worse hab the score correctly ends up lower.
-      score += flow;
+      const intrinsic = bodyIntrinsicValue(empire, hypothetical);
+      const flow = bodyFlowScore(empire, hypothetical) * FLOW_HORIZON;
+      // Progress-weighted for cancel risk on the hammer-cost side;
+      // pop transfer is pre-paid (deducted from capital at queue),
+      // so credit the future flow + intrinsic at full weight.
+      score += COLONIZE_HAMMERS * progressWeight;
+      score += intrinsic + flow;
     } else if (
       order.kind === "empire_project" &&
       order.projectId === "build_frigate"
     ) {
-      // A finished frigate is valued the same way as an existing one —
-      // archetype × at-war premium. This is what makes Conqueror AIs at
-      // war actually pile up fleets instead of stopping at the raw
-      // hammer-cost-equivalent.
       const atWar = enemiesOf(state, empire.id).length > 0;
       const shipBase = shipValueFor(empire) * (atWar ? 1.2 : 1.0);
       score += shipBase * progressWeight;
@@ -2375,41 +2400,31 @@ export function scoreState(state: GameState, empireId: string): number {
       order.kind === "empire_project" &&
       order.projectId === "build_outpost"
     ) {
-      // A finished outpost claims its system (COLONIZE_HAMMERS) and
-      // adds every body in it to our per-body credits (TILE_VALUE +
-      // space × MAX_POPS_VALUE). Everything credits progress-weighted,
-      // so starting work on an outpost pulls some of that reward
-      // forward even before it lands.
+      // Outpost = claim the system + all its bodies become owned.
+      // Preview the sum of body scores (intrinsic + flow) at completion,
+      // progress-weighted.
       const hostBody = order.targetBodyId ? state.galaxy.bodies[order.targetBodyId] : null;
       const targetSys = hostBody ? state.galaxy.systems[hostBody.systemId] : null;
-      let sysBodyValue = 0;
       if (targetSys) {
-        for (const bid of targetSys.bodyIds) {
-          const b = state.galaxy.bodies[bid];
-          if (b) sysBodyValue += TILE_VALUE + maxPopsFor(empire, b) * MAX_POPS_VALUE;
-        }
+        score += systemOwnedScore(empire, targetSys, state) * progressWeight;
       }
-      // Outpost = system-claim + whatever's in the system. sysClaim
-      // is archetype-weighted, so isolationists score this lower for
-      // barren systems but still high for lush ones (where
-      // sysBodyValue dominates via maxPopsFor × MAX_POPS_VALUE).
-      score += (sysClaim + sysBodyValue) * progressWeight;
     } else {
       // Generic empire_project — fall back to 70% of raw hammer cost.
       score += order.hammersRequired * 0.7 * progressWeight;
     }
   }
-  // Occupations — partial transfers in flight. Credit / debit are
-  // conditional on active fleet presence: if the occupier has no fleet
-  // at the system any more, the siege clears next turn (no credit); if
-  // the defender has a fleet at their own sieged system, the siege
-  // clears (no debit). This makes "stay and finish the job" and "go
-  // defend a sieged system" the highest-scoring moves naturally,
-  // without any heuristic rules in the move planner.
+  // Occupations — partial credit / debit based on how close to flipping.
+  // Credit the FULL post-flip value of the system (intrinsic + flow ×
+  // horizon) scaled by OCCUPATION_WEIGHT_BY_TURNS, so the AI sees the
+  // real payoff of a 3-turn siege rather than just a fraction of the
+  // bare system-claim value. Only applies while an occupier fleet is
+  // there and no defender is — otherwise the siege clears.
   for (const sys of Object.values(state.galaxy.systems)) {
     const occ = sys.occupation;
     if (!occ) continue;
-    const progress = occ.turns / OCCUPATION_TURNS_TO_FLIP;
+    const occW =
+      OCCUPATION_WEIGHT_BY_TURNS[occ.turns] ??
+      OCCUPATION_WEIGHT_BY_TURNS[OCCUPATION_WEIGHT_BY_TURNS.length - 1];
     const occupierHasFleet = Object.values(state.fleets).some(
       (f) => f.empireId === occ.empireId && f.systemId === sys.id && f.shipCount > 0,
     );
@@ -2418,17 +2433,12 @@ export function scoreState(state: GameState, empireId: string): number {
       Object.values(state.fleets).some(
         (f) => f.empireId === sys.ownerId && f.systemId === sys.id && f.shipCount > 0,
       );
+    if (!occupierHasFleet || defenderHasFleet) continue;
+    const sysValue = systemOwnedScore(empire, sys, state);
     if (occ.empireId === empireId) {
-      // We're the occupier — partial gain, only if we're still here.
-      // Credit the archetype's view of a claimed system.
-      if (occupierHasFleet && !defenderHasFleet) {
-        score += sysClaim * progress;
-      }
+      score += sysValue * occW;
     } else if (sys.ownerId === empireId) {
-      // We're being occupied — partial loss, unless we have a defender.
-      if (occupierHasFleet && !defenderHasFleet) {
-        score -= sysClaim * progress;
-      }
+      score -= sysValue * occW;
     }
   }
   return score;

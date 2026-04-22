@@ -26,7 +26,7 @@ function makeBody(overrides: Partial<Body> & { id: string; systemId: string }): 
     name: overrides.name ?? overrides.id,
     kind: overrides.kind ?? "planet",
     habitability: overrides.habitability ?? "temperate",
-    maxPops: overrides.maxPops ?? 10,
+    maxPops: overrides.maxPops ?? 100,
     pops: overrides.pops ?? 0,
     hammers: overrides.hammers ?? 0,
     queue: overrides.queue ?? [],
@@ -474,19 +474,22 @@ describe("AI scoreState value function", () => {
       fleets: [siegeFleet],
       wars: [["e_ai", "e_player"].sort() as [string, string]],
     });
-    // Player = 1 × 500 (COLONIZE_HAMMERS) system + (10 tile + 80 max-pops)
-    // − 500 × 2/3 occupation debit + 15 political − 5 outpost upkeep
-    // ≈ 267.
+    // Player = body intrinsic (100 maxPops × 2) = 200
+    // + empire flats (+1 political baseline × 5 × 3 = 15, -1 outpost
+    //   upkeep × 5 = -5) = 10
+    // - occupation debit (200 × 0.6 = 120)
+    // ≈ 90.
     const playerScore = scoreState(state, "e_player");
-    expect(playerScore).toBeGreaterThan(260);
-    expect(playerScore).toBeLessThan(280);
-    // AI = 1 × 500 system + (10 tile + 80 max-pops)
+    expect(playerScore).toBeGreaterThan(80);
+    expect(playerScore).toBeLessThan(100);
+    // AI = body intrinsic (200)
+    // + empire flats (10)
     // + stuck 1-ship @ at-war (500 pragmatist × 1.2 × 0.2) = 120
-    // + 500 × 2/3 occupation credit (≈333) + 15 political − 10 upkeep
-    // ≈ 1048.
+    // + occupation credit (200 × 0.6 = 120)
+    // ≈ 450.
     const aiScore = scoreState(state, "e_ai");
-    expect(aiScore).toBeGreaterThan(1040);
-    expect(aiScore).toBeLessThan(1060);
+    expect(aiScore).toBeGreaterThan(440);
+    expect(aiScore).toBeLessThan(460);
   });
 
   it("values systems and ships in hammer-equivalent units", () => {
@@ -512,16 +515,13 @@ describe("AI scoreState value function", () => {
       empire: player,
       fleets: [fleet],
     });
-    // 1 system × 500 (COLONIZE_HAMMERS, 2.5x'd after hammers rebase)
-    //   = 500 assets.
-    // + Per-body: 1 × 10 (TILE_VALUE) + 10 space × 8 (MAX_POPS_VALUE) = 90.
-    // Ships: 2 × 500 (pragmatist, 2.5x'd alongside hammers) × (no-war
-    //   1.0) × stuck 20% (cap=0) = 200.
-    // + political/turn baseline × 15 = 15.
-    // − outpost upkeep (1 outpost × 1 energy) × 5 horizon = −5.
-    //   (Fleet upkeep was dropped; only outposts drain energy now.)
-    // Total = 800.
-    expect(scoreState(state, "e_player")).toBe(800);
+    // Body intrinsic: maxPops (100) × MAX_POPS_VALUE (2) = 200.
+    // Flows from the body: 0 (no pops).
+    // Ships: 2 × 500 (pragmatist peace) × stuck 20% (cap=0) = 200.
+    // Political flat: +1 baseline × FLOW_HORIZON (5) × weight (3) = 15.
+    // Energy from empire-level outpost upkeep: -1 × 5 × 1 = -5.
+    // Total = 200 + 200 + 15 − 5 = 410.
+    expect(scoreState(state, "e_player")).toBe(410);
   });
 
   it("queueing colonize deducts COLONIZE_POP_COST from the capital", () => {
