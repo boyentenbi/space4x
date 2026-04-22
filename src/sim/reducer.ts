@@ -2729,6 +2729,11 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
     (f) => f.empireId === empire.id && f.shipCount > 0,
   );
 
+  // Per-source-system reachability cache. Every fleet in the same
+  // system has the same reachable destinations; no reason to BFS
+  // more than once per unique starting point.
+  const reachableBySource = new Map<string, string[]>();
+
   // Build the hyperlane adjacency map ONCE per planning call instead
   // of rebuilding it inside every shortestPathFor. Hyperlanes don't
   // change mid-plan, and the map was a meaningful fraction of the
@@ -2744,23 +2749,35 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
   }
 
   for (const fleet of ourFleets) {
+    // A fleet already committed to a destination keeps going — we
+    // don't re-evaluate it every turn (that used to burn ~half the
+    // per-turn AI budget and could flip-flop a fleet mid-march).
+    // The commit is cleared by processFleetOrders on arrival or if
+    // the path becomes blocked.
+    if (fleet.destinationSystemId && fleet.destinationSystemId !== fleet.systemId) {
+      continue;
+    }
+
     // One BFS from the fleet's current system gives every reachable
-    // destination in a single O(nodes + edges) pass — way cheaper
-    // than the previous O(systems × BFS) that called shortestPathFor
-    // per destination.
-    const reachable: string[] = [];
-    const visited = new Set<string>([fleet.systemId]);
-    const queue: string[] = [fleet.systemId];
-    let head = 0; // array-as-queue with head pointer; shift() is O(n).
-    while (head < queue.length) {
-      const id = queue[head++];
-      for (const n of adj.get(id) ?? []) {
-        if (visited.has(n)) continue;
-        if (!canEnterSystem(baseline, empire.id, n)) continue;
-        visited.add(n);
-        queue.push(n);
-        reachable.push(n);
+    // destination in a single O(nodes + edges) pass. Cache by source
+    // system: fleets co-located have identical reachable sets.
+    let reachable = reachableBySource.get(fleet.systemId);
+    if (!reachable) {
+      reachable = [];
+      const visited = new Set<string>([fleet.systemId]);
+      const queue: string[] = [fleet.systemId];
+      let head = 0; // array-as-queue with head pointer; shift() is O(n).
+      while (head < queue.length) {
+        const id = queue[head++];
+        for (const n of adj.get(id) ?? []) {
+          if (visited.has(n)) continue;
+          if (!canEnterSystem(baseline, empire.id, n)) continue;
+          visited.add(n);
+          queue.push(n);
+          reachable.push(n);
+        }
       }
+      reachableBySource.set(fleet.systemId, reachable);
     }
 
     const scoreCandidate = (mutate: (d: GameState) => void): number => {
