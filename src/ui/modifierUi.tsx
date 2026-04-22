@@ -13,6 +13,7 @@ export function isNegativeModifier(mod: Modifier): boolean {
     case "hammersPerPopDelta":
     case "popGrowthAdd":
     case "habBonus":
+    case "maxPopsDelta":
       return mod.value < 0;
     case "popGrowthMult":
     case "maxPopsMult":
@@ -105,6 +106,12 @@ export function renderModifier(mod: Modifier): ReactNode {
       return (
         <>
           {signed(mod.value)} <ResIcon k={mod.resource} /> on {mod.habitability}
+        </>
+      );
+    case "maxPopsDelta":
+      return (
+        <>
+          {signed(mod.value)} max <img className="bonus-icon" src={POPS_ICON} alt="" />
         </>
       );
   }

@@ -22,6 +22,9 @@ export const FEATURES: Feature[] = [
       // feature count (i.e. currently 1), so an organic empire
       // compounding over its pops will eventually overtake this.
       { kind: "popGrowthAdd", value: 1 },
+      // The capital becomes a megacolony to house the queen's
+      // output — +200 max pops on the host body only.
+      { kind: "maxPopsDelta", value: 200 },
     ],
   },
 ];

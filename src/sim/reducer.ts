@@ -631,7 +631,10 @@ export function effectiveColonizePolitical(empire: Empire): number {
   );
 }
 
-function sumDelta(mods: Modifier[], kind: "foodUpkeepDelta" | "hammersPerPopDelta" | "popGrowthAdd"): number {
+function sumDelta(
+  mods: Modifier[],
+  kind: "foodUpkeepDelta" | "hammersPerPopDelta" | "popGrowthAdd" | "maxPopsDelta",
+): number {
   let s = 0;
   for (const mod of mods) if (mod.kind === kind) s += mod.value;
   return s;
@@ -689,10 +692,17 @@ export function hammersPerPopFor(empire: Empire, body: Body): number {
   return hammersPerPop(empire) + (HAMMERS_PER_POP_HAB_BONUS[body.habitability] ?? 0);
 }
 
-// Max pops this body can hold, after empire-wide maxPopsMult
-// modifiers (e.g. species bonuses).
+// Max pops this body can hold. Empire-wide modifiers (species,
+// origin, policies, feature empireModifiers) apply to every body;
+// feature bodyModifiers (e.g. a Brood Mother adding +200 maxPops
+// to her host) apply only here.
 export function maxPopsFor(empire: Empire, body: Body): number {
-  return Math.floor(body.maxPops * productMult(empireModifiers(empire), "maxPopsMult"));
+  const empireMods = empireModifiers(empire);
+  const bodyMods = bodyFeatureModifiers(body);
+  const delta =
+    sumDelta(empireMods, "maxPopsDelta") + sumDelta(bodyMods, "maxPopsDelta");
+  const mult = productMult([...empireMods, ...bodyMods], "maxPopsMult");
+  return Math.floor((body.maxPops + delta) * mult);
 }
 
 export function popGrowthMultiplier(empire: Empire): number {
@@ -2250,7 +2260,7 @@ export function scoreState(state: GameState, empireId: string): number {
   const totalShips = totalFleetShipsFor(state, empire);
   if (totalShips > 0) {
     const atWar = enemiesOf(state, empire.id).length > 0;
-    const shipBase = shipValueFor(empire) * (atWar ? 1.5 : 1.0);
+    const shipBase = shipValueFor(empire) * (atWar ? 1.2 : 1.0);
     const cap = computeCapOf(state, empire);
     const mobileShips = Math.min(totalShips, cap);
     const stuckShips = Math.max(0, totalShips - cap);
@@ -2311,7 +2321,7 @@ export function scoreState(state: GameState, empireId: string): number {
       // war actually pile up fleets instead of stopping at the raw
       // hammer-cost-equivalent.
       const atWar = enemiesOf(state, empire.id).length > 0;
-      const shipBase = shipValueFor(empire) * (atWar ? 1.5 : 1.0);
+      const shipBase = shipValueFor(empire) * (atWar ? 1.2 : 1.0);
       score += shipBase * progressWeight;
     } else if (
       order.kind === "empire_project" &&

@@ -155,6 +155,10 @@ export type Modifier =
   // Additive deltas on per-pop costs/yields that don't fit the resource model.
   | { kind: "foodUpkeepDelta"; value: number }        // default upkeep is 1
   | { kind: "hammersPerPopDelta"; value: number }     // default hammer yield is 1
+  // Flat add to a body's max-pops cap. Applies body-local when the
+  // modifier comes from a Feature's bodyModifiers; applies empire-
+  // wide to every body when in empireModifiers.
+  | { kind: "maxPopsDelta"; value: number }
   // Conditional bonus: resource yield per pop on bodies of a given hab tier.
   | { kind: "habBonus"; habitability: HabitabilityTier; resource: ResourceKey; value: number };
 

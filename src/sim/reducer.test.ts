@@ -481,12 +481,12 @@ describe("AI scoreState value function", () => {
     expect(playerScore).toBeGreaterThan(260);
     expect(playerScore).toBeLessThan(280);
     // AI = 1 × 500 system + (10 tile + 80 max-pops)
-    // + stuck 1-ship @ at-war (500 pragmatist × 1.5 × 0.2) = 150
+    // + stuck 1-ship @ at-war (500 pragmatist × 1.2 × 0.2) = 120
     // + 500 × 2/3 occupation credit (≈333) + 15 political − 10 upkeep
-    // ≈ 1078.
+    // ≈ 1048.
     const aiScore = scoreState(state, "e_ai");
-    expect(aiScore).toBeGreaterThan(1070);
-    expect(aiScore).toBeLessThan(1090);
+    expect(aiScore).toBeGreaterThan(1040);
+    expect(aiScore).toBeLessThan(1060);
   });
 
   it("values systems and ships in hammer-equivalent units", () => {
