@@ -592,7 +592,16 @@ function bodyFeatureModifiers(body: Body): Modifier[] {
 // All modifiers that apply to an empire: species innates + trait mods +
 // archetype leans + story bundles (granted by origin, projects, or
 // features via syncFeatureModifiers).
+// Memoise by Empire identity. Immer produces a new Empire object on
+// any mutation, so a stale cache entry becomes unreachable (its key
+// Empire is gone) and GC collects it. The same Empire object always
+// has the same modifier set — re-computing the flattened list was a
+// meaningful fraction of scoreState cost before the cache.
+const empireModifiersCache = new WeakMap<Empire, Modifier[]>();
+
 export function empireModifiers(empire: Empire): Modifier[] {
+  const cached = empireModifiersCache.get(empire);
+  if (cached) return cached;
   const species = speciesById(empire.speciesId);
   const out: Modifier[] = [];
   if (species) {
@@ -607,8 +616,10 @@ export function empireModifiers(empire: Empire): Modifier[] {
   for (const bundle of Object.values(empire.storyModifiers)) {
     out.push(...bundle);
   }
+  empireModifiersCache.set(empire, out);
   return out;
 }
+
 
 // Multiplicative modifiers multiply together; returns 1.0 if none.
 function productMult(
@@ -2719,12 +2730,38 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
     (f) => f.empireId === empire.id && f.shipCount > 0,
   );
 
+  // Build the hyperlane adjacency map ONCE per planning call instead
+  // of rebuilding it inside every shortestPathFor. Hyperlanes don't
+  // change mid-plan, and the map was a meaningful fraction of the
+  // per-fleet reachability cost.
+  const adj = new Map<string, string[]>();
+  for (const [a, b] of baseline.galaxy.hyperlanes) {
+    let la = adj.get(a);
+    if (!la) { la = []; adj.set(a, la); }
+    la.push(b);
+    let lb = adj.get(b);
+    if (!lb) { lb = []; adj.set(b, lb); }
+    lb.push(a);
+  }
+
   for (const fleet of ourFleets) {
+    // One BFS from the fleet's current system gives every reachable
+    // destination in a single O(nodes + edges) pass — way cheaper
+    // than the previous O(systems × BFS) that called shortestPathFor
+    // per destination.
     const reachable: string[] = [];
-    for (const sid of Object.keys(baseline.galaxy.systems)) {
-      if (sid === fleet.systemId) continue;
-      const path = shortestPathFor(baseline, empire.id, fleet.systemId, sid);
-      if (path && path.length > 0) reachable.push(sid);
+    const visited = new Set<string>([fleet.systemId]);
+    const queue: string[] = [fleet.systemId];
+    let head = 0; // array-as-queue with head pointer; shift() is O(n).
+    while (head < queue.length) {
+      const id = queue[head++];
+      for (const n of adj.get(id) ?? []) {
+        if (visited.has(n)) continue;
+        if (!canEnterSystem(baseline, empire.id, n)) continue;
+        visited.add(n);
+        queue.push(n);
+        reachable.push(n);
+      }
     }
 
     const scoreCandidate = (mutate: (d: GameState) => void): number => {
