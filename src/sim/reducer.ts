@@ -996,32 +996,50 @@ export function projectedFleetCompute(state: GameState, empire: Empire): number 
 }
 
 export function popsBreakdownFor(state: GameState, empire: Empire): StatBreakdown {
-  const bodyRows = ownedBodiesOf(state, empire).map((body) => {
-    const cap = maxPopsFor(empire, body);
-    return {
-      id: body.id,
-      name: body.name,
-      detail: `${body.pops} / ${cap}`,
-      value: body.pops,
-      habitability: body.habitability,
-    };
-  });
+  // Per-body section only includes colonised bodies — uncolonised
+  // worlds with 0 pops don't contribute to any running total and
+  // would just clutter the modal.
+  const bodyRows = ownedBodiesOf(state, empire)
+    .filter((body) => body.pops > 0)
+    .map((body) => {
+      const cap = maxPopsFor(empire, body);
+      return {
+        id: body.id,
+        name: body.name,
+        detail: `${Math.floor(body.pops)} / ${cap}`,
+        value: body.pops,
+        habitability: body.habitability,
+      };
+    });
   // Growth this turn — sums to the +Δ the sidebar shows next to the
-  // pops counter. Logistic throttling (pops/cap) is already baked into
-  // each row, which is why the per-body numbers don't match a naive
-  // multiplication of modifiers × pops.
+  // pops counter. The detail field shows the math explicitly:
+  //   (raw organic+additive) × (1 − pops/cap) = rate
+  // so the logistic damping is visible instead of hidden inside the
+  // final number.
   const growthRows: StatBreakdownSection["rows"] = [];
   const components = computeComponents(state, empire);
+  const growthMult = popGrowthMultiplier(empire);
+  const empireAdd = popGrowthAdditive(empire);
   for (const body of ownedBodiesOf(state, empire)) {
-    const rate = bodyGrowthRate(empire, body);
-    if (rate === 0) continue;
+    // Skip bodies with no organic growth surface at all (no pops,
+    // uncolonised) and bodies that can't grow (at cap).
+    if (body.pops <= 0) continue;
+    const cap = maxPopsFor(empire, body);
     const cid = components.get(body.systemId);
     const pool = cid ? empire.componentPools[cid] : null;
     const starved = !pool || pool.food <= 0;
+    const bodyAdd = sumDelta(bodyFeatureModifiers(body), "popGrowthAdd");
+    const organic = BASE_ORGANIC_GROWTH_RATE * growthMult * body.pops;
+    const raw = organic + empireAdd + bodyAdd;
+    const rate = bodyGrowthRate(empire, body);
+    const pops = Math.round(body.pops * 10) / 10;
+    const detail = starved
+      ? `starved (no food in component)`
+      : `${raw.toFixed(2)} × (1 − ${pops}/${cap}) = ${rate.toFixed(2)}`;
     growthRows.push({
       id: body.id,
       name: body.name,
-      detail: starved ? "starved (no food)" : "+Δ pops/turn",
+      detail,
       value: starved ? 0 : rate,
       habitability: body.habitability,
     });
