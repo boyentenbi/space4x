@@ -2,7 +2,7 @@ import { current, produce } from "immer";
 import { LEADERS, POLICIES, featureById, originById, policyById, projectById, speciesById, traitById, EMPIRE_PROJECTS } from "./content";
 import { BALANCE } from "../content/balance";
 import { pickRandomEvent, resolveEventChoice, RESOURCE_KEYS } from "./events";
-import { generateGalaxy } from "./galaxy";
+import { generateGalaxy, MAX_POPS_BY_HAB } from "./galaxy";
 import { mulberry32, nextSeed } from "./rng";
 import type {
   Body,
@@ -3019,7 +3019,7 @@ export function reduce(state: GameState, action: Action): GameState {
             ...starterBody,
             habitability: "temperate" as const,
             kind: "planet" as const,
-            maxPops: Math.max(starterBody.maxPops, 80),
+            maxPops: MAX_POPS_BY_HAB.temperate,
             pops: startingPops,
           };
         } else {
@@ -3030,7 +3030,7 @@ export function reduce(state: GameState, action: Action): GameState {
             name: `${sys.name} I`,
             kind: "planet",
             habitability: "temperate",
-            maxPops: 80,
+            maxPops: MAX_POPS_BY_HAB.temperate,
             pops: startingPops,
             hammers: 0,
             queue: [],

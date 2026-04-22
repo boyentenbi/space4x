@@ -57,7 +57,7 @@ function rollStarKind(r: Rand): StarKind {
 // Fixed max-pops by habitability — every world of a given kind has
 // the same cap. Simpler than the old lo/hi rolls, and easier to
 // reason about for balance.
-const MAX_POPS_BY_HAB: Record<HabitabilityTier, number> = {
+export const MAX_POPS_BY_HAB: Record<HabitabilityTier, number> = {
   garden: 150,
   temperate: 100,
   harsh: 10,
