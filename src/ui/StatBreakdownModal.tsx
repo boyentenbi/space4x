@@ -6,6 +6,14 @@ function signed(n: number): string {
   return `${r}`;
 }
 
+// Renders a fractional multiplier delta (e.g. -1 → "-100%",
+// 0.5 → "+50%") as a human-readable percentage. Used for
+// rows flagged `format: "percent"`.
+function percent(n: number): string {
+  const pct = Math.round(n * 100);
+  return `${pct > 0 ? "+" : ""}${pct}%`;
+}
+
 export function StatBreakdownModal({
   breakdown,
   onClose,
@@ -43,7 +51,11 @@ export function StatBreakdownModal({
                   {row.detail}
                 </span>
                 <span className={`breakdown-row-value ${row.value > 0 ? "pos" : row.value < 0 ? "neg" : ""}`}>
-                  {unit === "/turn" ? signed(row.value) : row.value}
+                  {row.format === "percent"
+                    ? percent(row.value)
+                    : unit === "/turn"
+                      ? signed(row.value)
+                      : row.value}
                 </span>
               </div>
             ))}

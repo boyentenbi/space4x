@@ -667,7 +667,19 @@ export interface ResourceBreakdown {
 // with rows that have an optional detail + a value.
 export interface StatBreakdownSection {
   label: string;
-  rows: Array<{ id?: string; name: string; detail?: string; value: number; habitability?: HabitabilityTier }>;
+  rows: Array<{
+    id?: string;
+    name: string;
+    detail?: string;
+    value: number;
+    habitability?: HabitabilityTier;
+    // Optional display hint. "percent" renders as ±N% (typically for
+    // multiplier deltas where the raw value is a fraction like -1);
+    // default is a plain number. Kept separate from the breakdown's
+    // overall `unit` because individual rows can mix formats
+    // (e.g., a pops breakdown has integer rows and %-delta rows).
+    format?: "percent";
+  }>;
 }
 export interface StatBreakdown {
   title: string;
@@ -913,12 +925,20 @@ export function popsBreakdownFor(state: GameState, empire: Empire): StatBreakdow
   const modRows: StatBreakdownSection["rows"] = [];
   for (const lm of labelledModifiers(empire)) {
     if (lm.mod.kind === "maxPopsMult") {
-      const pct = Math.round((lm.mod.value - 1) * 100);
-      modRows.push({ name: lm.label, detail: "max pops", value: pct / 100 });
+      modRows.push({
+        name: lm.label,
+        detail: "max pops",
+        value: lm.mod.value - 1,
+        format: "percent",
+      });
     }
     if (lm.mod.kind === "popGrowthMult") {
-      const pct = Math.round((lm.mod.value - 1) * 100);
-      modRows.push({ name: lm.label, detail: "growth rate", value: pct / 100 });
+      modRows.push({
+        name: lm.label,
+        detail: "organic growth",
+        value: lm.mod.value - 1,
+        format: "percent",
+      });
     }
     if (lm.mod.kind === "popGrowthAdd") {
       modRows.push({ name: lm.label, detail: "flat pops/turn", value: lm.mod.value });
