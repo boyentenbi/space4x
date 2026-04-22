@@ -41,7 +41,7 @@ export const ORIGINS: Origin[] = [
         { kind: "popGrowthAdd", value: 0.3 },
       ],
     },
-    art: "/origins/colony_seeders.png",
+    art: "/projects/brood_mother.png",
   },
   {
     id: "graceful_handover",
