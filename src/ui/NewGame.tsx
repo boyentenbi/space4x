@@ -192,19 +192,32 @@ export function NewGame() {
 
       <label>Origin</label>
       <div className="chooser">
-        {validOrigins.map((o) => (
-          <button
-            key={o.id}
-            className={`row ${o.id === originId ? "selected" : ""}`}
-            onClick={() => setOriginId(o.id)}
-          >
-            <Thumb src={o.art} alt={o.name} size={84} />
-            <span className="row-text">
-              <span className="name">{o.name}</span>
-              <span className="desc">{o.description}</span>
-            </span>
-          </button>
-        ))}
+        {validOrigins.map((o) => {
+          // Flatten every starter story-modifier bundle into one row of
+          // chips so the player can see the origin's mechanical impact
+          // (growth rates, caps, cost deltas) without reading paragraphs.
+          const mods = Object.values(o.startingStoryModifiers ?? {}).flat();
+          return (
+            <button
+              key={o.id}
+              className={`row ${o.id === originId ? "selected" : ""}`}
+              onClick={() => setOriginId(o.id)}
+            >
+              <Thumb src={o.art} alt={o.name} size={84} />
+              <span className="row-text">
+                <span className="name">{o.name}</span>
+                <span className="desc">{o.description}</span>
+                {mods.length > 0 && (
+                  <span className="bonuses">
+                    {mods.map((m, i) => (
+                      <ModifierChip key={i} mod={m} />
+                    ))}
+                  </span>
+                )}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       <button onClick={start} style={{ marginTop: 12 }}>Begin</button>

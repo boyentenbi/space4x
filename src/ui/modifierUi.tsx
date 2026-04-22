@@ -41,6 +41,16 @@ export function renderModifier(mod: Modifier): ReactNode {
         </>
       );
     case "popGrowthMult": {
+      // A multiplier of exactly 0 means "no organic reproduction at
+      // all" (e.g., Matriarchal Hive workers). "-100%" reads like a
+      // bug; spell it out instead.
+      if (mod.value === 0) {
+        return (
+          <>
+            no organic <img className="bonus-icon" src={POPS_ICON} alt="" /> growth
+          </>
+        );
+      }
       const pct = Math.round((mod.value - 1) * 100);
       return (
         <>

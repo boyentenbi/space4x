@@ -29,7 +29,7 @@ export const ORIGINS: Origin[] = [
     id: "matriarchal_hive",
     name: "Matriarchal Hive",
     description:
-      "Your species carries no reproductive autonomy outside the matriarch. One queen, one hive, one pulse of eggs per cycle. Ordinary workers don't reproduce — the entire empire's growth rides on her output, distributed across every nest. She is prolific, but she is singular, and what flows from her is all you have.",
+      "Your species carries no reproductive autonomy outside the matriarch. One queen lays; the workers tend. The founding hive arrives with its Brood Mother already enthroned on the home world, and every nest you hold grows by the eggs she sends from it. She is prolific, but she is singular — what flows from her is all you have, and workers alone cannot make more of you.",
     allowedSpeciesIds: ["insectoid"],
     startingResources: { energy: 600, food: 1200, political: 3 },
     startingPops: 30,
