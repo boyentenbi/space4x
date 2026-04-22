@@ -485,7 +485,7 @@ export function totalPopsOf(state: GameState, empire: Empire): number {
 // ===== Modifier plumbing =====
 
 // Expansionism lean:
-//  - Conqueror:    -40% political-capital cost to colonize (cheaper land
+//  - Conqueror:    -25% political-capital cost to colonize (cheaper land
 //                  grabs; fleets will also be cheaper once they exist).
 //  - Pragmatist:   baseline.
 //  - Isolationist: +50% PC cost to colonize (reluctant to expand), but
@@ -495,7 +495,7 @@ export function expansionismModifiers(ex: Expansionism): Modifier[] {
   switch (ex) {
     case "conqueror":
       return [
-        { kind: "colonizePoliticalMult", value: 0.6 },
+        { kind: "colonizePoliticalMult", value: 0.75 },
       ];
     case "pragmatist":
       return [];
@@ -510,8 +510,8 @@ export function expansionismModifiers(ex: Expansionism): Modifier[] {
 
 // Politic lean:
 //  - Collectivist:  state over individual — centralized authority
-//                   translates to +0.5 political/turn and coordinated
-//                   labour gives +0.25 hammers/pop.
+//                   translates to +0.5 political/turn and a mild
+//                   coordinated-labour bonus of +0.1 hammers/pop.
 //  - Centrist:      baseline.
 //  - Individualist: liberty over state — reserved for an innovation /
 //                   research bonus once the tech layer lands.
@@ -520,7 +520,7 @@ export function politicModifiers(p: Politic): Modifier[] {
     case "collectivist":
       return [
         { kind: "flat", resource: "political", value: 0.5 },
-        { kind: "hammersPerPopDelta", value: 0.25 },
+        { kind: "hammersPerPopDelta", value: 0.1 },
       ];
     case "centrist":
       return [];
