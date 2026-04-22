@@ -2261,12 +2261,33 @@ function shipValueFor(empire: Empire): number {
   return cost * SHIP_VALUE_MULT[empire.expansionism];
 }
 
+// How much an archetype intrinsically values "claimed territory" —
+// the bare fact of owning a system, independent of what's in it.
+// Conquerors and pragmatists care about raw tiles; isolationists
+// barely care (they want tall pop-rich worlds, not border flags),
+// which keeps them from grabbing barren systems while still
+// letting them pursue lush ones (MAX_POPS_VALUE × space does the
+// rest of the work there). Applied to COLONIZE_HAMMERS anywhere
+// scoreState uses it as a "system claim" proxy.
+const SYSTEM_CLAIM_MULT: Record<Expansionism, number> = {
+  conqueror: 1.0,
+  pragmatist: 1.0,
+  isolationist: 0.3,
+};
+function systemClaimValueFor(empire: Empire): number {
+  return COLONIZE_HAMMERS * SYSTEM_CLAIM_MULT[empire.expansionism];
+}
+
 export function scoreState(state: GameState, empireId: string): number {
   const empire = empireById(state, empireId);
   if (!empire) return -Infinity;
   let score = 0;
-  // Hard assets (raw hammer-cost equivalent).
-  score += empire.systemIds.length * COLONIZE_HAMMERS;
+  // Hard assets (raw hammer-cost equivalent). Scaled per archetype:
+  // isolationists place less intrinsic value on owning the system
+  // itself, but their body-value math (below) still credits pop
+  // potential fully, so they chase lush claims rather than empty ones.
+  const sysClaim = systemClaimValueFor(empire);
+  score += empire.systemIds.length * sysClaim;
   // Per-body value: a small flat for every tile, plus a scaling bonus
   // for effective pop-space. Together these replace the old flat
   // "system claim = 200" heuristic with something that prefers lush
@@ -2368,7 +2389,11 @@ export function scoreState(state: GameState, empireId: string): number {
           if (b) sysBodyValue += TILE_VALUE + maxPopsFor(empire, b) * MAX_POPS_VALUE;
         }
       }
-      score += (COLONIZE_HAMMERS + sysBodyValue) * progressWeight;
+      // Outpost = system-claim + whatever's in the system. sysClaim
+      // is archetype-weighted, so isolationists score this lower for
+      // barren systems but still high for lush ones (where
+      // sysBodyValue dominates via maxPopsFor × MAX_POPS_VALUE).
+      score += (sysClaim + sysBodyValue) * progressWeight;
     } else {
       // Generic empire_project — fall back to 70% of raw hammer cost.
       score += order.hammersRequired * 0.7 * progressWeight;
@@ -2395,13 +2420,14 @@ export function scoreState(state: GameState, empireId: string): number {
       );
     if (occ.empireId === empireId) {
       // We're the occupier — partial gain, only if we're still here.
+      // Credit the archetype's view of a claimed system.
       if (occupierHasFleet && !defenderHasFleet) {
-        score += COLONIZE_HAMMERS * progress;
+        score += sysClaim * progress;
       }
     } else if (sys.ownerId === empireId) {
       // We're being occupied — partial loss, unless we have a defender.
       if (occupierHasFleet && !defenderHasFleet) {
-        score -= COLONIZE_HAMMERS * progress;
+        score -= sysClaim * progress;
       }
     }
   }
@@ -2452,25 +2478,6 @@ function aiEnumerateProjectActions(state: GameState, empire: Empire): Action[] {
     });
   }
 
-  // Archetype character filter — isolationists are stingy about
-  // claiming new systems, but they'll still reach out for worthwhile
-  // prizes. Refuse outposts unless the target star's system has at
-  // least one garden or temperate body (i.e. actually worth settling),
-  // which keeps them passive in peripheral space while still letting
-  // them grab juicy frontiers.
-  if (empire.expansionism === "isolationist") {
-    return actions.filter((a) => {
-      if (a.type !== "queueEmpireProject") return true;
-      if (a.projectId !== "build_outpost") return true;
-      const star = a.targetBodyId ? state.galaxy.bodies[a.targetBodyId] : null;
-      const sys = star ? state.galaxy.systems[star.systemId] : null;
-      if (!sys) return false;
-      return sys.bodyIds.some((bid) => {
-        const b = state.galaxy.bodies[bid];
-        return b && (b.habitability === "garden" || b.habitability === "temperate");
-      });
-    });
-  }
   return actions;
 }
 
