@@ -17,7 +17,7 @@ export const ORIGINS: Origin[] = [
       steady_evolution: [
         // Deep institutional memory means every decade adds a little
         // more political capital than a less-settled civilisation.
-        { kind: "flat", resource: "political", value: 0.1 },
+        { kind: "flat", resource: "political", value: 0.2 },
       ],
     },
     art: "/origins/steady_evolution.png",
@@ -95,7 +95,7 @@ export const ORIGINS: Origin[] = [
       // finishes the Complete Emancipation project.
       emancipation_pre: [
         { kind: "popGrowthMult", value: 0.6 },
-        { kind: "flat", resource: "political", value: -1 },
+        { kind: "flat", resource: "political", value: -0.1 },
       ],
     },
     startingProjectIds: ["complete_emancipation"],
