@@ -1202,6 +1202,56 @@ describe("AI fleet routing (decision only)", () => {
     const decided = runAiMoves(state, "e_ai");
     expect(decided.fleets["f_def"]?.destinationSystemId).toBe("s_left");
   });
+
+  it("at-war conqueror with a large fleet attacks a smaller adjacent enemy fleet", () => {
+    // The threat term in scoreState prices each enemy ship against
+    // our own ship value, so wiping out a smaller foe registers as
+    // net-positive score. A 6 vs 1 engagement should clearly resolve
+    // to "attack" — the conqueror has both the ship premium and the
+    // occupation credit on their side.
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const enemyHome = makeSystem({
+      id: "s_enemy",
+      bodyIds: ["b_enemy"],
+      ownerId: "e_player",
+    });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const enemyBody = makeBody({ id: "b_enemy", systemId: "s_enemy", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_enemy",
+      systemIds: ["s_enemy"],
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_ai",
+      systemIds: ["s_ai"],
+      expansionism: "conqueror",
+    });
+    const aiFleet: Fleet = {
+      id: "f_attack",
+      empireId: "e_ai",
+      systemId: "s_ai",
+      shipCount: 6,
+    };
+    const enemyFleet: Fleet = {
+      id: "f_def",
+      empireId: "e_player",
+      systemId: "s_enemy",
+      shipCount: 1,
+    };
+    const state = makeState({
+      systems: [aiHome, enemyHome],
+      bodies: [aiBody, enemyBody],
+      hyperlanes: [["s_ai", "s_enemy"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [aiFleet, enemyFleet],
+      wars: [["e_ai", "e_player"].sort() as [string, string]],
+    });
+    const decided = runAiMoves(state, "e_ai");
+    expect(decided.fleets["f_attack"]?.destinationSystemId).toBe("s_enemy");
+  });
 });
 
 describe("per-empire phases", () => {
