@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   aiPlanMoves,
   aiPlanProject,
+  allOrdersOf,
   atWar,
   availableBodyProjectsFor,
   canEnterSystem,
@@ -44,20 +45,36 @@ function makeSystem(overrides: Partial<StarSystem> & { id: string; bodyIds: stri
   };
 }
 
-function makeEmpire(overrides: Partial<Empire> & { id: string }): Empire {
+// Tests write empires with a legacy single-resources bag because it's
+// less noisy than specifying per-component pools. Translate here: the
+// `political` key lands on empire.political, and food/energy seed a
+// single pool keyed by the first systemId (lex-smallest, which matches
+// the component-id convention).
+type LegacyEmpireOverrides = Omit<Partial<Empire>, "componentPools"> & {
+  id: string;
+  resources?: { food?: number; energy?: number; political?: number };
+};
+function makeEmpire(overrides: LegacyEmpireOverrides): Empire {
+  const res = overrides.resources ?? { food: 500, energy: 500, political: 20 };
+  const systemIds = overrides.systemIds ?? [];
+  const poolKey = [...systemIds].sort()[0];
+  const componentPools: Record<string, { food: number; energy: number }> = {};
+  if (poolKey) {
+    componentPools[poolKey] = { food: res.food ?? 0, energy: res.energy ?? 0 };
+  }
   return {
     id: overrides.id,
     name: overrides.name ?? overrides.id,
     speciesId: overrides.speciesId ?? "humans",
     originId: overrides.originId ?? "steady_evolution",
     color: overrides.color ?? "#7ec8ff",
-    resources: overrides.resources ?? { food: 500, energy: 500, political: 20 },
+    political: res.political ?? 20,
+    componentPools,
     compute: overrides.compute ?? { cap: 0, used: 0 },
     expansionism: overrides.expansionism ?? "pragmatist",
     politic: overrides.politic ?? "centrist",
     capitalBodyId: overrides.capitalBodyId ?? null,
-    systemIds: overrides.systemIds ?? [],
-    projects: overrides.projects ?? [],
+    systemIds,
     storyModifiers: overrides.storyModifiers ?? {},
     completedProjects: overrides.completedProjects ?? [],
     adoptedPolicies: overrides.adoptedPolicies ?? [],
@@ -99,7 +116,7 @@ function makeState(overrides: {
   const fleetsRec: Record<string, Fleet> = {};
   for (const f of overrides.fleets ?? []) fleetsRec[f.id] = f;
   return {
-    schemaVersion: 20,
+    schemaVersion: 21,
     turn: overrides.turn ?? 1,
     rngSeed: 1,
     galaxy: {
@@ -495,7 +512,7 @@ describe("AI scoreState value function", () => {
       targetBodyId: "b_vacant",
     });
     expect(queued.galaxy.bodies["b_cap"].pops).toBe(25);
-    expect(queued.empire.projects).toHaveLength(1);
+    expect(allOrdersOf(queued, queued.empire)).toHaveLength(1);
   });
 
   it("refuses to queue colonize when the capital has fewer than COLONIZE_POP_COST pops", () => {
@@ -523,7 +540,7 @@ describe("AI scoreState value function", () => {
       targetBodyId: "b_vacant",
     });
     // No order queued, capital pops untouched.
-    expect(attempted.empire.projects).toHaveLength(0);
+    expect(allOrdersOf(attempted, attempted.empire)).toHaveLength(0);
     expect(attempted.galaxy.bodies["b_cap"].pops).toBe(4);
   });
 
@@ -551,13 +568,13 @@ describe("AI scoreState value function", () => {
       byEmpireId: "e_player",
       targetBodyId: "b_vacant",
     });
-    const orderId = queued.empire.projects[0].id;
+    const orderId = allOrdersOf(queued, queued.empire)[0].id;
     const cancelled = reduce(queued, {
       type: "cancelOrder",
       byEmpireId: "e_player",
       orderId,
     });
-    expect(cancelled.empire.projects).toHaveLength(0);
+    expect(allOrdersOf(cancelled, cancelled.empire)).toHaveLength(0);
     expect(cancelled.galaxy.bodies["b_cap"].pops).toBe(30);
   });
 
@@ -743,7 +760,8 @@ describe("AI project selection (decision only)", () => {
       if (emp) aiPlanProject(d, emp);
     });
     const aiPost = empireById(decided, "e_ai");
-    const frigate = aiPost?.projects.find(
+    const aiOrders = aiPost ? allOrdersOf(decided, aiPost) : [];
+    const frigate = aiOrders.find(
       (p) => p.kind === "empire_project" && p.projectId === "build_frigate",
     );
     expect(frigate).toBeDefined();
@@ -784,7 +802,8 @@ describe("AI project selection (decision only)", () => {
       if (emp) aiPlanProject(d, emp);
     });
     const aiPost = empireById(decided, "e_ai");
-    const outpost = aiPost?.projects.find(
+    const aiOrders = aiPost ? allOrdersOf(decided, aiPost) : [];
+    const outpost = aiOrders.find(
       (p) => p.kind === "empire_project" && p.projectId === "build_outpost",
     );
     expect(outpost).toBeDefined();
@@ -838,7 +857,8 @@ describe("AI project selection (decision only)", () => {
       if (emp) aiPlanProject(d, emp);
     });
     const aiPost = empireById(decided, "e_ai");
-    const colonize = aiPost?.projects.find((p) => p.kind === "colonize");
+    const aiOrders = aiPost ? allOrdersOf(decided, aiPost) : [];
+    const colonize = aiOrders.find((p) => p.kind === "colonize");
     expect(colonize).toBeDefined();
     if (colonize && colonize.kind === "colonize") {
       expect(colonize.targetBodyId).toBe("b_temp");
@@ -887,7 +907,8 @@ describe("AI project selection (decision only)", () => {
       if (emp) aiPlanProject(d, emp);
     });
     const aiPost = empireById(decided, "e_ai");
-    const colonizeOrder = aiPost?.projects.find((p) => p.kind === "colonize");
+    const aiOrders = aiPost ? allOrdersOf(decided, aiPost) : [];
+    const colonizeOrder = aiOrders.find((p) => p.kind === "colonize");
     expect(colonizeOrder).toBeDefined();
     if (colonizeOrder && colonizeOrder.kind === "colonize") {
       expect(colonizeOrder.targetBodyId).toBe("b_temp");

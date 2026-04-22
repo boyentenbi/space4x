@@ -71,3 +71,29 @@ export function planetSpriteFor(bodyId: string, hab: HabitabilityTier): string {
   const variants = PLANET_VARIANTS[hab];
   return variants[bodyHash(bodyId) % variants.length];
 }
+
+// Distinct palette for visualising the player empire's connected
+// components. Shared between the galaxy map (ring per component) and
+// the left-pane resource panel (per-component row) so visuals line up.
+// Deliberately avoids overlap with empire colours.
+export const COMPONENT_PALETTE = [
+  "#f2d06b", // amber
+  "#9ac94a", // lime
+  "#e37c7c", // coral
+  "#7fbfd9", // sky
+  "#c98ae0", // lavender
+  "#e8a850", // tangerine
+];
+
+function componentHash(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+export function componentColor(componentId: string): string {
+  return COMPONENT_PALETTE[componentHash(componentId) % COMPONENT_PALETTE.length];
+}

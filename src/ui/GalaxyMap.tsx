@@ -130,6 +130,32 @@ function polylineD(points: Array<[number, number]>): string {
   return `M ${first[0].toFixed(2)} ${first[1].toFixed(2)} ${body}${isClosed ? " Z" : ""}`;
 }
 
+// Distinct palette for visualising the player empire's connected
+// components. Hash the component id into this list so colours are
+// stable across renders. Deliberately avoids the player's own empire
+// colour so the badge reads as "component" vs "ownership".
+const COMPONENT_PALETTE = [
+  "#f2d06b", // amber
+  "#9ac94a", // lime
+  "#e37c7c", // coral
+  "#7fbfd9", // sky
+  "#c98ae0", // lavender
+  "#e8a850", // tangerine
+];
+
+function hashStr(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function componentColor(componentId: string): string {
+  return COMPONENT_PALETTE[hashStr(componentId) % COMPONENT_PALETTE.length];
+}
+
 export function GalaxyMap({
   galaxy,
   empires,
@@ -137,6 +163,7 @@ export function GalaxyMap({
   selectedId,
   onSelect,
   moveMode,
+  playerComponents,
 }: {
   galaxy: Galaxy;
   empires: Empire[];
@@ -151,6 +178,11 @@ export function GalaxyMap({
     pathSystemIds: string[];
     highlightColor: string;
   } | null;
+  // Map systemId → componentId for the player empire's owned systems.
+  // Multiple componentIds mean the empire is split; each component gets
+  // a distinct tint so the player can see the logistics topology at a
+  // glance.
+  playerComponents?: Map<string, string>;
 }) {
   const systems = Object.values(galaxy.systems);
 
@@ -337,6 +369,37 @@ export function GalaxyMap({
           ));
         })}
       </g>
+
+      {/* Component indicator: a small colored ring inside each player-
+          owned hex, with a distinct colour per connected component.
+          Only rendered when the player's empire is actually split —
+          i.e., there are 2+ components. For single-component empires
+          the ring would carry no information, so it's suppressed. */}
+      {playerComponents && (() => {
+        const ids = new Set(playerComponents.values());
+        if (ids.size < 2) return null;
+        return (
+          <g className="territory-components">
+            {systems.map((sys) => {
+              const cid = playerComponents.get(sys.id);
+              if (!cid) return null;
+              const { x, y } = hexToPixel(sys.q, sys.r);
+              return (
+                <circle
+                  key={`comp-${sys.id}`}
+                  cx={x}
+                  cy={y}
+                  r={HEX_SIZE * 0.55}
+                  fill="none"
+                  stroke={componentColor(cid)}
+                  strokeWidth={1.5}
+                  opacity={0.85}
+                />
+              );
+            })}
+          </g>
+        );
+      })()}
 
       {/* Systems — star dot + optional selected highlight. */}
       {systems.map((sys) => {

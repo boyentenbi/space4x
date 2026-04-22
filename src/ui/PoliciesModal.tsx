@@ -20,7 +20,7 @@ export function PoliciesModal({ onClose }: { onClose: () => void }) {
         <h2>Policies</h2>
         <div className="policies-subtitle">
           Empire diameter <strong>{diameter}</strong> · each step raises policy cost by 15%.
-          Current political capital: {Math.round(empire.resources.political)}.
+          Current political capital: {Math.round(empire.political)}.
         </div>
 
         {adopted.length > 0 && (
@@ -66,7 +66,7 @@ export function PoliciesModal({ onClose }: { onClose: () => void }) {
                     }
                     title={
                       !affordable
-                        ? `Requires ${cost} political capital (you have ${Math.round(empire.resources.political)}).`
+                        ? `Requires ${cost} political capital (you have ${Math.round(empire.political)}).`
                         : `Costs ${cost} political capital.`
                     }
                   >

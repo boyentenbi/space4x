@@ -7,6 +7,14 @@
 export type ResourceKey = "food" | "energy" | "political";
 export type Resources = Record<ResourceKey, number>;
 
+// Per-connected-component pool. Food and energy both flow through
+// hyperlanes — cutting a region off stops shipments of both. Political
+// capital is empire-wide (legitimacy, diplomacy) and lives on Empire.
+export interface ComponentPool {
+  food: number;
+  energy: number;
+}
+
 // Empire-wide flow (resets every turn — capacity, not stockpile).
 export interface Compute {
   cap: number;      // Max compute this turn (sum of data-center output).
@@ -264,7 +272,11 @@ export interface Empire {
   speciesId: string;
   originId: string;
   color: string;             // Territory/UI color. Derived from species at new game.
-  resources: Resources;
+  // Political capital is empire-wide (represents legitimacy, diplomacy
+  // pressure, policy budget — things that don't travel by freighter).
+  // Food and energy pool per connected component via componentPools.
+  political: number;
+  componentPools: Record<string, ComponentPool>;
   compute: Compute;
   // Chosen portrait URL (from the species' portraits list). Falls back to
   // the species default if unset.
@@ -279,7 +291,6 @@ export interface Empire {
   leaderId?: string;
   capitalBodyId: string | null;
   systemIds: string[];       // Owned systems.
-  projects: BuildOrder[];    // Empire-level project queue (FIFO).
   storyModifiers: Record<string, Modifier[]>;
   completedProjects: string[];
   adoptedPolicies: string[];
@@ -292,7 +303,7 @@ export interface PendingEvent {
 }
 
 export interface GameState {
-  schemaVersion: 20;
+  schemaVersion: 21;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;

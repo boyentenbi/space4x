@@ -3,7 +3,9 @@ import { useGame } from "../store";
 import { originById, speciesById } from "../sim/content";
 import {
   allEmpires,
+  allOrdersOf,
   availableBodyProjectsFor,
+  computeComponents,
   availableProjectsFor,
   bodyComputeOutput,
   bodyIncome,
@@ -17,6 +19,7 @@ import {
   effectiveColonizePolitical,
   maxPopsFor,
   empireById,
+  empireResourceStock,
   expectedPopGrowth,
   fleetsInSystem,
   growthEstimate,
@@ -486,7 +489,7 @@ export function MainScreen() {
   // any existing FIFO queue already consuming from the pool.
   function turnsToColonize(): number {
     if (totalHammers <= 0) return Infinity;
-    const backlogHammers = state.empire.projects.reduce(
+    const backlogHammers = allOrdersOf(state, state.empire).reduce(
       (s, o) => s + (o.hammersRequired - o.hammersPaid),
       0,
     );
@@ -605,7 +608,7 @@ export function MainScreen() {
             <ResCell
               key={k}
               icon={RESOURCE_ICON[k]}
-              value={Math.round(state.empire.resources[k])}
+              value={Math.round(empireResourceStock(state.empire, k))}
               delta={deltas[k]}
               onClick={() => setBreakdown(resourceBreakdownAsStat(state, state.empire, k))}
             />
@@ -798,7 +801,7 @@ export function MainScreen() {
                       colonizePolitical={colonizePoliticalCost}
                       growth={focusIsOurs ? growthEstimate(state, state.empire, body) : null}
                       bodyProjects={bodyProjects}
-                      bodyProjectOrder={bodyProjectOrderFor(state.empire, body.id)}
+                      bodyProjectOrder={bodyProjectOrderFor(state, body.id)}
                       hammerRate={totalHammers}
                       onColonize={() =>
                         dispatch({
@@ -837,7 +840,7 @@ export function MainScreen() {
                 order plus any empire-scope projects still available. */}
             <BuildQueueCard
               state={state}
-              projects={state.empire.projects}
+              projects={allOrdersOf(state, state.empire)}
               available={availableProjectsFor(state, state.empire)}
               hammerRate={totalHammers}
               onQueue={(pid) =>
@@ -886,6 +889,7 @@ export function MainScreen() {
                     }
                   : null
               }
+              playerComponents={computeComponents(state, state.empire)}
             />
             {moveFleet && !moveFleetStale && (() => {
               const dest = moveFleet.destinationSystemId
