@@ -8,10 +8,8 @@
 // single flat file keeps the balance numbers legible in one place.
 
 export const BALANCE = {
-  // Energy drained from the empire stockpile each turn per ship, per
-  // owned system's outpost. If the stockpile goes to 0 or below, the
-  // fleet is "out of fuel" — it can't move and deals 0 combat damage
-  // until the deficit is repaired.
-  shipEnergyUpkeep: 1,
+  // Energy drained from each owned system's component pool each turn
+  // for outpost maintenance. Cutting a region off means it has to
+  // sustain its own outposts from local food/energy production.
   outpostEnergyUpkeep: 1,
 } as const;

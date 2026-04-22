@@ -728,11 +728,9 @@ export function resourceBreakdownFor(
       }
     }
   }
-  // Energy upkeep: ships + outposts drain the stockpile each turn.
-  // Shown as negative rows in the breakdown so the deficit is legible.
+  // Energy upkeep: outposts drain the stockpile each turn (fleets no
+  // longer draw upkeep — hammers are the real fleet-production lever).
   if (resource === "energy") {
-    const shipCost = fleetEnergyUpkeep(state, empire);
-    if (shipCost > 0) flat.push({ label: "Fleet upkeep", value: -shipCost });
     const outpostCost = outpostEnergyUpkeep(empire);
     if (outpostCost > 0) flat.push({ label: "Outpost upkeep", value: -outpostCost });
   }
@@ -981,12 +979,9 @@ export function componentIncomeOf(
     food += flatEmpireIncome(mods, "food");
     energy += flatEmpireIncome(mods, "energy");
   }
-  const shipCost = BALANCE.shipEnergyUpkeep;
-  for (const f of Object.values(state.fleets)) {
-    if (f.empireId !== empire.id) continue;
-    if (components.get(f.systemId) !== componentId) continue;
-    energy -= f.shipCount * shipCost;
-  }
+  // Outpost upkeep drains the local component's pool — cutting a
+  // region off means that region has to pay for its own outposts.
+  // Fleets no longer have upkeep (hammers throttle production directly).
   const outpostCost = BALANCE.outpostEnergyUpkeep;
   for (const sid of empire.systemIds) {
     if (components.get(sid) !== componentId) continue;
@@ -1261,24 +1256,16 @@ function resolveCombat(draft: GameState): void {
       before[f.empireId] = (before[f.empireId] ?? 0) + f.shipCount;
     }
 
-    // Energy deficit → zero outgoing damage this combat. Fleets are
-    // expeditionary, so they draw from the empire's aggregate energy
-    // stockpile (not just the local component); the logistics cut-off
-    // primarily bites on food/growth, not fleet ops.
+    // Fleets don't need fuel any more (upkeep was dropped), so every
+    // present empire can always deal damage. The `damageOutMult` map
+    // is kept as an API shape so downstream code needn't branch.
     const damageOutMult: Record<string, number> = {};
-    for (const empId of empires) {
-      const emp = empireById(draft, empId);
-      damageOutMult[empId] = !emp || totalComponentEnergy(emp) <= 0 ? 0 : 1;
-    }
+    for (const empId of empires) damageOutMult[empId] = 1;
 
     // Work out which empires are actually at war with at least one
-    // other empire here AND can deal damage. If only one such empire
-    // remains, nothing fights.
+    // other empire here. If only one such empire remains, nothing fights.
     const belligerents = empires.filter((a) => {
-      if (damageOutMult[a] === 0) return false;
-      return empires.some(
-        (b) => b !== a && damageOutMult[b] === 1 && atWar(draft, a, b),
-      );
+      return empires.some((b) => b !== a && atWar(draft, a, b));
     });
     const canDealDamage = empires.filter((e) =>
       empires.some((o) => o !== e && atWar(draft, e, o)),
@@ -1920,11 +1907,6 @@ function killStarvingPopInComponent(
   return target.name;
 }
 
-// Per-turn energy cost of an empire's standing fleet.
-export function fleetEnergyUpkeep(state: GameState, empire: Empire): number {
-  return totalFleetShipsFor(state, empire) * BALANCE.shipEnergyUpkeep;
-}
-
 // Per-turn energy cost of each owned system's outpost.
 export function outpostEnergyUpkeep(empire: Empire): number {
   return empire.systemIds.length * BALANCE.outpostEnergyUpkeep;
@@ -2369,10 +2351,6 @@ function processFleetOrders(draft: GameState, onlyEmpireId?: string): void {
     if (!fleet.destinationSystemId) continue;
     if (fleet.shipCount <= 0) continue;
     if (onlyEmpireId && fleet.empireId !== onlyEmpireId) continue;
-    // Empire in aggregate energy deficit can't fuel movement.
-    // Destination stays set; the fleet just doesn't step this turn.
-    const fleetOwner = empireById(draft, fleet.empireId);
-    if (!fleetOwner || totalComponentEnergy(fleetOwner) <= 0) continue;
     if (fleet.systemId === fleet.destinationSystemId) {
       fleet.destinationSystemId = undefined;
       continue;

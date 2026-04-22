@@ -479,9 +479,10 @@ describe("AI scoreState value function", () => {
     // + Per-body: 1 × 10 (TILE_VALUE) + 10 space × 8 (MAX_POPS_VALUE) = 90.
     // Ships: 2 × 200 × (no-war 1.0) × stuck 20% (cap=0) = 80.
     // + political/turn baseline × 15 = 15.
-    // − energy upkeep (2 ships + 1 outpost = 3) × 5 horizon = −15.
-    // Total = 370.
-    expect(scoreState(state, "e_player")).toBe(370);
+    // − outpost upkeep (1 outpost × 1 energy) × 5 horizon = −5.
+    //   (Fleet upkeep was dropped; only outposts drain energy now.)
+    // Total = 380.
+    expect(scoreState(state, "e_player")).toBe(380);
   });
 
   it("queueing colonize deducts COLONIZE_POP_COST from the capital", () => {
@@ -1135,86 +1136,10 @@ describe("per-empire phases", () => {
   });
 });
 
-describe("energy upkeep + deficit", () => {
-  it("a fleet with empire energy at 0 or less doesn't move", () => {
-    // Zero-pop body produces no energy, so fleet + outpost upkeep is
-    // the only draw. Start at 0 energy; after tick, stockpile goes
-    // negative and the fleet can't move.
-    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
-    const mid = makeSystem({ id: "s_mid", bodyIds: [], ownerId: null });
-    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 0 });
-    const empire = makeEmpire({
-      id: "e_player",
-      capitalBodyId: "b_cap",
-      systemIds: [home.id],
-      resources: { food: 500, energy: 0, political: 20 },
-    });
-    const fleet: Fleet = {
-      id: "f",
-      empireId: "e_player",
-      systemId: "s_home",
-      shipCount: 1,
-      destinationSystemId: "s_mid",
-    };
-    const state = makeState({
-      systems: [home, mid],
-      bodies: [cap],
-      hyperlanes: [["s_home", "s_mid"]],
-      empire,
-      fleets: [fleet],
-    });
-    const next = reduce(state, { type: "endTurn" });
-    // Fleet stayed home, route preserved.
-    expect(next.fleets["f"]?.systemId).toBe("s_home");
-    expect(next.fleets["f"]?.destinationSystemId).toBe("s_mid");
-  });
-
-  it("energy-deficit empire deals zero combat damage", () => {
-    // Two empires share a system, at war. Player has lots of energy;
-    // AI is broke. After combat, the AI should have taken all the
-    // casualties while the player took none.
-    const contested = makeSystem({ id: "s_contest", bodyIds: [], ownerId: null });
-    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
-    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
-    const player = makeEmpire({
-      id: "e_player",
-      capitalBodyId: "b_cap",
-      systemIds: [home.id],
-      resources: { food: 500, energy: 500, political: 20 },
-    });
-    const ai = makeEmpire({
-      id: "e_ai",
-      capitalBodyId: null,
-      systemIds: [],
-      resources: { food: 0, energy: 0, political: 0 },
-    });
-    const playerFleet: Fleet = {
-      id: "f_p",
-      empireId: "e_player",
-      systemId: "s_contest",
-      shipCount: 5,
-    };
-    const aiFleet: Fleet = {
-      id: "f_a",
-      empireId: "e_ai",
-      systemId: "s_contest",
-      shipCount: 5,
-    };
-    const state = makeState({
-      systems: [contested, home],
-      bodies: [cap],
-      empire: player,
-      aiEmpires: [ai],
-      fleets: [playerFleet, aiFleet],
-      wars: [["e_ai", "e_player"].sort() as [string, string]],
-    });
-    const next = runOnePhase(state);
-    // Player loses nothing (AI dealt 0 damage); AI took proper
-    // attrition from the player's 5 ships.
-    expect(next.fleets["f_p"]?.shipCount).toBe(5);
-    expect((next.fleets["f_a"]?.shipCount ?? 0)).toBeLessThan(5);
-  });
-});
+// Fleet upkeep was dropped, so fleets no longer gate on empire energy
+// for movement or combat. The remaining energy lever is outpost
+// upkeep, which runs per-component — cutting a region off can push
+// that region's pool negative but doesn't itself brick fleet ops.
 
 describe("processFleetOrders via endTurn", () => {
   it("steps a fleet one hop per turn along the stored path", () => {
