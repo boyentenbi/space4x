@@ -1623,12 +1623,18 @@ describe("perf: endTurn cost", () => {
     const avgScoreTime = BENCH.scoreStateTimeMs / TURNS;
     const avgCand = BENCH.moveCandidateCalls / TURNS;
     const avgCandTime = BENCH.moveCandidateTimeMs / TURNS;
+    const avgProduce = BENCH.produceTimeMs / TURNS;
+    const avgCombat = BENCH.resolveCombatTimeMs / TURNS;
+    const avgOcc = BENCH.processOccupationTimeMs / TURNS;
     // eslint-disable-next-line no-console
     console.log(
       `[bench:breakdown] per turn avg:\n` +
         `  beginRound=${avgBegin.toFixed(1)}ms  runPhase-cycle=${avgPhases.toFixed(1)}ms\n` +
-        `  scoreState calls=${avgScore.toFixed(0)} time=${avgScoreTime.toFixed(1)}ms (${(avgScoreTime / avgScore || 0).toFixed(2)}ms each)\n` +
-        `  moveCandidate calls=${avgCand.toFixed(0)} time=${avgCandTime.toFixed(1)}ms (${(avgCandTime / avgCand || 0).toFixed(2)}ms each)`,
+        `  scoreState calls=${avgScore.toFixed(0)} time=${avgScoreTime.toFixed(1)}ms (${(avgScoreTime / avgScore || 0).toFixed(3)}ms each)\n` +
+        `  moveCandidate calls=${avgCand.toFixed(0)} time=${avgCandTime.toFixed(1)}ms (${(avgCandTime / avgCand || 0).toFixed(3)}ms each)\n` +
+        `    ├ produce  ${avgProduce.toFixed(1)}ms (${(avgProduce / avgCand || 0).toFixed(3)}ms each)\n` +
+        `    ├ combat   ${avgCombat.toFixed(1)}ms (${(avgCombat / avgCand || 0).toFixed(3)}ms each)\n` +
+        `    └ occupy   ${avgOcc.toFixed(1)}ms (${(avgOcc / avgCand || 0).toFixed(3)}ms each)`,
     );
   });
 });

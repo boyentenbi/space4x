@@ -1,4 +1,4 @@
-import { current, produce } from "immer";
+import { current, original, produce } from "immer";
 import { LEADERS, POLICIES, featureById, originById, policyById, projectById, speciesById, traitById, EMPIRE_PROJECTS } from "./content";
 import { BALANCE } from "../content/balance";
 import { pickRandomEvent, resolveEventChoice, RESOURCE_KEYS } from "./events";
@@ -1567,22 +1567,42 @@ export const OCCUPATION_TURNS_TO_FLIP = 3;
 function processOccupation(draft: GameState): void {
   const flips: Array<{ systemId: string; fromOwnerId: string; toOwnerId: string }> = [];
 
-  for (const sys of Object.values(draft.galaxy.systems)) {
+  // Index fleets by their current system once, so we don't re-scan
+  // all fleets for every system in the loop below. Fleets get
+  // mutated upstream (mutate() teleports one, resolveCombat changes
+  // shipCount), so we read from the draft (proxy) to see the
+  // post-combat state.
+  const fleetsBySystem = new Map<string, Fleet[]>();
+  for (const f of Object.values(draft.fleets)) {
+    if (f.shipCount <= 0) continue;
+    let arr = fleetsBySystem.get(f.systemId);
+    if (!arr) {
+      arr = [];
+      fleetsBySystem.set(f.systemId, arr);
+    }
+    arr.push(f);
+  }
+
+  // Systems don't mutate upstream of this call — the only writes so
+  // far are fleet movement + combat. Read the system list from the
+  // unproxied original to avoid creating 100+ Immer proxies per
+  // call; write via `draft.galaxy.systems[id]` only when we actually
+  // need to change occupation on a given system. This is the bulk
+  // of the AI's per-turn cost: Object.values on the draft's systems
+  // dominates because each entry becomes a Proxy.
+  const baseSystems = original(draft.galaxy.systems) ?? draft.galaxy.systems;
+  for (const sys of Object.values(baseSystems)) {
     if (!sys.ownerId) {
-      // Unclaimed space can't be occupied — just cleared.
-      if (sys.occupation) sys.occupation = undefined;
+      if (sys.occupation) draft.galaxy.systems[sys.id].occupation = undefined;
       continue;
     }
     const ownerId = sys.ownerId;
-    const fleetsHere = Object.values(draft.fleets).filter(
-      (f) => f.systemId === sys.id && f.shipCount > 0,
-    );
+    const fleetsHere = fleetsBySystem.get(sys.id) ?? [];
     const defenderPresent = fleetsHere.some((f) => f.empireId === ownerId);
     if (defenderPresent) {
-      sys.occupation = undefined;
+      if (sys.occupation) draft.galaxy.systems[sys.id].occupation = undefined;
       continue;
     }
-    // Which foreign empires have ships here, at war with the owner?
     const invaderEmpireIds = new Set<string>();
     for (const f of fleetsHere) {
       if (f.empireId !== ownerId && atWar(draft, ownerId, f.empireId)) {
@@ -1590,30 +1610,28 @@ function processOccupation(draft: GameState): void {
       }
     }
     if (invaderEmpireIds.size === 0) {
-      sys.occupation = undefined;
+      if (sys.occupation) draft.galaxy.systems[sys.id].occupation = undefined;
       continue;
     }
     if (invaderEmpireIds.size > 1) {
       // Contested — nobody can occupy until one side wins out.
-      sys.occupation = undefined;
+      if (sys.occupation) draft.galaxy.systems[sys.id].occupation = undefined;
       continue;
     }
     const invaderId = Array.from(invaderEmpireIds)[0];
-    if (sys.occupation && sys.occupation.empireId === invaderId) {
-      sys.occupation.turns += 1;
-    } else {
-      sys.occupation = { empireId: invaderId, turns: 1 };
-      if (ownerId === draft.empire.id || invaderId === draft.empire.id) {
-        const invader = empireById(draft, invaderId);
-        draft.eventLog.push({
-          turn: draft.turn,
-          eventId: "occupation_begun",
-          choiceId: null,
-          text: `${invader?.name ?? "Enemy"} fleet is occupying ${sys.name}.`,
-        });
-      }
+    const continuing = sys.occupation && sys.occupation.empireId === invaderId;
+    const newTurns = continuing ? sys.occupation!.turns + 1 : 1;
+    draft.galaxy.systems[sys.id].occupation = { empireId: invaderId, turns: newTurns };
+    if (!continuing && (ownerId === draft.empire.id || invaderId === draft.empire.id)) {
+      const invader = empireById(draft, invaderId);
+      draft.eventLog.push({
+        turn: draft.turn,
+        eventId: "occupation_begun",
+        choiceId: null,
+        text: `${invader?.name ?? "Enemy"} fleet is occupying ${sys.name}.`,
+      });
     }
-    if (sys.occupation.turns >= OCCUPATION_TURNS_TO_FLIP) {
+    if (newTurns >= OCCUPATION_TURNS_TO_FLIP) {
       flips.push({ systemId: sys.id, fromOwnerId: ownerId, toOwnerId: invaderId });
     }
   }
@@ -2328,11 +2346,17 @@ export const BENCH = {
   scoreStateTimeMs: 0,
   moveCandidateCalls: 0,
   moveCandidateTimeMs: 0,
+  produceTimeMs: 0,
+  resolveCombatTimeMs: 0,
+  processOccupationTimeMs: 0,
   reset() {
     this.scoreStateCalls = 0;
     this.scoreStateTimeMs = 0;
     this.moveCandidateCalls = 0;
     this.moveCandidateTimeMs = 0;
+    this.produceTimeMs = 0;
+    this.resolveCombatTimeMs = 0;
+    this.processOccupationTimeMs = 0;
   },
 };
 
@@ -2705,17 +2729,27 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
 
     const scoreCandidate = (mutate: (d: GameState) => void): number => {
       const __t0 = performance.now();
+      let __tCombat = 0;
+      let __tOccupation = 0;
       const projected = produce(baseline, (d) => {
         mutate(d);
-        // 1-step forward sim: combat settles any new encounter, then
-        // occupation ticks reveal whether we're advancing or breaking
-        // sieges. scoreState reads the resulting state.
+        const __c0 = performance.now();
         resolveCombat(d);
+        const __c1 = performance.now();
         processOccupation(d);
+        const __c2 = performance.now();
+        __tCombat = __c1 - __c0;
+        __tOccupation = __c2 - __c1;
       });
+      const __t1 = performance.now();
       const score = scoreState(projected, empire.id);
       BENCH.moveCandidateCalls += 1;
       BENCH.moveCandidateTimeMs += performance.now() - __t0;
+      // produce() wraps the mutate/combat/occupation closure — its
+      // time is (finish - start) minus the inner phases.
+      BENCH.produceTimeMs += (__t1 - __t0) - __tCombat - __tOccupation;
+      BENCH.resolveCombatTimeMs += __tCombat;
+      BENCH.processOccupationTimeMs += __tOccupation;
       return score;
     };
 
