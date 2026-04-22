@@ -55,7 +55,7 @@ export const SPECIES: Species[] = [
     ],
     color: "#62d4e6",
     modifiers: [
-      { kind: "hammersPerPopDelta", value: 0.5 },
+      { kind: "hammersPerPopDelta", value: 0.25 },
       { kind: "popGrowthMult", value: 0.6 },
       { kind: "flat", resource: "political", value: -0.5 },
     ],
