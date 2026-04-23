@@ -805,6 +805,41 @@ button.res-cell:hover:not(:disabled) {
   padding: 0 2px;
 }
 
+.build-queue-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.build-queue-body + .build-queue-body {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  margin-top: 2px;
+}
+
+.build-queue-body-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  color: var(--text-dim);
+  padding: 0 2px;
+}
+
+.build-queue-body-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.build-queue-body-rate {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
 .project-card {
   padding: 8px 10px;
   border-radius: 6px;

@@ -28,6 +28,7 @@ import {
   growthEstimate,
   HAMMERS_PER_POP,
   hammersBreakdownFor,
+  hammersPerPopFor,
   humanEmpire,
   humanEmpireOrThrow,
   OCCUPATION_TURNS_TO_FLIP,
@@ -162,24 +163,40 @@ function ResCell({
 // next, what's queued behind it" cadence legible.
 function BuildQueueCard({
   state,
-  projects,
-  available,
-  hammerRate,
-  onQueue,
+  player,
+  empireProjectsAvailable,
+  onQueueEmpireProject,
   onCancel,
 }: {
   state: import("../sim/types").GameState;
-  projects: import("../sim/types").BuildOrder[];
-  available: ReturnType<typeof availableProjectsFor>;
-  hammerRate: number;
-  onQueue: (projectId: string) => void;
+  player: import("../sim/types").Empire;
+  empireProjectsAvailable: ReturnType<typeof availableProjectsFor>;
+  onQueueEmpireProject: (projectId: string) => void;
   onCancel: (orderId: string) => void;
 }) {
-  if (projects.length === 0 && available.length === 0) return null;
+  // Hammers are body-local — each body drains its own hammers into
+  // its own FIFO queue. Render the "build queue" as one section per
+  // body with a non-empty queue, so the player can see which body is
+  // working on what and how long it'll take at THAT body's output
+  // rate (not a misleading empire-total rate).
+  //
+  // Empire-scope offers (the Start-a-project buttons) get attached to
+  // the capital's section, because queueEmpireProject hosts on the
+  // capital unless a body target was chosen.
+  const capitalBodyId = player.capitalBodyId;
 
-  // Sum hammers paid-ahead-of-this-order so we can show cumulative
-  // turns-to-complete down the queue.
-  let cumulativeRemaining = 0;
+  // Bodies that either have something queued or are the capital with
+  // empire-scope offers to show. Skip pops-less bodies (stars) —
+  // their queue stays empty because they can't produce hammers.
+  const bodies = ownedBodiesOf(state, player)
+    .filter(
+      (b) =>
+        b.queue.length > 0 ||
+        (b.id === capitalBodyId && empireProjectsAvailable.length > 0),
+    )
+    .filter((b) => b.pops > 0 || b.queue.length > 0);
+
+  if (bodies.length === 0) return null;
 
   function renderLabel(order: import("../sim/types").BuildOrder): {
     name: string;
@@ -208,49 +225,72 @@ function BuildQueueCard({
   return (
     <div className="empire-projects">
       <div className="projects-label">Build Queue</div>
-      {projects.map((order) => {
-        const { name, desc, art } = renderLabel(order);
-        const pct = Math.min(100, (order.hammersPaid / order.hammersRequired) * 100);
-        const selfRemaining = Math.max(0, order.hammersRequired - order.hammersPaid);
-        cumulativeRemaining += selfRemaining;
-        const turns = hammerRate > 0 ? Math.ceil(cumulativeRemaining / hammerRate) : "—";
+      {bodies.map((body) => {
+        // Forward-looking rate — matches what will actually drain
+        // into this body's queue next tick. Reading body.hammers
+        // would give the already-ticked value, but it's reset-and-
+        // recomputed each turn from the same formula.
+        const bodyRate = Math.floor(body.pops * hammersPerPopFor(player, body));
+        // Cumulative remaining across THIS body's queue only, so
+        // turns-to-completion is meaningful per position.
+        let cumulative = 0;
+        const isCapital = body.id === capitalBodyId;
         return (
-          <div key={order.id} className="project-card in-flight">
-            {art && <img className="project-art" src={art} alt="" />}
-            <div className="project-card-body">
-              <div className="project-card-head">
-                <span className="project-name">{name}</span>
-                <button className="project-cancel" onClick={() => onCancel(order.id)} title="Cancel">×</button>
-              </div>
-              <div className="project-card-desc">{desc}</div>
-              <div className="project-bar">
-                <div className="project-bar-fill" style={{ width: `${pct}%` }} />
-              </div>
-              <div className="project-stats">
-                {order.hammersPaid}/{order.hammersRequired} · ~{turns}T
-              </div>
+          <div key={body.id} className="build-queue-body">
+            <div className="build-queue-body-head">
+              <span className="build-queue-body-name">{body.name}</span>
+              <span className="build-queue-body-rate">
+                <img className="stat-icon" src={HAMMERS_ICON} alt="" />
+                {bodyRate}/T
+              </span>
             </div>
-          </div>
-        );
-      })}
-      {available.map((proj) => {
-        const turns = hammerRate > 0 ? Math.ceil(proj.hammersRequired / hammerRate) : "—";
-        return (
-          <div key={proj.id} className="project-card available">
-            {proj.art && <img className="project-art" src={proj.art} alt="" />}
-            <div className="project-card-body">
-              <div className="project-card-head">
-                <span className="project-name">{proj.name}</span>
-                <button className="project-start" onClick={() => onQueue(proj.id)}>Start</button>
-              </div>
-              <div className="project-card-desc">{proj.description}</div>
-              <div className="project-stats">
-                {proj.hammersRequired} hammers · ~{turns}T
-                {proj.costs && Object.entries(proj.costs).map(([k, v]) =>
-                  v ? <span key={k}> · {v} {k}</span> : null
-                )}
-              </div>
-            </div>
+            {body.queue.map((order) => {
+              const { name, desc, art } = renderLabel(order);
+              const pct = Math.min(100, (order.hammersPaid / order.hammersRequired) * 100);
+              const selfRemaining = Math.max(0, order.hammersRequired - order.hammersPaid);
+              cumulative += selfRemaining;
+              const turns = bodyRate > 0 ? Math.ceil(cumulative / bodyRate) : "—";
+              return (
+                <div key={order.id} className="project-card in-flight">
+                  {art && <img className="project-art" src={art} alt="" />}
+                  <div className="project-card-body">
+                    <div className="project-card-head">
+                      <span className="project-name">{name}</span>
+                      <button className="project-cancel" onClick={() => onCancel(order.id)} title="Cancel">×</button>
+                    </div>
+                    <div className="project-card-desc">{desc}</div>
+                    <div className="project-bar">
+                      <div className="project-bar-fill" style={{ width: `${pct}%` }} />
+                    </div>
+                    <div className="project-stats">
+                      {order.hammersPaid}/{order.hammersRequired} · ~{turns}T
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {isCapital &&
+              empireProjectsAvailable.map((proj) => {
+                const turns = bodyRate > 0 ? Math.ceil(proj.hammersRequired / bodyRate) : "—";
+                return (
+                  <div key={proj.id} className="project-card available">
+                    {proj.art && <img className="project-art" src={proj.art} alt="" />}
+                    <div className="project-card-body">
+                      <div className="project-card-head">
+                        <span className="project-name">{proj.name}</span>
+                        <button className="project-start" onClick={() => onQueueEmpireProject(proj.id)}>Start</button>
+                      </div>
+                      <div className="project-card-desc">{proj.description}</div>
+                      <div className="project-stats">
+                        {proj.hammersRequired} hammers · ~{turns}T
+                        {proj.costs && Object.entries(proj.costs).map(([k, v]) =>
+                          v ? <span key={k}> · {v} {k}</span> : null
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
           </div>
         );
       })}
@@ -1209,14 +1249,13 @@ export function MainScreen() {
                 </div>
               )}
 
-            {/* Full build queue — every queued order in FIFO drain
-                order plus any empire-scope projects still available. */}
+            {/* Build queue grouped by body — each body has its own
+                hammers pool and FIFO queue; no cross-body pooling. */}
             <BuildQueueCard
               state={state}
-              projects={allOrdersOf(state, player)}
-              available={availableProjectsFor(state, player)}
-              hammerRate={totalHammers}
-              onQueue={(pid) =>
+              player={player}
+              empireProjectsAvailable={availableProjectsFor(state, player)}
+              onQueueEmpireProject={(pid) =>
                 dispatch({
                   type: "queueEmpireProject",
                   byEmpireId: player.id,
