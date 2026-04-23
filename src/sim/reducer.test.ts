@@ -2959,6 +2959,27 @@ describe("fog of war: AI decisions", () => {
   });
 });
 
+describe("randomRollout", () => {
+  it("runs a short headless game without crashing and produces sensible stats", async () => {
+    // Smoke test for the rollout harness. Short cap so this stays
+    // cheap in the regular test suite; actual balance sweeps live
+    // outside of vitest (npm run rollout).
+    const { randomRollout } = await import("./rollout");
+    const result = randomRollout({ seed: 0xabcdef, maxTurns: 25 });
+    expect(result.turns).toBeGreaterThan(0);
+    expect(result.finalEmpires.length).toBeGreaterThanOrEqual(3); // player + 2 AIs
+    // Every empire's stats are well-formed numbers.
+    for (const e of result.finalEmpires) {
+      expect(e.systems).toBeGreaterThanOrEqual(0);
+      expect(e.pops).toBeGreaterThanOrEqual(0);
+      expect(e.ships).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(e.score)).toBe(true);
+    }
+    // Either we hit the cap or someone got eliminated.
+    expect(result.turns >= 25 || result.gameOver).toBe(true);
+  });
+});
+
 // =====================================================================
 // Performance benchmark. Runs the full game loop (endTurn) across a
 // realistic-size galaxy for several turns and reports the per-turn
