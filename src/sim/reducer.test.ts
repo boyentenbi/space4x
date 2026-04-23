@@ -1252,6 +1252,58 @@ describe("AI fleet routing (decision only)", () => {
     const decided = runAiMoves(state, "e_ai");
     expect(decided.fleets["f_attack"]?.destinationSystemId).toBe("s_enemy");
   });
+
+  it("isolationist not-at-war ignores a smaller adjacent neutral fleet", () => {
+    // Mirror of the conqueror-attack test but with an isolationist
+    // AI and no war declared. Attacking would auto-declare war (the
+    // destination is a foreign-owned system), and the AT_WAR_COST
+    // for isolationists (2000 per enemy) plus the new-enemy-threat
+    // term should make the move score negative. AI stays home.
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const otherHome = makeSystem({
+      id: "s_other",
+      bodyIds: ["b_other"],
+      ownerId: "e_player",
+    });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const otherBody = makeBody({ id: "b_other", systemId: "s_other", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_other",
+      systemIds: ["s_other"],
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_ai",
+      systemIds: ["s_ai"],
+      expansionism: "isolationist",
+    });
+    const aiFleet: Fleet = {
+      id: "f_iso",
+      empireId: "e_ai",
+      systemId: "s_ai",
+      shipCount: 6,
+    };
+    const otherFleet: Fleet = {
+      id: "f_small",
+      empireId: "e_player",
+      systemId: "s_other",
+      shipCount: 1,
+    };
+    const state = makeState({
+      systems: [aiHome, otherHome],
+      bodies: [aiBody, otherBody],
+      hyperlanes: [["s_ai", "s_other"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [aiFleet, otherFleet],
+      // No wars — walking into s_other would auto-declare.
+    });
+    const decided = runAiMoves(state, "e_ai");
+    // AI stays put (or at least doesn't commit to entering the
+    // foreign-owned system, which would auto-declare war).
+    expect(decided.fleets["f_iso"]?.destinationSystemId).not.toBe("s_other");
+  });
 });
 
 describe("per-empire phases", () => {
