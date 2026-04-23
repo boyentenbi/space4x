@@ -169,14 +169,12 @@ function makeState(overrides: {
 // =====================================================================
 
 describe("deterministic pop growth", () => {
-  it("applies the logistic formula exactly in one tick", () => {
-    // Formula: ΔPops = (BASE_ORGANIC_GROWTH_RATE × mult × pops + additive)
-    //                   × (1 − pops/cap)
-    // BASE_ORGANIC_GROWTH_RATE is derived from ORGANIC_DOUBLING_TURNS:
-    // r = 2^(1/60) − 1 ≈ 0.011619. Test empire is a bare-defaults
-    // makeEmpire — no origin modifiers applied, so popGrowthMult = 1
-    // and additive = 0. For pops = 20, cap = 40:
-    // (0.011619 × 1 × 20) × 0.5 ≈ 0.11619 → 20.11619.
+  it("applies the hard-cap growth formula exactly in one tick", () => {
+    // Formula (hard cap, no logistic damping):
+    //   ΔPops = BASE_ORGANIC_GROWTH_RATE × mult × pops + additive
+    // where BASE_ORGANIC_GROWTH_RATE = 2^(1/60) − 1 ≈ 0.011619.
+    // Test empire has no origin modifiers → mult = 1, additive = 0.
+    // For pops = 20: 0.011619 × 1 × 20 ≈ 0.232388 → 20.232388.
     const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
     const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 20, maxPops: 40 });
     const player = makeEmpire({
@@ -187,13 +185,13 @@ describe("deterministic pop growth", () => {
     });
     const state = makeState({ systems: [home], bodies: [cap], empire: player });
     const ticked = runOnePhase(state, "e_player");
-    expect(ticked.galaxy.bodies["b_cap"].pops).toBeCloseTo(20.11619, 4);
+    expect(ticked.galaxy.bodies["b_cap"].pops).toBeCloseTo(20.23239, 4);
   });
 
   it("Matriarchal-Hive-style modifiers: zero organic, positive additive", () => {
-    // popGrowthMult = 0 kills organic entirely; popGrowthAdd = 0.3 gives
-    // flat per-turn pops, throttled by headroom. For pops = 10, cap = 40:
-    //   (0 + 0.3) × (1 − 10/40) = 0.225.
+    // popGrowthMult = 0 kills organic entirely; popGrowthAdd = 0.3
+    // contributes flat per-turn pops. Hard cap means no headroom
+    // factor: for pops = 10, cap = 40 → ΔPops = 0 + 0.3 = 0.3.
     const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
     const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 10, maxPops: 40 });
     const player = makeEmpire({
@@ -210,7 +208,7 @@ describe("deterministic pop growth", () => {
     });
     const state = makeState({ systems: [home], bodies: [cap], empire: player });
     const ticked = runOnePhase(state, "e_player");
-    expect(ticked.galaxy.bodies["b_cap"].pops).toBeCloseTo(10.225, 4);
+    expect(ticked.galaxy.bodies["b_cap"].pops).toBeCloseTo(10.3, 4);
   });
 
   it("does not grow an uncolonized (0-pop) body with only organic growth", () => {

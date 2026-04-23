@@ -138,11 +138,13 @@ const COMPUTE_PER_POP_HAB: Partial<Record<HabitabilityTier, number>> = {
 export const HAMMERS_PER_POP = 1;
 export const POP_GROWTH_FOOD_COST = 50;
 
-// Deterministic logistic growth. Per turn, a body grows by
-//   (BASE_ORGANIC_GROWTH_RATE × popGrowthMult × pops + additive) × (1 − pops/cap)
-// which means: compound growth proportional to current pops, plus any
-// flat additive streams (Matriarchal Hive's queen), both throttled as
-// the body fills. Pops are stored as floats; UI floors for display.
+// Deterministic exponential growth with a hard cap. Per turn, a
+// body grows by
+//   BASE_ORGANIC_GROWTH_RATE × popGrowthMult × pops + additive
+// until it hits `maxPopsFor(empire, body)`, at which point growth
+// clamps. Compound on pops + any flat additive streams (Matriarchal
+// Hive's queen), no logistic-damping factor. Pops are stored as
+// floats; UI floors for display.
 //
 // Growth is parameterised in terms of the *doubling time* an empty
 // body would take to double its population if nothing else changed
@@ -157,6 +159,15 @@ export const BASE_ORGANIC_GROWTH_RATE = Math.pow(2, 1 / ORGANIC_DOUBLING_TURNS) 
 // current modifiers. Returns 0 for uncolonized, full, or food-starved
 // bodies. Units: pops/turn (fractional).
 //
+// Hard-cap model: growth is pure exponential `rate × pops + additive`
+// regardless of how close to the cap we are, and pops simply clamp
+// at cap. The old logistic `(1 − pops/cap)` headroom factor was
+// removed because it made `maxPopsMult` modifiers (e.g. the
+// isolationist's ×2 bodies) double-dip — they raised the ceiling
+// AND accelerated early-game growth via the larger headroom. Now
+// maxPopsMult only gates the ceiling; growth rate is the sole job
+// of popGrowthMult / popGrowthAdd.
+//
 // Empire-wide modifiers (species, origin, policies, feature
 // empireModifiers) affect every body; feature bodyModifiers add
 // only on the body they're installed on.
@@ -166,8 +177,7 @@ export function bodyGrowthRate(empire: Empire, body: Body): number {
   const organic = BASE_ORGANIC_GROWTH_RATE * popGrowthMultiplier(empire) * body.pops;
   const bodyMods = bodyFeatureModifiers(body);
   const additive = popGrowthAdditive(empire) + sumDelta(bodyMods, "popGrowthAdd");
-  const headroom = (cap - body.pops) / cap;
-  return Math.max(0, (organic + additive) * headroom);
+  return Math.max(0, organic + additive);
 }
 
 // Sum of per-body pop growth across all owned bodies this turn.
@@ -890,10 +900,9 @@ export function popsBreakdownFor(state: GameState, empire: Empire): StatBreakdow
       };
     });
   // Growth this turn — sums to the +Δ the sidebar shows next to the
-  // pops counter. The detail field shows the math explicitly:
-  //   (raw organic+additive) × (1 − pops/cap) = rate
-  // so the logistic damping is visible instead of hidden inside the
-  // final number.
+  // pops counter. Hard-cap model: rate × pops + additive, clamped
+  // at maxPops. No logistic damping, so the detail is just the raw
+  // formula with a cap ceiling note.
   const growthRows: StatBreakdownSection["rows"] = [];
   const growthMult = popGrowthMultiplier(empire);
   const empireAdd = popGrowthAdditive(empire);
@@ -910,7 +919,7 @@ export function popsBreakdownFor(state: GameState, empire: Empire): StatBreakdow
     const pops = Math.round(body.pops * 10) / 10;
     const detail = starvedEmpire
       ? `starved (empire food pool empty)`
-      : `${raw.toFixed(2)} × (1 − ${pops}/${cap}) = ${rate.toFixed(2)}`;
+      : `${raw.toFixed(2)}/turn — cap ${pops}/${cap}`;
     growthRows.push({
       id: body.id,
       name: body.name,
@@ -2356,9 +2365,11 @@ function tickEmpire(draft: GameState, empire: Empire): void {
     }
   }
 
-  // 5. Pop growth — deterministic logistic, gated on the empire's
-  //    food pool. Growth drains food at POP_GROWTH_FOOD_COST/pop
-  //    added. Once food hits zero nothing more grows this turn.
+  // 5. Pop growth — hard-cap exponential, gated on the empire's
+  //    food pool. Every populated body grows by `rate × pops +
+  //    additive` per turn (no logistic damping) until it hits its
+  //    maxPops ceiling and clamps. Once food hits zero nothing
+  //    more grows this turn.
   const growthMult = popGrowthMultiplier(empire);
   const growthAdd = popGrowthAdditive(empire);
   for (const sid of empire.systemIds) {
@@ -2372,10 +2383,9 @@ function tickEmpire(draft: GameState, empire: Empire): void {
       if (body.pops >= cap) continue;
       if (body.pops <= 0) continue;
       if (empire.food <= 0) continue;
-      const headroom = cap > 0 ? (cap - body.pops) / cap : 0;
       const organic = BASE_ORGANIC_GROWTH_RATE * growthMult * body.pops;
       const localAdd = sumDelta(bodyFeatureModifiers(body), "popGrowthAdd");
-      const delta = (organic + growthAdd + localAdd) * headroom;
+      const delta = organic + growthAdd + localAdd;
       if (delta <= 0) continue;
       const capped = Math.min(delta, cap - body.pops);
       body.pops += capped;
