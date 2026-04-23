@@ -1690,6 +1690,45 @@ describe("declareWar / makePeace round-trip", () => {
   });
 });
 
+describe("fog of war: first contact via sensor", () => {
+  it("meets a foreign empire when a scout fleet enters their sensor range", () => {
+    // Old behaviour fired first contact only on hyperlane-adjacent
+    // owned territories; a scout fleet crossing into an empty border
+    // system would never register. New behaviour: A's sensor touches
+    // any B-owned system (or vice versa) → mutual met.
+    const own = makeSystem({ id: "s_own", bodyIds: ["b_own"], ownerId: "e_player" });
+    const scout = makeSystem({ id: "s_scout", bodyIds: [], ownerId: null });
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const ownBody = makeBody({ id: "b_own", systemId: "s_own", pops: 30 });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const player = makeEmpire({ id: "e_player", capitalBodyId: "b_own", systemIds: ["s_own"] });
+    const ai = makeEmpire({ id: "e_ai", capitalBodyId: "b_ai", systemIds: ["s_ai"] });
+    // Player scout sits at s_scout, adjacent to the AI's s_ai via hyperlane.
+    const playerScout: Fleet = {
+      id: "f_player",
+      empireId: "e_player",
+      systemId: "s_scout",
+      shipCount: 1,
+    };
+    const state = makeState({
+      systems: [own, scout, aiHome],
+      bodies: [ownBody, aiBody],
+      hyperlanes: [["s_scout", "s_ai"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [playerScout],
+    });
+    // Not yet met — no territory touches, no scout triggered detection.
+    expect(state.empire.flags.includes("met:e_ai")).toBe(false);
+    expect(state.aiEmpires[0].flags.includes("met:e_player")).toBe(false);
+
+    // One round of endTurn runs detectFirstContacts at isLast.
+    const next = reduce(state, { type: "endTurn" });
+    expect(next.empire.flags.includes("met:e_ai")).toBe(true);
+    expect(next.aiEmpires[0].flags.includes("met:e_player")).toBe(true);
+  });
+});
+
 describe("fog of war: sensorSet", () => {
   it("includes owned systems and their 1-jump neighbours but not 2-jump", () => {
     // home <-> mid <-> far. Empire owns home only.

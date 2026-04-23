@@ -1797,54 +1797,60 @@ export function updateVisibility(draft: GameState): void {
   }
 }
 
-// Remove empires that hold zero systems. Player elimination flips the
-// gameOver flag; AI elimination drops them from the roster and cleans
-// up their fleets + wars.
-// First-contact detection: fires when two empires' territories first
-// become hyperlane-adjacent (any system of A touches any system of B
-// via one hyperlane hop). Each side gets a "met:<otherId>" flag so it
-// only fires once per pair, and the player side gets a chronicle entry
+// First-contact detection: fires when empire A's sensor first covers
+// a B-owned system OR a B-fleet location (and vice versa). Symmetric —
+// whichever side detects the other first, both are marked as met in
+// the same tick. Each side gets a "met:<otherId>" flag so it only
+// fires once per pair, and the player side gets a chronicle entry
 // plus a pendingFirstContacts entry for the UI modal.
 function detectFirstContacts(draft: GameState): void {
-  const ownerOf: Record<string, string> = {};
-  for (const sys of Object.values(draft.galaxy.systems)) {
-    if (sys.ownerId) ownerOf[sys.id] = sys.ownerId;
-  }
-  // Build adjacency pairs between different empires.
-  const contactPairs = new Set<string>();
-  for (const [a, b] of draft.galaxy.hyperlanes) {
-    const oa = ownerOf[a];
-    const ob = ownerOf[b];
-    if (!oa || !ob || oa === ob) continue;
-    const key = oa < ob ? `${oa}|${ob}` : `${ob}|${oa}`;
-    contactPairs.add(key);
-  }
+  const empires = allEmpires(draft);
+  const adj = buildAdjacency(draft);
+  // One sensor set per empire, reused across every pair check.
+  const sensorByEmpire = new Map<string, Set<string>>();
+  for (const e of empires) sensorByEmpire.set(e.id, sensorSet(draft, e.id, adj));
+  const fleetsList = Object.values(draft.fleets).filter((f) => f.shipCount > 0);
   const playerId = draft.empire.id;
-  for (const key of contactPairs) {
-    const [idA, idB] = key.split("|");
-    const flagA = `met:${idB}`;
-    const flagB = `met:${idA}`;
-    const empA = empireById(draft, idA);
-    const empB = empireById(draft, idB);
-    if (!empA || !empB) continue;
-    const alreadyMet =
-      empA.flags.includes(flagA) || empB.flags.includes(flagB);
-    if (alreadyMet) continue;
-    if (!empA.flags.includes(flagA)) empA.flags.push(flagA);
-    if (!empB.flags.includes(flagB)) empB.flags.push(flagB);
-    // Chronicle + UI hook only when the player's involved.
-    if (idA === playerId || idB === playerId) {
-      const other = idA === playerId ? empB : empA;
-      draft.eventLog.push({
-        turn: draft.turn,
-        eventId: "first_contact",
-        choiceId: null,
-        text: `First contact: ${other.name} — ${other.expansionism} ${other.politic}.`,
-      });
-      draft.pendingFirstContacts.push({
-        otherEmpireId: other.id,
-        turn: draft.turn,
-      });
+
+  for (let i = 0; i < empires.length; i++) {
+    for (let j = i + 1; j < empires.length; j++) {
+      const empA = empires[i];
+      const empB = empires[j];
+      const flagAB = `met:${empB.id}`;
+      const flagBA = `met:${empA.id}`;
+      if (empA.flags.includes(flagAB) && empB.flags.includes(flagBA)) continue;
+
+      const senA = sensorByEmpire.get(empA.id)!;
+      const senB = sensorByEmpire.get(empB.id)!;
+      let seen = false;
+      // A seeing any of B's owned systems (or vice versa).
+      for (const sid of empB.systemIds) if (senA.has(sid)) { seen = true; break; }
+      if (!seen) for (const sid of empA.systemIds) if (senB.has(sid)) { seen = true; break; }
+      // A seeing a B-fleet at any system in A's sensor (or vice versa).
+      // Catches scouts entering empty space adjacent to each other.
+      if (!seen) {
+        for (const f of fleetsList) {
+          if (f.empireId === empB.id && senA.has(f.systemId)) { seen = true; break; }
+          if (f.empireId === empA.id && senB.has(f.systemId)) { seen = true; break; }
+        }
+      }
+      if (!seen) continue;
+
+      if (!empA.flags.includes(flagAB)) empA.flags.push(flagAB);
+      if (!empB.flags.includes(flagBA)) empB.flags.push(flagBA);
+      if (empA.id === playerId || empB.id === playerId) {
+        const other = empA.id === playerId ? empB : empA;
+        draft.eventLog.push({
+          turn: draft.turn,
+          eventId: "first_contact",
+          choiceId: null,
+          text: `First contact: ${other.name} — ${other.expansionism} ${other.politic}.`,
+        });
+        draft.pendingFirstContacts.push({
+          otherEmpireId: other.id,
+          turn: draft.turn,
+        });
+      }
     }
   }
 }

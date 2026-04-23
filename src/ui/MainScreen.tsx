@@ -707,14 +707,35 @@ export function MainScreen() {
     setSelectedSystemId(id);
   }
 
-  const focusSystem = selectedSystemId
+  // Fog layer: compute once, share between the galaxy map prop and the
+  // system-detail panel. If the player selected a system that's never
+  // been discovered (shouldn't happen via map clicks — those systems
+  // aren't rendered — but could survive across saves), fall back to
+  // the capital as if nothing were selected.
+  const playerSensor = sensorSet(state, state.empire.id);
+  const playerDiscovered = new Set(state.empire.discovered);
+  const rawFocus = selectedSystemId
     ? state.galaxy.systems[selectedSystemId] ?? null
     : capitalSystem;
+  const focusUnknown = !!rawFocus && !playerDiscovered.has(rawFocus.id);
+  const focusSystem = focusUnknown ? capitalSystem : rawFocus;
+  // Stale focus: discovered but no longer in sensor. The panel reads
+  // ownership + fleets from the snapshot and hides live-only info
+  // (siege, colonize buttons, income, growth, build queue on bodies).
+  const focusStale =
+    !!focusSystem && !playerSensor.has(focusSystem.id) && playerDiscovered.has(focusSystem.id);
+  const focusSnapshot = focusStale && focusSystem
+    ? state.empire.snapshots[focusSystem.id] ?? null
+    : null;
   const focusBodies = focusSystem
     ? focusSystem.bodyIds.map((bid) => state.galaxy.bodies[bid]).filter((b): b is Body => !!b)
     : [];
-  const focusOwnerEmpire = focusSystem?.ownerId
-    ? empireById(state, focusSystem.ownerId)
+  // Effective owner: snapshot-last-seen when stale, live otherwise.
+  const focusOwnerId = focusStale
+    ? focusSnapshot?.ownerId ?? null
+    : focusSystem?.ownerId ?? null;
+  const focusOwnerEmpire = focusOwnerId
+    ? empireById(state, focusOwnerId)
     : null;
   const focusIsOurs = focusOwnerEmpire?.id === state.empire.id;
   const focusOwnerSpecies = focusOwnerEmpire
@@ -858,7 +879,7 @@ export function MainScreen() {
                 </button>
               )}
             </div>
-            {focusSystem?.occupation && (() => {
+            {focusSystem?.occupation && !focusStale && (() => {
               const occ = focusSystem.occupation;
               const occupier = empireById(state, occ.empireId);
               return (
@@ -883,8 +904,11 @@ export function MainScreen() {
               <SystemScene
                 system={focusSystem}
                 bodies={focusBodies}
-                ownerColor={focusOwnerEmpire?.color ?? null}
-                capitalBodyId={focusOwnerEmpire?.capitalBodyId ?? null}
+                // Stale systems suppress ownership/capital rings — those
+                // draw off live `body.pops`, which isn't known to us
+                // once the system leaves sensor range.
+                ownerColor={focusStale ? null : focusOwnerEmpire?.color ?? null}
+                capitalBodyId={focusStale ? null : focusOwnerEmpire?.capitalBodyId ?? null}
                 turn={state.turn}
               />
             ) : (
@@ -892,7 +916,34 @@ export function MainScreen() {
             )}
           </div>
           <div className="detail-scroll">
-            {focusSystem && (() => {
+            {focusSystem && focusStale && focusSnapshot && focusSnapshot.fleets.length > 0 && (
+              <div className="fleet-strip">
+                <span className="fleet-strip-label">Fleets (last seen T{focusSnapshot.turn})</span>
+                {focusSnapshot.fleets.map((f, idx) => {
+                  const empire = empireById(state, f.empireId);
+                  return (
+                    <span
+                      key={`stale-${focusSystem.id}-${f.empireId}-${idx}`}
+                      className="fleet-pill"
+                      style={{
+                        borderColor: empire?.color ?? "var(--border)",
+                        opacity: 0.6,
+                      }}
+                      title={empire ? `${empire.name} · last seen ${f.shipCount} ships` : ""}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 10 10">
+                        <polygon
+                          points="5,1 9,9 1,9"
+                          fill={empire?.color ?? "var(--text)"}
+                        />
+                      </svg>
+                      {f.shipCount}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            {focusSystem && !focusStale && (() => {
               const fleets = fleetsInSystem(state, focusSystem.id);
               if (fleets.length === 0) return null;
               return (
@@ -951,7 +1002,17 @@ export function MainScreen() {
                 </div>
               );
             })()}
-            {focusSystem
+            {focusStale ? (
+              <div className="empire-card">
+                <div>
+                  <span className="stat-label">Last seen:</span>{" "}
+                  T{focusSnapshot?.turn ?? "?"}
+                </div>
+                <div style={{ color: "var(--text-dim)", marginTop: 4 }}>
+                  Outside sensor range. Move a fleet adjacent to refresh intel.
+                </div>
+              </div>
+            ) : focusSystem
               ? focusBodies.map((body) => {
                   const order = colonizeOrderForTarget(state, body.id);
                   // Body-scope projects are always queryable — canQueueProjectFor
@@ -1062,7 +1123,7 @@ export function MainScreen() {
               }
               playerComponents={computeComponents(state, state.empire)}
               viewerEmpire={state.empire}
-              sensor={sensorSet(state, state.empire.id)}
+              sensor={playerSensor}
             />
             {moveFleet && !moveFleetStale && (() => {
               const dest = moveFleet.destinationSystemId
