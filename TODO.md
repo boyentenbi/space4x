@@ -23,22 +23,37 @@ when you want to remember something later.
   mixes (scout-weight vs heavy) live as variants within a
   build order.
 
+- **Brood Mother gets a "feed me more" coupling.** We kept the
+  exponential `rate × pops + add` growth model (Stellaris-style
+  snowball) instead of switching to Civ-style food-drives-growth,
+  because the snowball IS the fun. But there's room for *features*
+  to introduce the food-as-strategic-resource flavour locally —
+  e.g. the Brood Mother could scale its `popGrowthAdd` with the
+  body's food surplus, or eat extra food per turn to pump out
+  bigger broods. Choice without forcing it on the whole sim.
+
 ## Architecture
 
-- **Headless state + policies per empire.** Target architecture:
-  game state is fully headless, no `state.empire` / `state.aiEmpires`
-  distinction — just `empires: Empire[]`. Each empire has a *policy*
-  (a function that observes its filtered state and emits actions);
-  the AI policy is `aiPlanProject` + `aiPlanMoves` wrapped together,
-  the human policy reads from the UI. Random events / first contacts
-  / project completions get queued per-empire and the human's are
-  the only ones that pop a modal. Rollouts then = "every empire
-  uses the AI policy"; the live game = "one empire uses the human
-  policy, rest use the AI policy"; multiplayer = "N empires use a
-  human policy, rest use AI." Worth doing before multiplayer /
-  spectator / replay; the in-place player-slot hack we have now
-  papers over the abstraction but breaks down once any of those
-  features land.
+- **Per-empire policy abstraction.** State is now headless
+  (`empires: Empire[]` + optional `humanEmpireId`), but the engine
+  still has implicit knowledge of "this is an AI" (calls
+  aiPlanProject / aiPlanMoves directly when current empire id ≠
+  humanEmpireId) vs "this is the human" (skips the planners,
+  expects UI dispatches to have queued actions). Wrapping that as
+  an explicit `Policy { decide(perceived, empireId): Action[] }`
+  interface, with one policy per empire, would unify the two
+  paths. Rollout policies all = AI; live game = humanPolicy(empire)
+  + aiPolicy(others); multiplayer = multiple humanPolicies.
+  Smaller refactor than the state shape change was — the engine
+  already routes by id, just needs the dispatch table.
+
+- **Per-empire event queues.** `eventQueue` /
+  `pendingFirstContacts` / `projectCompletions` are still top-
+  level on state and assumed to be "for the human." Per-empire
+  queues + a per-empire policy that decides how to resolve them
+  (UI for human, auto-pick-choice-0 for AI) drops the last
+  player-only assumption from the sim and lets events fire for
+  AI empires too if we ever want that gameplay.
 
 
 - **`filterStateFor` as a distinct type.** Today fog-correctness is
