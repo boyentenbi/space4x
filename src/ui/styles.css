@@ -131,6 +131,34 @@ button:disabled {
   color: var(--accent);
 }
 
+/* Autoplay running: amber tint so "we're ticking, click to pause"
+   reads differently from the default "click to play" state. */
+.endturn-card.autoplay-on {
+  border-color: var(--warn);
+}
+.endturn-card.autoplay-on .turn-num {
+  color: var(--warn);
+}
+
+/* Attention needed: red tint to flag that autoplay can't continue. */
+.endturn-card.attention {
+  border-color: var(--bad);
+}
+.endturn-card.attention .turn-num {
+  color: var(--bad);
+}
+.endturn-card.attention.firstContact,
+.endturn-card.attention.event {
+  /* Modal-owned blockers: the click is inert (modal handles it);
+     soften the red so it reads as "waiting" rather than "broken". */
+  border-color: var(--warn);
+  opacity: 0.85;
+}
+.endturn-card.attention.firstContact .turn-num,
+.endturn-card.attention.event .turn-num {
+  color: var(--warn);
+}
+
 /* Time-travel controls: thin pill row of back / autoplay / forward
    buttons sitting below the End Turn card. */
 .time-controls {

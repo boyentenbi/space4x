@@ -37,7 +37,7 @@ import {
 import type { StatBreakdown } from "../sim/reducer";
 import { projectById } from "../sim/content";
 import { RESOURCE_KEYS } from "../sim/events";
-import type { Body, Resources, ResourceKey } from "../sim/types";
+import type { Body, GameState, Resources, ResourceKey } from "../sim/types";
 import { ChronicleModal } from "./ChronicleModal";
 import { EventModal } from "./EventModal";
 import { GalaxyMap } from "./GalaxyMap";
@@ -63,6 +63,45 @@ function fmtDelta(n: number): string {
   const r = Math.round(n * 10) / 10;
   if (r > 0) return `+${r}`;
   return `${r}`;
+}
+
+// What's blocking the big "Play" button from auto-advancing? Returned
+// shape carries the minimum info the UI needs to focus the blocker
+// when the player clicks. Priority order matches urgency:
+//   1. gameOver (terminal)
+//   2. first contact (narrative beat the player can't miss)
+//   3. random event (ditto)
+//   4. idle non-sleeping fleet (player has ships standing around)
+//   5. empty build queue (nothing being produced)
+//   6. none (autoplay can run)
+//
+// Keep in sync semantically with needsPlayerAttention() in the
+// reducer — that gates autoplay; this gates the button's label.
+type AttentionFocus =
+  | { kind: "none" }
+  | { kind: "gameOver" }
+  | { kind: "firstContact" }
+  | { kind: "event" }
+  | { kind: "idleFleet"; fleetId: string; systemId: string }
+  | { kind: "emptyQueue"; systemId: string | null };
+
+function attentionFocus(state: GameState): AttentionFocus {
+  if (state.gameOver) return { kind: "gameOver" };
+  if (state.pendingFirstContacts.length > 0) return { kind: "firstContact" };
+  if (state.eventQueue.length > 0) return { kind: "event" };
+  for (const f of Object.values(state.fleets)) {
+    if (f.empireId !== state.empire.id) continue;
+    if (f.shipCount <= 0) continue;
+    if (f.destinationSystemId) continue;
+    if (f.sleeping) continue;
+    if (f.autoDiscover) continue;
+    return { kind: "idleFleet", fleetId: f.id, systemId: f.systemId };
+  }
+  if (allOrdersOf(state, state.empire).length === 0) {
+    const capBody = state.empire.capitalBodyId ? state.galaxy.bodies[state.empire.capitalBodyId] : null;
+    return { kind: "emptyQueue", systemId: capBody?.systemId ?? state.empire.systemIds[0] ?? null };
+  }
+  return { kind: "none" };
 }
 
 function ResCell({
@@ -480,7 +519,6 @@ export function MainScreen() {
   const state = useGame((s) => s.state);
   const dispatch = useGame((s) => s.dispatch);
   const reset = useGame((s) => s.reset);
-  const endTurn = useGame((s) => s.endTurn);
   const goBack = useGame((s) => s.goBack);
   const goForward = useGame((s) => s.goForward);
   const autoplayOn = useGame((s) => s.autoplayOn);
@@ -763,20 +801,73 @@ export function MainScreen() {
             <img src={state.empire.portraitArt || species?.art} alt={species?.name ?? ""} />
           </div>
         )}
-        <button
-          className="endturn-card"
-          onClick={() => endTurn()}
-          disabled={!!pendingEvent || !!state.currentPhaseEmpireId || state.gameOver}
-          title="End turn"
-        >
-          <span className="turn-num">T{state.turn}</span>
-          <span>End Turn</span>
-        </button>
+        {(() => {
+          // Big primary-action button. It morphs based on state:
+          //   - autoplay running → pause control
+          //   - nothing blocking → "play" = start autoplay
+          //   - something needs attention → focus-the-blocker label +
+          //     click action that jumps the UI to it (select the
+          //     idle fleet's system, the capital for an empty build
+          //     queue, etc.). Modal-backed blockers show the label
+          //     but the click is inert because the modal is already
+          //     in front of the user.
+          const focus = attentionFocus(state);
+          if (autoplayOn) {
+            return (
+              <button
+                className="endturn-card autoplay-on"
+                onClick={() => setAutoplay(false)}
+                title="Pause autoplay"
+              >
+                <span className="turn-num">T{state.turn}</span>
+                <span>Pause</span>
+              </button>
+            );
+          }
+          if (focus.kind === "none") {
+            return (
+              <button
+                className="endturn-card"
+                onClick={() => setAutoplay(true)}
+                title="Auto-advance until something needs you"
+              >
+                <span className="turn-num">T{state.turn}</span>
+                <span>Play</span>
+              </button>
+            );
+          }
+          const modalOwned = focus.kind === "gameOver" || focus.kind === "firstContact" || focus.kind === "event";
+          const label =
+            focus.kind === "gameOver" ? "Game Over" :
+            focus.kind === "firstContact" ? "First Contact" :
+            focus.kind === "event" ? "Event" :
+            focus.kind === "idleFleet" ? "Route Fleet" :
+            focus.kind === "emptyQueue" ? "Queue Build" :
+            "Attention";
+          return (
+            <button
+              className={`endturn-card attention ${focus.kind}`}
+              disabled={modalOwned}
+              onClick={() => {
+                if (focus.kind === "idleFleet") {
+                  setSelectedSystemId(focus.systemId);
+                  setMoveMode({ fleetId: focus.fleetId, split: null });
+                } else if (focus.kind === "emptyQueue" && focus.systemId) {
+                  setSelectedSystemId(focus.systemId);
+                }
+              }}
+              title={label}
+            >
+              <span className="turn-num">T{state.turn}</span>
+              <span>{label}</span>
+            </button>
+          );
+        })()}
 
-        {/* Time-travel + autoplay row. Back/forward step through the
-            history ring (or advance a new turn when already at the
-            head); autoplay loops endTurn on a timer. Keyboard: hold
-            ← / → to scrub without clicking. */}
+        {/* Back/forward time-scrubbing. Forward also advances time
+            when already at the head of history (single-step without
+            engaging autoplay). Keyboard: hold ← / → to scrub without
+            clicking. */}
         <div className="time-controls">
           <button
             className="time-btn"
@@ -785,13 +876,6 @@ export function MainScreen() {
             title="Back one turn (←)"
           >
             ←
-          </button>
-          <button
-            className={`time-btn autoplay ${autoplayOn ? "on" : ""}`}
-            onClick={() => setAutoplay(!autoplayOn)}
-            title="Toggle autoplay"
-          >
-            {autoplayOn ? "⏸" : "▶"}
           </button>
           <button
             className="time-btn"

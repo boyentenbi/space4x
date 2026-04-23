@@ -1243,9 +1243,16 @@ export function needsPlayerAttention(state: GameState): boolean {
 // arrives the newly-reached system becomes surveyed, and next turn
 // the chooser picks the next nearest unsurveyed one.
 //
+// Foreign systems are excluded from both the destination and the
+// traversable graph: entering a system owned by another empire
+// auto-declares war, and auto-discover is a peaceful mode — the
+// player didn't opt into war by turning it on. That means a scout
+// with foreign territory blocking its route can't cross it, and
+// will park itself at the last safe discovered system.
+//
 // Returns null when there's nothing left to discover within the
-// connected component of the empire's discovered graph.
-function autoDiscoveryDestination(
+// reachable peaceful sub-graph.
+export function autoDiscoveryDestination(
   state: GameState,
   empire: Empire,
   fleet: Fleet,
@@ -1253,15 +1260,21 @@ function autoDiscoveryDestination(
   const surveyed = new Set(empire.perception.surveyed);
   const discovered = new Set(empire.perception.discovered);
   const adj = buildAdjacency(state);
+  const peaceful = (sysId: string): boolean => {
+    const sys = state.galaxy.systems[sysId];
+    if (!sys) return false;
+    return !sys.ownerId || sys.ownerId === empire.id;
+  };
   const visited = new Set<string>([fleet.systemId]);
   const queue: string[] = [fleet.systemId];
   let head = 0;
   while (head < queue.length) {
     const id = queue[head++];
-    if (id !== fleet.systemId && !surveyed.has(id)) return id;
+    if (id !== fleet.systemId && !surveyed.has(id) && peaceful(id)) return id;
     for (const n of adj.get(id) ?? []) {
       if (visited.has(n)) continue;
       if (!discovered.has(n)) continue;
+      if (!peaceful(n)) continue; // don't traverse through foreign territory
       visited.add(n);
       queue.push(n);
     }

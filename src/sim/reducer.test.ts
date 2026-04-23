@@ -5,6 +5,7 @@ import {
   aiPlanProject,
   allOrdersOf,
   atWar,
+  autoDiscoveryDestination,
   availableBodyProjectsFor,
   BENCH,
   canEnterSystem,
@@ -2423,6 +2424,75 @@ describe("fog of war: scouting reward", () => {
     const a = runAiMoves(withBig, "e_ai").fleets["f_scout"]?.destinationSystemId;
     const b = runAiMoves(withNone, "e_ai").fleets["f_scout"]?.destinationSystemId;
     expect(a).toBe(b);
+  });
+});
+
+describe("fleet auto-discover: destination picker", () => {
+  it("picks the nearest unsurveyed system reachable through peaceful systems", () => {
+    // Empire owns s_a (surveyed). s_b and s_c are discovered via
+    // sensor from s_a's ring; neither is surveyed (no fleet has been
+    // there). Nearest unsurveyed = s_b.
+    const a = makeSystem({ id: "s_a", bodyIds: ["b_a"], ownerId: "e_me" });
+    const b = makeSystem({ id: "s_b", bodyIds: [], ownerId: null });
+    const c = makeSystem({ id: "s_c", bodyIds: [], ownerId: null });
+    const aBody = makeBody({ id: "b_a", systemId: "s_a", pops: 5 });
+    const me = makeEmpire({ id: "e_me", capitalBodyId: "b_a", systemIds: ["s_a"] });
+    const fleet: Fleet = {
+      id: "f_scout",
+      empireId: "e_me",
+      systemId: "s_a",
+      shipCount: 1,
+    };
+    const state = makeState({
+      systems: [a, b, c],
+      bodies: [aBody],
+      hyperlanes: [["s_a", "s_b"], ["s_b", "s_c"]],
+      empire: me,
+      fleets: [fleet],
+    });
+    expect(state.empire.perception.discovered).toContain("s_b");
+    expect(state.empire.perception.surveyed).toContain("s_a");
+    expect(state.empire.perception.surveyed).not.toContain("s_b");
+    const dest = autoDiscoveryDestination(state, state.empire, state.fleets["f_scout"]);
+    expect(dest).toBe("s_b");
+  });
+
+  it("refuses to route through a foreign-owned system (won't auto-declare war)", () => {
+    // Layout: s_me — s_enemy — s_far. Enemy owns s_enemy; s_far is
+    // discovered through sensor. BFS for unsurveyed MUST NOT cross
+    // s_enemy (would auto-declare war on arrival). With no peaceful
+    // path, the chooser returns null.
+    const me = makeSystem({ id: "s_me", bodyIds: ["b_me"], ownerId: "e_me" });
+    const enemy = makeSystem({ id: "s_enemy", bodyIds: ["b_enemy"], ownerId: "e_enemy" });
+    const far = makeSystem({ id: "s_far", bodyIds: [], ownerId: null });
+    const meBody = makeBody({ id: "b_me", systemId: "s_me", pops: 5 });
+    const enemyBody = makeBody({ id: "b_enemy", systemId: "s_enemy", pops: 5 });
+    const player = makeEmpire({ id: "e_me", capitalBodyId: "b_me", systemIds: ["s_me"] });
+    const enemyEmp = makeEmpire({
+      id: "e_enemy",
+      capitalBodyId: "b_enemy",
+      systemIds: ["s_enemy"],
+    });
+    const fleet: Fleet = {
+      id: "f_scout",
+      empireId: "e_me",
+      systemId: "s_me",
+      shipCount: 1,
+    };
+    const state = makeState({
+      systems: [me, enemy, far],
+      bodies: [meBody, enemyBody],
+      hyperlanes: [["s_me", "s_enemy"], ["s_enemy", "s_far"]],
+      empire: player,
+      aiEmpires: [enemyEmp],
+      fleets: [fleet],
+    });
+    // s_enemy must NEVER be returned, even though it's unsurveyed —
+    // entering foreign territory auto-declares war and scouting
+    // shouldn't do that.
+    const dest = autoDiscoveryDestination(state, state.empire, state.fleets["f_scout"]);
+    expect(dest).not.toBe("s_enemy");
+    expect(dest).not.toBe("s_far");
   });
 });
 
