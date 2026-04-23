@@ -137,7 +137,7 @@ function makeState(overrides: {
   for (const f of overrides.fleets ?? []) fleetsRec[f.id] = f;
   const ais = overrides.aiEmpires ?? [];
   const raw: GameState = {
-    schemaVersion: 28,
+    schemaVersion: 29,
     turn: overrides.turn ?? 1,
     rngSeed: 1,
     galaxy: {
@@ -155,6 +155,7 @@ function makeState(overrides: {
     eventLog: [],
     projectCompletions: [],
     pendingFirstContacts: [],
+    pendingWarDeclarations: [],
     gameOver: false,
   };
   // Seed fog the way production does at new-game time — every empire
@@ -2029,6 +2030,72 @@ describe("declareWar / makePeace round-trip", () => {
     for (let i = 0; i < 3; i++) next = reduce(next, { type: "endTurn" });
     // War was declared as the fleet crossed the border.
     expect(atWar(next, "e_player", "e_ai")).toBe(true);
+  });
+
+  it("AI declaring war on the human queues a modal; human-as-aggressor doesn't", () => {
+    // Explicit declareWar action, two directions.
+    const player = makeEmpire({ id: "e_player" });
+    const ai = makeEmpire({ id: "e_ai" });
+    const state = makeState({
+      systems: [],
+      bodies: [],
+      empire: player,
+      aiEmpires: [ai],
+    });
+
+    // Human initiates → no modal (they already know, they clicked the button).
+    const humanAggresses = reduce(state, {
+      type: "declareWar",
+      byEmpireId: "e_player",
+      targetEmpireId: "e_ai",
+    });
+    expect(humanAggresses.pendingWarDeclarations.length).toBe(0);
+    expect(needsPlayerAttention(humanAggresses)).toBe(false);
+
+    // AI initiates → modal + pause.
+    const aiAggresses = reduce(state, {
+      type: "declareWar",
+      byEmpireId: "e_ai",
+      targetEmpireId: "e_player",
+    });
+    expect(aiAggresses.pendingWarDeclarations).toEqual([
+      { aggressorEmpireId: "e_ai", turn: aiAggresses.turn },
+    ]);
+    expect(needsPlayerAttention(aiAggresses)).toBe(true);
+
+    // Dismiss clears the modal + the pause.
+    const dismissed = reduce(aiAggresses, { type: "dismissWarDeclaration" });
+    expect(dismissed.pendingWarDeclarations.length).toBe(0);
+  });
+
+  it("AI fleet entering human territory queues a war-declaration modal", () => {
+    // Player owns s_home; AI fleet routed in. On arrival the auto-
+    // declare fires and pushes a defender-side modal.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_home"], ownerId: "e_player" });
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const hBody = makeBody({ id: "b_home", systemId: "s_home", pops: 30 });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const player = makeEmpire({ id: "e_player", capitalBodyId: "b_home", systemIds: ["s_home"] });
+    const ai = makeEmpire({ id: "e_ai", capitalBodyId: "b_ai", systemIds: ["s_ai"] });
+    const invader: Fleet = {
+      id: "f_invader",
+      empireId: "e_ai",
+      systemId: "s_ai",
+      shipCount: 1,
+      destinationSystemId: "s_home",
+    };
+    const state = makeState({
+      systems: [home, aiHome],
+      bodies: [hBody, aiBody],
+      hyperlanes: [["s_home", "s_ai"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [invader],
+    });
+    let next = state;
+    for (let i = 0; i < 3; i++) next = reduce(next, { type: "endTurn" });
+    expect(atWar(next, "e_player", "e_ai")).toBe(true);
+    expect(next.pendingWarDeclarations[0]?.aggressorEmpireId).toBe("e_ai");
   });
 });
 

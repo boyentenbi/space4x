@@ -414,7 +414,7 @@ export type PerceivedGameState = GameState & {
 };
 
 export interface GameState {
-  schemaVersion: 28;
+  schemaVersion: 29;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;
@@ -446,6 +446,11 @@ export interface GameState {
   projectCompletions: Array<{ projectId: string; turn: number }>;
   // First-contact events the human empire hasn't seen yet.
   pendingFirstContacts: Array<{ otherEmpireId: string; turn: number }>;
+  // Wars declared ON the human that haven't been acknowledged yet.
+  // Only populated when the human is the *defender* (when they're
+  // the aggressor they already know — they just clicked the button).
+  // aggressorEmpireId is the empire that declared war on us.
+  pendingWarDeclarations: Array<{ aggressorEmpireId: string; turn: number }>;
   // True once the human empire has lost its last system. In headless
   // mode (no human), use external termination criteria instead
   // (e.g. last empire standing).

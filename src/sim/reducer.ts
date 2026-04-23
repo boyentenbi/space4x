@@ -62,7 +62,8 @@ export type Action =
   | { type: "setFleetSleep"; byEmpireId: string; fleetId: string; sleeping: boolean }
   | { type: "setFleetAutoDiscover"; byEmpireId: string; fleetId: string; autoDiscover: boolean }
   | { type: "dismissProjectCompletion" }
-  | { type: "dismissFirstContact" };
+  | { type: "dismissFirstContact" }
+  | { type: "dismissWarDeclaration" };
 
 // Colonization tunables. Pop counts + space caps are now on a 10x
 // scale (so a starter temperate world runs ~40 pops instead of 4),
@@ -306,7 +307,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 28,
+    schemaVersion: 29,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -318,6 +319,7 @@ export function initialState(): GameState {
     eventLog: [],
     projectCompletions: [],
     pendingFirstContacts: [],
+    pendingWarDeclarations: [],
     gameOver: false,
   };
 }
@@ -1075,6 +1077,7 @@ export function needsPlayerAttention(state: GameState): boolean {
   // to read or resolve, so autoplay should yield.
   if (state.eventQueue.length > 0) return true;
   if (state.pendingFirstContacts.length > 0) return true;
+  if (state.pendingWarDeclarations.length > 0) return true;
   if (state.projectCompletions.length > 0) return true;
   // Headless: no human → there's nothing the human needs. Skip the
   // rest of the gates.
@@ -2193,6 +2196,16 @@ export function maybeAutoDeclareWar(
       choiceId: null,
       text: `${mover?.name ?? "?"} declared war on ${defender?.name ?? "?"} by entering ${sys.name}.`,
     });
+    // Queue a modal only when the human is the DEFENDER — when they
+    // initiate war themselves they already know (they're the one
+    // moving the fleet). Avoids a pointless "you declared war on X"
+    // modal on top of their own action.
+    if (ownerId === playerId) {
+      state.pendingWarDeclarations.push({
+        aggressorEmpireId: moverEmpireId,
+        turn: state.turn,
+      });
+    }
   }
 }
 
@@ -3737,6 +3750,14 @@ function applyDeclareWar(
       choiceId: null,
       text: `${who} declared war on ${target.name}.`,
     });
+    // Modal only when the human is the defender (same rule as
+    // maybeAutoDeclareWar).
+    if (target.id === playerId) {
+      draft.pendingWarDeclarations.push({
+        aggressorEmpireId: aggressor.id,
+        turn: draft.turn,
+      });
+    }
   }
 }
 
@@ -4093,6 +4114,11 @@ export function reduce(
     case "dismissFirstContact":
       return produce(state, (draft) => {
         draft.pendingFirstContacts.shift();
+      });
+
+    case "dismissWarDeclaration":
+      return produce(state, (draft) => {
+        draft.pendingWarDeclarations.shift();
       });
 
     case "declareWar":

@@ -50,6 +50,7 @@ import { PortraitMenu } from "./PortraitMenu";
 import { EmpireProfileModal } from "./EmpireProfileModal";
 import { EmpireRosterModal } from "./EmpireRosterModal";
 import { FirstContactModal } from "./FirstContactModal";
+import { WarDeclaredModal } from "./WarDeclaredModal";
 import { FleetModal } from "./FleetModal";
 import { ModifierChip } from "./modifierUi";
 import { PoliciesModal } from "./PoliciesModal";
@@ -1404,9 +1405,16 @@ export function MainScreen() {
           onDismiss={() => dispatch({ type: "dismissFirstContact" })}
         />
       )}
-      {state.pendingFirstContacts.length === 0 && pendingEvent && (
-        <EventModal eventId={pendingEvent.eventId} />
-      )}
+      {state.pendingFirstContacts.length === 0 &&
+        state.pendingWarDeclarations.length > 0 && (
+          <WarDeclaredModal
+            aggressorEmpireId={state.pendingWarDeclarations[0].aggressorEmpireId}
+            onDismiss={() => dispatch({ type: "dismissWarDeclaration" })}
+          />
+        )}
+      {state.pendingFirstContacts.length === 0 &&
+        state.pendingWarDeclarations.length === 0 &&
+        pendingEvent && <EventModal eventId={pendingEvent.eventId} />}
       {breakdown && (
         <StatBreakdownModal breakdown={breakdown} onClose={() => setBreakdown(null)} />
       )}
