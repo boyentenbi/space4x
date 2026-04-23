@@ -5,8 +5,9 @@ import {
   allEmpires,
   allOrdersOf,
   atWar,
-  foreignFleetsInSensor,
+  hostileFleetsInSensor,
   availableBodyProjectsFor,
+  ownedBodiesOf,
   availableProjectsFor,
   bodyComputeOutput,
   bodyIncome,
@@ -97,14 +98,13 @@ function attentionFocus(state: GameState): AttentionFocus {
   // anyway, but be defensive.)
   const player = humanEmpire(state);
   if (!player) return { kind: "none" };
-  // Any foreign fleet visible in player sensor pauses autoplay so
-  // the player can react before something they don't recognise
-  // (potentially about to declare war by stepping into territory)
-  // does anything. Resolves when the fleet leaves sensor or is
-  // destroyed.
-  const foreign = foreignFleetsInSensor(state, player);
-  if (foreign.length > 0) {
-    return { kind: "hostileFleet", fleetId: foreign[0].id, systemId: foreign[0].systemId };
+  // An at-war enemy fleet in sensor pauses autoplay so the player
+  // can react. Peaceful foreign fleets passing through don't trip
+  // this — they can't hurt us until they cross a border and auto-
+  // declare war, at which point the pause fires on the same turn.
+  const hostile = hostileFleetsInSensor(state, player);
+  if (hostile.length > 0) {
+    return { kind: "hostileFleet", fleetId: hostile[0].id, systemId: hostile[0].systemId };
   }
   for (const f of Object.values(state.fleets)) {
     if (f.empireId !== player.id) continue;
@@ -114,9 +114,14 @@ function attentionFocus(state: GameState): AttentionFocus {
     if (f.autoDiscover) continue;
     return { kind: "idleFleet", fleetId: f.id, systemId: f.systemId };
   }
-  if (allOrdersOf(state, player).length === 0) {
-    const capBody = player.capitalBodyId ? state.galaxy.bodies[player.capitalBodyId] : null;
-    return { kind: "emptyQueue", systemId: capBody?.systemId ?? player.systemIds[0] ?? null };
+  // Per-body idle: same rule as needsPlayerAttention. Focus on the
+  // first empty-queue body so the player can queue something there.
+  // Prefer the capital when it's the idle one, else whichever we hit
+  // first via ownedBodiesOf.
+  for (const body of ownedBodiesOf(state, player)) {
+    if (body.pops <= 0) continue;
+    if (body.queue.length > 0) continue;
+    return { kind: "emptyQueue", systemId: body.systemId };
   }
   return { kind: "none" };
 }

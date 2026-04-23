@@ -13,6 +13,7 @@ import {
   empireById,
   filterStateFor,
   foreignFleetsInSensor,
+  hostileFleetsInSensor,
   needsPlayerAttention,
   reduce,
   scoreState,
@@ -2249,15 +2250,12 @@ describe("fog of war: updateVisibility", () => {
   });
 });
 
-describe("autoplay attention: foreign fleet in sensor", () => {
-  it("triggers as soon as a foreign fleet is observable, not just when it's in our territory", () => {
-    // Player owns s_home. Adjacent system s_border is unowned. The
-    // AI parks a fleet at s_border. s_border is in the player's
-    // 1-jump sensor ring even though no war exists yet.
-    // needsPlayerAttention must return true (autoplay should
-    // pause), and foreignFleetsInSensor should include the parked
-    // fleet. The earlier at-war-only rule wouldn't fire here
-    // because no war has been declared.
+describe("autoplay attention: hostile fleet in sensor", () => {
+  // Shared setup: AI parks a fleet one jump from the player's home.
+  // With (wars=[]) it's a peaceful observer; with wars set, it's a
+  // hostile scout. sensor reaches the border via hyperlane, so the
+  // fleet is visible in both cases.
+  function setupObserver(opts: { atWar: boolean }): GameState {
     const home = makeSystem({ id: "s_home", bodyIds: ["b_home"], ownerId: "e_player" });
     const border = makeSystem({ id: "s_border", bodyIds: [], ownerId: null });
     const homeBody = makeBody({ id: "b_home", systemId: "s_home", pops: 30 });
@@ -2266,28 +2264,38 @@ describe("autoplay attention: foreign fleet in sensor", () => {
       capitalBodyId: "b_home",
       systemIds: ["s_home"],
     });
-    const ai = makeEmpire({
-      id: "e_ai",
-      systemIds: [],
-    });
+    const ai = makeEmpire({ id: "e_ai", systemIds: [] });
     const enemyFleet: Fleet = {
       id: "f_observer",
       empireId: "e_ai",
       systemId: "s_border",
       shipCount: 3,
     };
-    const state = makeState({
+    return makeState({
       systems: [home, border],
       bodies: [homeBody],
       hyperlanes: [["s_home", "s_border"]],
       empire: player,
       aiEmpires: [ai],
       fleets: [enemyFleet],
-      // Crucially: no wars. Pre-fix this case wouldn't alert.
+      wars: opts.atWar ? [["e_ai", "e_player"].sort() as [string, string]] : [],
     });
+  }
+
+  it("peaceful neighbour in sensor does NOT pause autoplay", () => {
+    // The foreign fleet is visible and definitely in the sensor ring,
+    // but with no war declared we shouldn't yield autoplay — they
+    // can't hurt us until they step across a border, which will auto-
+    // declare war and trigger the pause on that turn.
+    const state = setupObserver({ atWar: false });
     expect(atWar(state, "e_player", "e_ai")).toBe(false);
-    const visible = foreignFleetsInSensor(state, state.empires[0]);
-    expect(visible.map((f) => f.id)).toContain("f_observer");
+    expect(foreignFleetsInSensor(state, state.empires[0]).map((f) => f.id)).toContain("f_observer");
+    expect(hostileFleetsInSensor(state, state.empires[0]).length).toBe(0);
+  });
+
+  it("at-war fleet in sensor pauses autoplay", () => {
+    const state = setupObserver({ atWar: true });
+    expect(hostileFleetsInSensor(state, state.empires[0]).map((f) => f.id)).toContain("f_observer");
     expect(needsPlayerAttention(state)).toBe(true);
   });
 });

@@ -1080,10 +1080,9 @@ export function needsPlayerAttention(state: GameState): boolean {
   // rest of the gates.
   const player = humanEmpire(state);
   if (!player) return false;
-  if (foreignFleetsInSensor(state, player).length > 0) return true;
-  // Player-driven decision points: nothing being built, or any of
-  // our fleets is idling and hasn't been marked "sleeping."
-  if (allOrdersOf(state, player).length === 0) return true;
+  if (hostileFleetsInSensor(state, player).length > 0) return true;
+  // Idle fleet: any of our fleets sitting without orders and not
+  // marked sleeping / auto-discovering.
   for (const f of Object.values(state.fleets)) {
     if (f.empireId !== player.id) continue;
     if (f.shipCount <= 0) continue;
@@ -1091,6 +1090,16 @@ export function needsPlayerAttention(state: GameState): boolean {
     if (f.sleeping) continue;
     if (f.autoDiscover) continue; // the auto-discover chooser will set a route
     return true; // idle, non-sleeping, non-auto fleet
+  }
+  // Per-body idle check: hammers are body-local (each body drains its
+  // own hammers into its own FIFO queue; no cross-body pooling), so
+  // any colonised body with pops > 0 and an empty queue is wasting
+  // its entire output this turn. The old "empire has zero orders"
+  // check would let three bodies sit idle as long as one somewhere
+  // else had a queued project.
+  for (const body of ownedBodiesOf(state, player)) {
+    if (body.pops <= 0) continue;
+    if (body.queue.length === 0) return true;
   }
   return false;
 }
@@ -2004,6 +2013,31 @@ export function foreignFleetsInSensor(
     if (f.shipCount <= 0) continue;
     if (f.empireId === empire.id) continue;
     if (!v.has(f.systemId)) continue;
+    out.push(f);
+  }
+  return out;
+}
+
+// Narrower than foreignFleetsInSensor: only includes fleets of
+// empires we're currently at war with. Used for autoplay pause — we
+// want to yield to the player the moment an *enemy* fleet enters
+// sensor range (or a fresh war declaration makes an already-visible
+// neutral fleet hostile), but not for peaceful neighbours passing
+// through. Ignoring peaceful contact fits our "entering foreign
+// space auto-declares war" rule: a peacetime fleet in sensor range
+// isn't threatening anything until it actually crosses a border.
+export function hostileFleetsInSensor(
+  state: GameState,
+  empire: Empire,
+  visible?: Set<string>,
+): Fleet[] {
+  const v = visible ?? sensorSet(state, empire.id);
+  const out: Fleet[] = [];
+  for (const f of Object.values(state.fleets)) {
+    if (f.shipCount <= 0) continue;
+    if (f.empireId === empire.id) continue;
+    if (!v.has(f.systemId)) continue;
+    if (!atWar(state, empire.id, f.empireId)) continue;
     out.push(f);
   }
   return out;
