@@ -34,41 +34,21 @@ when you want to remember something later.
 
 ## UI
 
-- **Show galaxy bounds on the map.** With fog hiding undiscovered
-  systems, the early-game map looks like a scattering of dots with
-  no sense of scale. A faint rectangle / outer ring marking the
-  galaxy's actual extent (from `galaxy.width` × `galaxy.height` or
-  the bounding box of all system coordinates) would help the player
-  see how much of the galaxy they've charted vs. how much is still
-  dark.
 - **Move chronicle to a modal behind a button on the left sidebar.**
   Currently the chronicle log is always visible — give it its own
   modal gated by a button next to portrait/end-turn. Clears sidebar
   real estate and matches the pattern used by the other modals
   (empire profile, policies, stat breakdown).
-- **Distinguish sensor-seen vs. visited on the galaxy map.** Right
-  now a system that's currently in sensor but never surveyed looks
-  identical to one a scout has actually been inside. Make the
-  difference legible so the player can tell at a glance where they
-  still need to send a fleet to reveal the next ring of hyperlanes
-  (e.g. a dashed outer ring on "discovered-but-never-surveyed" and
-  a solid one once a fleet has entered).
-- **Keep ownership live for all discovered tiles.** Ownership
-  changes slowly and is diplomatically "known" even at range — once
-  the viewer has ever observed a system, let the galaxy map /
-  system panel show the *current* owner regardless of whether the
-  system is in sensor right now. Fleet composition and internal
-  state stay snapshot-based; ownership gets bumped to live. Small
-  relaxation of strict fog for better UX.
 
 ## Gameplay
 
-- **Presence-score term.** Per-archetype bonus for each system the
-  empire has active presence in (own system OR own fleet location).
-  Rewards breadth / holding ground. Conqueror 150, pragmatist 80,
-  isolationist 20. Separate commit once the fog work settles.
-- **Scouting incentive.** If fleets don't move outward enough after
-  presence is in, add a discovery reward that projects new sensor
-  coverage from a candidate move. Count of newly-observed systems
-  × per-archetype value, without peeking at their contents.
+- **Presence-score term (open question).** The shipped scouting
+  reward `|surveyed ∪ own-systems ∪ own-fleet-positions| × SCOUT_VALUE`
+  is monotonic — holding a system you once explored keeps the
+  points even if the fleet leaves. A separate *presence* term
+  would drop points when you pull out, creating pressure to hold
+  ground. The two signals are different: scouting rewards having
+  explored, presence rewards still-being-there. Probably wait to
+  see if the monotonic form is enough before layering a
+  non-monotonic presence term on top.
 

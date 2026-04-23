@@ -178,6 +178,12 @@ interface SystemDisplay {
   showOccupation: boolean;
   // When stale, reads the snapshot turn for UI hints / future "last seen".
   snapshotTurn?: number;
+  // Has the viewer ever had a fleet physically inside this system
+  // (or owned it)? Scouting the interior reveals that system's
+  // next hyperlane ring; undiscovered dots on the map are there
+  // because we haven't done this yet. Used to render a dashed
+  // "sensor-only" ring on discovered-but-never-surveyed systems.
+  surveyed: boolean;
 }
 
 export function GalaxyMap({
@@ -240,8 +246,15 @@ export function GalaxyMap({
   const seenFlavour = viewerEmpire
     ? new Set(viewerEmpire.perception.seenFlavour)
     : null;
+  // Same idea for "has a fleet actually been inside this system or
+  // do we just know it's there from sensor." Drives the map's
+  // dashed outline on sensor-only systems.
+  const surveyedSet = viewerEmpire
+    ? new Set(viewerEmpire.perception.surveyed)
+    : null;
   const displayBySystem = new Map<string, SystemDisplay>();
   for (const sys of systems) {
+    const surveyedFlag = surveyedSet ? surveyedSet.has(sys.id) : true;
     if (!fogActive) {
       const liveFleets: DisplayFleet[] = (fleetsBySystem.get(sys.id) ?? []).map((f) => ({
         key: f.id,
@@ -253,6 +266,7 @@ export function GalaxyMap({
         ownerId: sys.ownerId,
         fleets: liveFleets,
         showOccupation: true,
+        surveyed: surveyedFlag,
       });
       continue;
     }
@@ -262,6 +276,7 @@ export function GalaxyMap({
         ownerId: null,
         fleets: [],
         showOccupation: false,
+        surveyed: false,
       });
       continue;
     }
@@ -276,10 +291,15 @@ export function GalaxyMap({
         ownerId: sys.ownerId,
         fleets: liveFleets,
         showOccupation: true,
+        surveyed: surveyedFlag,
       });
       continue;
     }
-    // Stale — fall back to the last snapshot we took of this system.
+    // Stale — the viewer hasn't had sensor on this system this turn.
+    // Fleet composition and occupation come from the snapshot (those
+    // are the bits that change freely out of sensor). Ownership is
+    // bumped to live: it's public info that diffuses even without
+    // active sensors, and treating it as stale confuses the map.
     const snap: SystemSnapshot | undefined = snapshots![sys.id];
     const staleFleets: DisplayFleet[] = (snap?.fleets ?? []).map((f, idx) => ({
       key: `stale-${sys.id}-${f.empireId}-${idx}`,
@@ -288,10 +308,11 @@ export function GalaxyMap({
     }));
     displayBySystem.set(sys.id, {
       kind: "stale",
-      ownerId: snap?.ownerId ?? null,
+      ownerId: sys.ownerId,
       fleets: staleFleets,
       showOccupation: false,
       snapshotTurn: snap?.turn,
+      surveyed: surveyedFlag,
     });
   }
 
@@ -316,12 +337,26 @@ export function GalaxyMap({
   // inside the fixed frame.
   const pts = systems.map((s) => hexToPixel(s.q, s.r));
   const pad = HEX_SIZE + 4;
-  const minX = Math.min(...pts.map((p) => p.x)) - pad;
-  const maxX = Math.max(...pts.map((p) => p.x)) + pad;
-  const minY = Math.min(...pts.map((p) => p.y)) - pad;
-  const maxY = Math.max(...pts.map((p) => p.y)) + pad;
+  const rawMinX = Math.min(...pts.map((p) => p.x));
+  const rawMaxX = Math.max(...pts.map((p) => p.x));
+  const rawMinY = Math.min(...pts.map((p) => p.y));
+  const rawMaxY = Math.max(...pts.map((p) => p.y));
+  const minX = rawMinX - pad;
+  const maxX = rawMaxX + pad;
+  const minY = rawMinY - pad;
+  const maxY = rawMaxY + pad;
   const w = maxX - minX;
   const h = maxY - minY;
+
+  // Faint boundary rectangle around the full galaxy extent — gives
+  // the unexplored dark some scale so early-game doesn't feel like
+  // a few dots floating in nothing. Sits slightly inside the system
+  // bbox at half-hex padding so it hugs the outermost systems.
+  const boundsPad = HEX_SIZE * 0.6;
+  const boundsX = rawMinX - boundsPad;
+  const boundsY = rawMinY - boundsPad;
+  const boundsW = rawMaxX - rawMinX + boundsPad * 2;
+  const boundsH = rawMaxY - rawMinY + boundsPad * 2;
 
   // Per-empire perimeter + interior edges so each empire's territory
   // renders as one contiguous region with faint internal lines.
@@ -363,6 +398,22 @@ export function GalaxyMap({
       preserveAspectRatio="xMidYMid meet"
       onClick={() => onSelect(null)}
     >
+      {/* Galaxy boundary — faint rectangle around the full extent so
+          the unexplored dark has scale. Player sees how much of the
+          galaxy is still out there regardless of how little they've
+          charted. */}
+      <rect
+        x={boundsX}
+        y={boundsY}
+        width={boundsW}
+        height={boundsH}
+        fill="none"
+        stroke="#3a4355"
+        strokeWidth={0.8}
+        strokeDasharray="4 3"
+        opacity={0.5}
+      />
+
       {/* Hyperlanes (behind everything else). Color a lane with the
           common owner when both endpoints share one. */}
       <g className="hyperlanes">
@@ -609,6 +660,23 @@ export function GalaxyMap({
                 stroke="#ffd580"
                 strokeWidth={2}
                 strokeLinejoin="round"
+              />
+            )}
+            {/* Sensor-only ring — this system is in our discovered
+                set but we've never actually had a fleet inside.
+                Dashed thin outline says "you've seen it, but the
+                next ring of hyperlanes is still hidden; visit to
+                uncover." Suppressed when the system would already
+                be getting a move-ring or selection highlight. */}
+            {display.kind !== "hidden" && !display.surveyed && !isMoveOrigin && !isMoveDest && !isSelected && (
+              <polygon
+                points={polygonPoints(hexCorners(x, y, HEX_SIZE - 1))}
+                fill="none"
+                stroke="#8a96ab"
+                strokeWidth={0.6}
+                strokeDasharray="1.5 1.5"
+                strokeLinejoin="round"
+                opacity={0.6}
               />
             )}
             {/* Occupation ring — pulsing red, reads unambiguously as
