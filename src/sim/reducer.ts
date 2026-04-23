@@ -3292,6 +3292,94 @@ function aiPlanDiplomacy(_draft: GameState, _empire: Empire, _rand: () => number
   // intentionally empty
 }
 
+// ===== Policies =====
+//
+// A Policy decides what an empire does during its own phase. The
+// engine no longer hardcodes "AI vs human" — it looks up the
+// empire's policy and calls into it. Two policies ship built-in:
+//
+//   aiPolicy:    uses aiPlanProject + aiPlanDiplomacy + aiPlanMoves
+//                (the same decision functions we had before, just
+//                wrapped behind the interface).
+//   humanPolicy: no-op for project/diplomacy/moves planning — those
+//                come through UI dispatches BEFORE endTurn. Still
+//                runs the auto-discover chooser for any player
+//                fleets flagged for it, since that's engine-
+//                provided convenience rather than a player action.
+//
+// Callers (store, rollout, tests) can pass a custom policies map
+// into reduce() to override per-empire. Useful for:
+//   - rollouts pitting two AI variants against each other
+//   - multiplayer (multiple human policies)
+//   - replay from a captured action log
+// When the map is omitted, the engine derives: humanEmpireId →
+// humanPolicy; everyone else → aiPolicy. Same behaviour as before
+// the abstraction.
+export interface Policy {
+  // Called once per empire at applyBeginRound, before tickEmpire
+  // runs. Used by AIs to queue build orders this round; humans
+  // queue via UI dispatches so no-op for them.
+  beforeBeginRound?(draft: GameState, empireId: string): void;
+
+  // Called once per empire during its applyRunPhase, before
+  // processFleetOrders. AI decides moves + diplomacy here; human's
+  // actions already came via dispatches, so only auto-discover
+  // runs.
+  decideMoves?(draft: GameState, empireId: string, rand: () => number): void;
+}
+
+export const aiPolicy: Policy = {
+  beforeBeginRound(draft, empireId) {
+    const e = empireById(draft, empireId);
+    if (e) aiPlanProject(draft, e);
+  },
+  decideMoves(draft, empireId, rand) {
+    const e = empireById(draft, empireId);
+    if (!e) return;
+    aiPlanDiplomacy(draft, e, rand);
+    aiPlanMoves(draft, e);
+  },
+};
+
+export const humanPolicy: Policy = {
+  // No beforeBeginRound — UI queued projects via dispatch.
+  decideMoves(draft, empireId) {
+    const e = empireById(draft, empireId);
+    if (!e) return;
+    // Auto-discover: pick a destination for any of the human's
+    // fleets flagged for autopilot-scouting (skipping ones that
+    // already have a manual route).
+    for (const f of Object.values(draft.fleets)) {
+      if (f.empireId !== empireId) continue;
+      if (f.shipCount <= 0) continue;
+      if (!f.autoDiscover) continue;
+      if (f.destinationSystemId) continue;
+      const dest = autoDiscoveryDestination(draft, e, f);
+      if (dest) {
+        applySetFleetDestination(draft, {
+          byEmpireId: empireId,
+          fleetId: f.id,
+          toSystemId: dest,
+        });
+      }
+    }
+  },
+};
+
+// Resolve which policy applies to an empire this turn. When an
+// explicit map is provided, empires not listed fall back to
+// aiPolicy (useful in rollouts where you only override some
+// empires). When no map is provided at all, the engine's default
+// kicks in: the human gets humanPolicy and everyone else AI.
+export function resolvePolicy(
+  state: GameState,
+  empireId: string,
+  policies?: Map<string, Policy>,
+): Policy {
+  if (policies) return policies.get(empireId) ?? aiPolicy;
+  return empireId === state.humanEmpireId ? humanPolicy : aiPolicy;
+}
+
 // Pick starter systems that are spread apart: first one random interior,
 // each subsequent one maximizing minimum distance to previously picked.
 function pickSpreadStarters(
@@ -3537,7 +3625,11 @@ function applySplitFleet(
   };
 }
 
-export function reduce(state: GameState, action: Action): GameState {
+export function reduce(
+  state: GameState,
+  action: Action,
+  policies?: Map<string, Policy>,
+): GameState {
   switch (action.type) {
     case "newGame": {
       const origin = originById(action.originId);
@@ -3865,41 +3957,39 @@ export function reduce(state: GameState, action: Action): GameState {
 
     case "beginRound": {
       if (state.eventQueue.length > 0) return state;
-      return applyBeginRound(state);
+      return applyBeginRound(state, policies);
     }
 
     case "runPhase": {
       if (!state.currentPhaseEmpireId) return state;
-      return applyRunPhase(state);
+      return applyRunPhase(state, policies);
     }
 
     case "endTurn": {
       if (state.eventQueue.length > 0) return state;
       // Synchronous cascade — used in tests and as a fallback; the
       // store orchestrates a paced version for the actual UI.
-      let next = applyBeginRound(state);
+      let next = applyBeginRound(state, policies);
       while (next.currentPhaseEmpireId) {
-        next = applyRunPhase(next);
+        next = applyRunPhase(next, policies);
       }
       return next;
     }
   }
 }
 
-// Per-round kickoff: advance the turn counter, AI project-planning,
-// tick every empire, and arm the phase cycle at the first empire
-// in the array (which is the human, by newGame ordering).
-function applyBeginRound(state: GameState): GameState {
+// Per-round kickoff: advance the turn counter, let each empire's
+// policy queue its beforeBeginRound actions (project planning for
+// AIs, nothing for humans), tick every empire, and arm the phase
+// cycle at the first empire in the array.
+function applyBeginRound(state: GameState, policies?: Map<string, Policy>): GameState {
   return produce(state, (draft) => {
     draft.turn += 1;
     draft.rngSeed = nextSeed(draft.rngSeed);
 
-    // AI project planning for every non-human empire. The human's
-    // own queue comes from UI dispatches before endTurn (or, in
-    // headless rollouts, the rollout driver pre-plans manually).
     for (const e of draft.empires) {
-      if (e.id === draft.humanEmpireId) continue;
-      aiPlanProject(draft, e);
+      const policy = resolvePolicy(draft, e.id, policies);
+      policy.beforeBeginRound?.(draft, e.id);
     }
 
     for (const e of draft.empires) tickEmpire(draft, e);
@@ -3908,40 +3998,22 @@ function applyBeginRound(state: GameState): GameState {
   });
 }
 
-// A single empire's phase: AI decisions (if applicable), step that
-// empire's fleets, resolve combat, advance the phase pointer. When
-// the last empire has acted, finalize the round (occupation, eliminations,
-// random event for the player) and clear the pointer.
-function applyRunPhase(state: GameState): GameState {
+// A single empire's phase: dispatch to that empire's policy
+// (AI planning, human auto-discover, etc.), step its fleets, resolve
+// combat, advance the phase pointer. When the last empire has acted,
+// finalize the round (occupation, eliminations, random event for the
+// player) and clear the pointer.
+function applyRunPhase(state: GameState, policies?: Map<string, Policy>): GameState {
   const currentId = state.currentPhaseEmpireId;
   if (!currentId) return state;
 
   let next = produce(state, (draft) => {
     const acting = empireById(draft, currentId);
-    const isHuman = currentId === draft.humanEmpireId;
     const diplomacyRand = mulberry32(draft.rngSeed ^ 0xd1910ac7);
 
-    if (acting && !isHuman) {
-      aiPlanDiplomacy(draft, acting, diplomacyRand);
-      aiPlanMoves(draft, acting);
-    } else if (acting) {
-      // Human's phase: run the auto-discover chooser for any of the
-      // human empire's fleets flagged for it. Acts only on fleets
-      // without a current destination — manual routes take precedence.
-      for (const f of Object.values(draft.fleets)) {
-        if (f.empireId !== currentId) continue;
-        if (f.shipCount <= 0) continue;
-        if (!f.autoDiscover) continue;
-        if (f.destinationSystemId) continue;
-        const dest = autoDiscoveryDestination(draft, acting, f);
-        if (dest) {
-          applySetFleetDestination(draft, {
-            byEmpireId: currentId,
-            fleetId: f.id,
-            toSystemId: dest,
-          });
-        }
-      }
+    if (acting) {
+      const policy = resolvePolicy(draft, currentId, policies);
+      policy.decideMoves?.(draft, currentId, diplomacyRand);
     }
 
     processFleetOrders(draft, currentId);
