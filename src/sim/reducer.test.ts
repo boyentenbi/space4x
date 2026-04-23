@@ -121,7 +121,7 @@ function makeState(overrides: {
 }): GameState {
   const fleetsRec: Record<string, Fleet> = {};
   for (const f of overrides.fleets ?? []) fleetsRec[f.id] = f;
-  return {
+  const raw: GameState = {
     schemaVersion: 23,
     turn: overrides.turn ?? 1,
     rngSeed: 1,
@@ -142,6 +142,12 @@ function makeState(overrides: {
     pendingFirstContacts: [],
     gameOver: false,
   };
+  // Seed fog the way production does at new-game time — every empire
+  // starts knowing its own territory and the 1-jump ring around it.
+  // Without this, AI fog checks in scoreState / aiPlanMoves /
+  // aiEnumerateProjectActions would see empty discovered sets and
+  // refuse to move or colonize anywhere.
+  return produce(raw, (draft) => updateVisibility(draft));
 }
 
 // =====================================================================
@@ -1904,6 +1910,166 @@ describe("fog of war: updateVisibility", () => {
     expect(stale.turn).toBe(1);
     expect(stale.ownerId).toBeNull();
     expect(stale.fleets).toEqual([]);
+  });
+});
+
+describe("fog of war: AI decisions", () => {
+  // Tiny shim so each test can run one empire's aiPlanMoves against
+  // a prepared state and inspect the resulting destination orders.
+  function runAiMoves(state: GameState, empireId: string): GameState {
+    return produce(state, (d) => {
+      const emp = empireById(d, empireId);
+      if (emp) aiPlanMoves(d, emp);
+    });
+  }
+
+  it("does not set a destination outside the AI's discovered set", () => {
+    // s_ai — s_mid — s_far. AI owns s_ai only, so sensor = {s_ai,
+    // s_mid} and s_far is undiscovered. A fleet at s_ai may target
+    // s_mid but must never target s_far, regardless of how juicy
+    // scoreState would rate it.
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const mid = makeSystem({ id: "s_mid", bodyIds: [], ownerId: null });
+    const far = makeSystem({ id: "s_far", bodyIds: ["b_far"], ownerId: null });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    // Lush target planet behind the fog — would be a strong candidate
+    // if the AI could see it.
+    const farBody = makeBody({
+      id: "b_far",
+      systemId: "s_far",
+      habitability: "garden",
+      maxPops: 150,
+      pops: 0,
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_ai",
+      systemIds: ["s_ai"],
+      expansionism: "conqueror",
+    });
+    const fleet: Fleet = {
+      id: "f_scout",
+      empireId: "e_ai",
+      systemId: "s_ai",
+      shipCount: 2,
+    };
+    const state = makeState({
+      systems: [aiHome, mid, far],
+      bodies: [aiBody, farBody],
+      hyperlanes: [["s_ai", "s_mid"], ["s_mid", "s_far"]],
+      empire: makeEmpire({ id: "e_player", systemIds: [] }),
+      aiEmpires: [ai],
+      fleets: [fleet],
+    });
+    // Sanity check the seeding: s_far is NOT in the AI's discovered.
+    expect(state.aiEmpires[0].discovered).not.toContain("s_far");
+
+    const decided = runAiMoves(state, "e_ai");
+    // Whatever destination the AI picks, it mustn't be s_far — that
+    // system is simply not a candidate.
+    expect(decided.fleets["f_scout"]?.destinationSystemId).not.toBe("s_far");
+  });
+
+  it("does not queue colonize on a body in an undiscovered system", () => {
+    // Same s_ai — s_mid — s_far topology, but now we test project
+    // enumeration: even a dream garden world behind the fog must not
+    // be proposed as a colonize target.
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const mid = makeSystem({ id: "s_mid", bodyIds: [], ownerId: "e_ai" });
+    const far = makeSystem({ id: "s_far", bodyIds: ["b_far"], ownerId: null });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const midBody = makeBody({ id: "b_mid", systemId: "s_mid", pops: 0 });
+    const farBody = makeBody({
+      id: "b_far",
+      systemId: "s_far",
+      habitability: "garden",
+      maxPops: 150,
+      pops: 0,
+    });
+    // Mid is owned by the AI so the game would let it colonize the
+    // far body via lane-adjacency; the only thing stopping it is fog.
+    mid.bodyIds = ["b_mid"];
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_ai",
+      systemIds: ["s_ai", "s_mid"],
+      expansionism: "conqueror",
+    });
+    // Give the AI enough pops and political to actually queue.
+    const home = { ...aiBody, pops: 60 };
+    const state = makeState({
+      systems: [aiHome, mid, far],
+      bodies: [home, midBody, farBody],
+      hyperlanes: [["s_ai", "s_mid"], ["s_mid", "s_far"]],
+      empire: makeEmpire({ id: "e_player", systemIds: [] }),
+      aiEmpires: [ai],
+    });
+    // s_far is 2 jumps from s_ai AND 1 jump from s_mid — so under
+    // current fog rules s_far IS in discovered (mid owns adjacent).
+    // We want the test to bite: force the AI not to have discovered
+    // it by moving s_mid out of the AI's systemIds after updateVisibility.
+    const hidden = produce(state, (draft) => {
+      const aiDraft = draft.aiEmpires[0];
+      aiDraft.discovered = aiDraft.discovered.filter((sid) => sid !== "s_far");
+    });
+    expect(hidden.aiEmpires[0].discovered).not.toContain("s_far");
+
+    const after = produce(hidden, (draft) => {
+      const emp = empireById(draft, "e_ai");
+      if (emp) aiPlanProject(draft, emp);
+    });
+    // No colonize order on b_far should appear in the AI's queue —
+    // that body lives in an undiscovered system.
+    const hasColonizeOrder = Object.values(after.galaxy.bodies).some((b) =>
+      b.queue.some(
+        (o) => o.kind === "colonize" && o.targetBodyId === "b_far",
+      ),
+    );
+    expect(hasColonizeOrder).toBe(false);
+  });
+
+  it("threat term ignores enemy fleets in undiscovered systems", () => {
+    // AI owns s_ai. s_mid and s_far are connected via s_mid but
+    // s_far is out of the AI's sensor + discovered. Enemy parks
+    // a big fleet at s_far — invisible from the AI's vantage.
+    // scoreState's threat term should not react to it.
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const mid = makeSystem({ id: "s_mid", bodyIds: [], ownerId: null });
+    const far = makeSystem({ id: "s_far", bodyIds: ["b_far"], ownerId: "e_enemy" });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const farBody = makeBody({ id: "b_far", systemId: "s_far", pops: 30 });
+    const ai = makeEmpire({ id: "e_ai", capitalBodyId: "b_ai", systemIds: ["s_ai"] });
+    const enemy = makeEmpire({ id: "e_enemy", capitalBodyId: "b_far", systemIds: ["s_far"] });
+    // 20 enemy ships hiding behind the fog.
+    const hiddenStack: Fleet = {
+      id: "f_enemy_big",
+      empireId: "e_enemy",
+      systemId: "s_far",
+      shipCount: 20,
+    };
+    const stateAtPeace = makeState({
+      systems: [aiHome, mid, far],
+      bodies: [aiBody, farBody],
+      hyperlanes: [["s_ai", "s_mid"], ["s_mid", "s_far"]],
+      empire: makeEmpire({ id: "e_player", systemIds: [] }),
+      aiEmpires: [ai, enemy],
+      fleets: [hiddenStack],
+    });
+    // Force a war so the threat term fires. scoreState only applies
+    // the enemy-ship cost for empires in enemiesOf(), which comes
+    // from state.wars.
+    const stateAtWar = { ...stateAtPeace, wars: [["e_ai", "e_enemy"] as [string, string]] };
+    expect(stateAtWar.aiEmpires[0].discovered).not.toContain("s_far");
+
+    // Baseline score with the hidden stack in place.
+    const scoreHidden = scoreState(stateAtWar, "e_ai");
+    // Score with the stack removed entirely — fog means the AI's
+    // belief about the threat is the same either way.
+    const revealed = produce(stateAtWar, (draft) => {
+      delete draft.fleets["f_enemy_big"];
+    });
+    const scoreNoStack = scoreState(revealed, "e_ai");
+    expect(scoreHidden).toBe(scoreNoStack);
   });
 });
 

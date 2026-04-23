@@ -12,9 +12,3 @@ when you want to remember something later.
   system IDs). Zero runtime cost; a few hundred trivial edits across the
   codebase.
 
-## Fog of war follow-ups
-
-- **AI reads its own snapshots, not true state.** `scoreState`,
-  `aiPlanMoves`, `aiPlanProject` still see the full galaxy. For the
-  surprise-attack / hidden-buildup gameplay to actually work, AI
-  decisions have to route through each empire's fog view.

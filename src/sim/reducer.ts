@@ -2588,10 +2588,25 @@ export function scoreState(state: GameState, empireId: string): number {
     const enemyShipCost = shipValueFor(empire) * 1.2; // at war by def
     const enemyShipTotals: Record<string, number> = {};
     for (const eid of enemies) enemyShipTotals[eid] = 0;
+    // Fog: count live enemy fleets only at systems currently in our
+    // sensor, and fall back to the last-seen snapshot for systems
+    // we've discovered but aren't observing right now. Undiscovered
+    // systems contribute zero — we don't know what's there, so
+    // threat estimates there can't drive our decisions.
+    const sensor = sensorSet(state, empireId);
     for (const f of Object.values(state.fleets)) {
       if (f.shipCount <= 0) continue;
-      if (enemyShipTotals[f.empireId] !== undefined) {
-        enemyShipTotals[f.empireId] += f.shipCount;
+      if (enemyShipTotals[f.empireId] === undefined) continue;
+      if (!sensor.has(f.systemId)) continue;
+      enemyShipTotals[f.empireId] += f.shipCount;
+    }
+    for (const sid of empire.discovered) {
+      if (sensor.has(sid)) continue;
+      const snap = empire.snapshots[sid];
+      if (!snap) continue;
+      for (const sf of snap.fleets) {
+        if (enemyShipTotals[sf.empireId] === undefined) continue;
+        enemyShipTotals[sf.empireId] += sf.shipCount;
       }
     }
     let maxEnemyShips = 0;
@@ -2683,10 +2698,17 @@ export function scoreState(state: GameState, empireId: string): number {
 // right now — includes a null/no-op so search can choose to do nothing.
 function aiEnumerateProjectActions(state: GameState, empire: Empire): Action[] {
   const actions: Action[] = [];
+  // Fog gate: only propose actions whose target is in a system the
+  // empire has discovered. You can't plan to settle / build on a
+  // planet you've never seen. Empire's own systems are trivially in
+  // discovered, so all existing body-scope plays on owned worlds
+  // still work.
+  const discovered = new Set(empire.discovered);
 
-  // Colonize candidates — every body in the galaxy; canColonizeFor
-  // filters by star/pops/space/ownership/reachability.
+  // Colonize candidates — every body in a discovered system;
+  // canColonizeFor filters by star/pops/space/ownership/reachability.
   for (const body of Object.values(state.galaxy.bodies)) {
+    if (!discovered.has(body.systemId)) continue;
     if (!canColonizeFor(state, empire, body.id)) continue;
     actions.push({
       type: "queueColonize",
@@ -2700,6 +2722,7 @@ function aiEnumerateProjectActions(state: GameState, empire: Empire): Action[] {
   // reachability, flags, dedupe). New projects with new
   // bodyRequirement values are picked up automatically.
   for (const body of Object.values(state.galaxy.bodies)) {
+    if (!discovered.has(body.systemId)) continue;
     for (const proj of EMPIRE_PROJECTS) {
       if (proj.scope !== "body") continue;
       if (!canQueueProjectFor(state, empire, proj.id, body.id)) continue;
@@ -2915,6 +2938,15 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
     lb.push(a);
   }
 
+  // Fog gate: the AI only considers systems it has discovered. A
+  // system the empire has never observed isn't even a destination
+  // candidate — it doesn't appear on their "map". Fleets moving
+  // around inside discovered space naturally push the boundary
+  // outward (a move to a discovered edge system reveals that
+  // system's own neighbours via sensor next turn), so exploration
+  // still happens — it just can't leap past the known frontier.
+  const discovered = new Set(empire.discovered);
+
   for (const fleet of ourFleets) {
     // One BFS from the fleet's current system gives every reachable
     // destination in a single O(nodes + edges) pass. Cache by source
@@ -2929,6 +2961,7 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
         const id = queue[head++];
         for (const n of adj.get(id) ?? []) {
           if (visited.has(n)) continue;
+          if (!discovered.has(n)) continue;
           if (!canEnterSystem(baseline, empire.id, n)) continue;
           visited.add(n);
           queue.push(n);
