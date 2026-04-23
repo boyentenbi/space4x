@@ -1199,6 +1199,16 @@ export function canQueueProjectFor(
       // Must be actually colonized — orbital yards need pops to staff.
       if (body.pops <= 0) return false;
     }
+    if (proj.bodyRequirement === "owned_star") {
+      // Star of a system we already own. Unlike "any_owned" this
+      // doesn't require colonised pops — the star itself is the
+      // host (useful for things like emplaced defenders that belong
+      // to the system as a whole, not to any individual planet).
+      const body = state.galaxy.bodies[targetBodyId];
+      if (!body || body.kind !== "star") return false;
+      const sys = state.galaxy.systems[body.systemId];
+      if (!sys || sys.ownerId !== empire.id) return false;
+    }
     if (proj.bodyRequirement === "star") {
       const body = state.galaxy.bodies[targetBodyId];
       if (!body || body.kind !== "star") return false;
@@ -3599,14 +3609,17 @@ function applyQueueEmpireProject(
   if (!proj) return;
   // Projects live on an owned body's queue (that body's hammers pay).
   // Usually the target (build_frigate on a colonised world builds
-  // there). Exception: the target sits in an unowned system — e.g.,
-  // Build Outpost on an adjacent star — so we fall back to hosting on
-  // the capital, where there are hammers.
+  // there). Two exceptions fall back to the capital:
+  //   - target sits in an unowned system (Build Outpost on an adjacent
+  //     star) — there's nowhere to host locally
+  //   - target has no pops (owned-star projects like Build Defender,
+  //     which can target any system we own including uncolonised ones)
+  //     — the body itself produces 0 hammers, so orders would stall
   let hostBodyId: string | null = emp.capitalBodyId;
   if (action.targetBodyId) {
     const target = draft.galaxy.bodies[action.targetBodyId];
     const targetSys = target ? draft.galaxy.systems[target.systemId] : null;
-    if (target && targetSys && targetSys.ownerId === emp.id) {
+    if (target && targetSys && targetSys.ownerId === emp.id && target.pops > 0) {
       hostBodyId = target.id;
     }
   }

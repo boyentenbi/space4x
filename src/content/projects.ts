@@ -39,10 +39,10 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     id: "build_defender",
     name: "Build Defender",
     description:
-      "Emplace a stationary defender on this system's station. Can't move, but counts double in combat and blocks enemy occupation while it lives. Stacks with other defenders here.",
+      "Emplace a stationary defender on this system's star station. Can't move, but counts double in combat and blocks enemy occupation while it lives. Stacks with other defenders here. Available on any system you own — no colonised planet required.",
     hammersRequired: 500,
     scope: "body",
-    bodyRequirement: "any_owned",
+    bodyRequirement: "owned_star",
     costs: { political: 2 },
     repeatable: true,
     availability: {},
