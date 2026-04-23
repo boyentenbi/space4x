@@ -32,15 +32,3 @@ when you want to remember something later.
   action) == advance(filter(state, empireId), action)` on the
   subset advance writes, under identity-filter preconditions.
 
-## Gameplay
-
-- **Presence-score term (open question).** The shipped scouting
-  reward `|surveyed ∪ own-systems ∪ own-fleet-positions| × SCOUT_VALUE`
-  is monotonic — holding a system you once explored keeps the
-  points even if the fleet leaves. A separate *presence* term
-  would drop points when you pull out, creating pressure to hold
-  ground. The two signals are different: scouting rewards having
-  explored, presence rewards still-being-there. Probably wait to
-  see if the monotonic form is enough before layering a
-  non-monotonic presence term on top.
-

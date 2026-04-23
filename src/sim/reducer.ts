@@ -60,6 +60,7 @@ export type Action =
     }
   | { type: "declareWar"; byEmpireId: string; targetEmpireId: string }
   | { type: "makePeace"; byEmpireId: string; targetEmpireId: string }
+  | { type: "setFleetSleep"; byEmpireId: string; fleetId: string; sleeping: boolean }
   | { type: "dismissProjectCompletion" }
   | { type: "dismissFirstContact" };
 
@@ -1201,6 +1202,35 @@ export function allOrdersOf(state: GameState, empire: Empire): BuildOrder[] {
     for (const order of body.queue) out.push(order);
   }
   return out;
+}
+
+// Autoplay gate: does anything need the player's attention right now?
+// True whenever any state-driven UI signal is queued or a decision
+// is outstanding. This is intentionally derived ONLY from GameState
+// so the autoplay loop doesn't need to be patched every time a new
+// modal is added — any feature that queues something on state (a new
+// pendingFoo field, say) inherits the pause automatically.
+export function needsPlayerAttention(state: GameState): boolean {
+  // Hard stops.
+  if (state.gameOver) return true;
+  // Modal-backed queues: first contact, random events, finished
+  // projects. Any of these showing up means the player has a modal
+  // to read or resolve, so autoplay should yield.
+  if (state.eventQueue.length > 0) return true;
+  if (state.pendingFirstContacts.length > 0) return true;
+  if (state.projectCompletions.length > 0) return true;
+  // Player-driven decision points: nothing being built, or any of
+  // our fleets is idling and hasn't been marked "sleeping."
+  const player = state.empire;
+  if (allOrdersOf(state, player).length === 0) return true;
+  for (const f of Object.values(state.fleets)) {
+    if (f.empireId !== player.id) continue;
+    if (f.shipCount <= 0) continue;
+    if (f.destinationSystemId) continue;
+    if (f.sleeping) continue;
+    return true; // idle, non-sleeping fleet
+  }
+  return false;
 }
 
 // Cross-empire: does *any* empire already have a colonize order on this body?
@@ -3808,6 +3838,15 @@ export function reduce(state: GameState, action: Action): GameState {
 
     case "splitFleet":
       return produce(state, (draft) => applySplitFleet(draft, action));
+
+    case "setFleetSleep":
+      return produce(state, (draft) => {
+        const f = draft.fleets[action.fleetId];
+        if (!f) return;
+        if (f.empireId !== action.byEmpireId) return;
+        if (action.sleeping) f.sleeping = true;
+        else delete f.sleeping;
+      });
 
     case "beginRound": {
       if (state.eventQueue.length > 0) return state;

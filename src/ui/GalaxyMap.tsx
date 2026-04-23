@@ -350,13 +350,16 @@ export function GalaxyMap({
 
   // Faint boundary rectangle around the full galaxy extent — gives
   // the unexplored dark some scale so early-game doesn't feel like
-  // a few dots floating in nothing. Sits slightly inside the system
-  // bbox at half-hex padding so it hugs the outermost systems.
-  const boundsPad = HEX_SIZE * 0.6;
-  const boundsX = rawMinX - boundsPad;
-  const boundsY = rawMinY - boundsPad;
-  const boundsW = rawMaxX - rawMinX + boundsPad * 2;
-  const boundsH = rawMaxY - rawMinY + boundsPad * 2;
+  // a few dots floating in nothing. Padding matches a pointy-top
+  // hex's corner offsets: horizontal = size·√3/2 (≈0.866), vertical
+  // = size, so the rectangle actually contains every hex, not just
+  // the centre points.
+  const hexPadX = HEX_SIZE * SQRT_3 / 2;
+  const hexPadY = HEX_SIZE;
+  const boundsX = rawMinX - hexPadX;
+  const boundsY = rawMinY - hexPadY;
+  const boundsW = rawMaxX - rawMinX + hexPadX * 2;
+  const boundsH = rawMaxY - rawMinY + hexPadY * 2;
 
   // Per-empire perimeter + interior edges so each empire's territory
   // renders as one contiguous region with faint internal lines.

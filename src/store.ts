@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { initialState, reduce, type Action } from "./sim/reducer";
+import { initialState, needsPlayerAttention, reduce, type Action } from "./sim/reducer";
 import { speciesById } from "./sim/content";
 import type { GameState } from "./sim/types";
 
@@ -152,25 +152,55 @@ export const useGame = create<Store>((set, get) => ({
   setAutoplay: (on) => set({ autoplayOn: on }),
 }));
 
-// Autoplay loop: when the toggle is on, call endTurn every
-// `autoplayIntervalMs`. Stops cleanly when the store flips off or
-// when endTurn becomes a noop (pending events, game over, etc.).
+// Autoplay loop: when the toggle is on, tick endTurn every
+// `autoplayIntervalMs`. Re-entrant and self-healing — re-reads store
+// state on every tick so toggling off cancels cleanly, and reaches
+// into `needsPlayerAttention` to flip off (not just skip) whenever a
+// decision point appears. That way a stale timer from a previous
+// toggle can't leave the button in a stuck state.
+//
+// Any modal the game wires up via GameState (event queue, first
+// contact, project completion, etc.) is picked up by
+// needsPlayerAttention automatically — no patch needed here.
 if (typeof window !== "undefined") {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  const tick = () => {
-    const s = useGame.getState();
-    if (!s.autoplayOn) {
+
+  const stopTimer = () => {
+    if (timer !== null) {
+      clearTimeout(timer);
       timer = null;
+    }
+  };
+
+  const tick = () => {
+    timer = null;
+    const { autoplayOn, state, setAutoplay, endTurn, autoplayIntervalMs } =
+      useGame.getState();
+    if (!autoplayOn) return;
+    if (needsPlayerAttention(state)) {
+      setAutoplay(false);
       return;
     }
-    // If endTurn can't run right now (pending event, etc.) just wait
-    // and retry next tick — user will have to resolve the event.
-    if (s.canGoForward()) s.endTurn();
-    timer = setTimeout(tick, s.autoplayIntervalMs);
+    endTurn();
+    // Re-read post-turn state — events / first contacts that fired
+    // this turn should auto-pause.
+    const after = useGame.getState();
+    if (needsPlayerAttention(after.state)) {
+      after.setAutoplay(false);
+      return;
+    }
+    timer = setTimeout(tick, autoplayIntervalMs);
   };
+
   useGame.subscribe((s, prev) => {
-    if (s.autoplayOn && !prev.autoplayOn && timer === null) {
+    if (s.autoplayOn === prev.autoplayOn) return;
+    if (s.autoplayOn) {
+      // Fresh start. Cancel any orphaned timer first so we don't
+      // end up with two stacked ticks.
+      stopTimer();
       timer = setTimeout(tick, s.autoplayIntervalMs);
+    } else {
+      stopTimer();
     }
   });
 }

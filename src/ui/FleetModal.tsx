@@ -8,6 +8,7 @@ import { useGame } from "../store";
 // buttons live here.
 export function FleetModal({ fleetId, onClose }: { fleetId: string; onClose: () => void }) {
   const state = useGame((s) => s.state);
+  const dispatch = useGame((s) => s.dispatch);
   const fleet = state.fleets[fleetId];
 
   if (!fleet) {
@@ -26,12 +27,15 @@ export function FleetModal({ fleetId, onClose }: { fleetId: string; onClose: () 
   const species = empire ? speciesById(empire.speciesId) : null;
   const system = state.galaxy.systems[fleet.systemId];
   const isPlayer = fleet.empireId === state.empire.id;
+  const sleeping = !!fleet.sleeping;
 
   const status = !isPlayer
     ? "Foreign fleet — cannot command."
     : fleet.shipCount <= 0
       ? "No ships left."
-      : "Tap the fleet pill on the system view to set a route.";
+      : sleeping
+        ? "Sleeping — autoplay won't pause for this fleet. Tap the fleet pill to set a route."
+        : "Tap the fleet pill on the system view to set a route.";
 
   return (
     <div className="modal-scrim" onClick={onClose}>
@@ -58,6 +62,22 @@ export function FleetModal({ fleetId, onClose }: { fleetId: string; onClose: () 
         </div>
 
         <div className="fleet-blocked">{status}</div>
+
+        {isPlayer && fleet.shipCount > 0 && (
+          <button
+            className="menu-btn"
+            onClick={() =>
+              dispatch({
+                type: "setFleetSleep",
+                byEmpireId: state.empire.id,
+                fleetId: fleet.id,
+                sleeping: !sleeping,
+              })
+            }
+          >
+            {sleeping ? "Wake fleet" : "Sleep fleet"}
+          </button>
+        )}
 
         <button className="close-btn" onClick={onClose}>close</button>
       </div>

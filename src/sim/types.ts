@@ -52,6 +52,10 @@ export interface Fleet {
   // stepper walks the fleet one hop per turn until it arrives or the
   // route becomes blocked.
   destinationSystemId?: string;
+  // Player UI flag. A sleeping fleet is considered "handled" by
+  // autoplay — it doesn't trigger the "idle fleet needs orders"
+  // auto-stop condition. Pure UI state; the sim ignores it.
+  sleeping?: boolean;
 }
 
 export interface Body {

@@ -1223,8 +1223,25 @@ export function MainScreen() {
                       </button>
                     </div>
                   ) : (
-                    <div className="move-bar-hint">Tap a system to send the fleet.</div>
+                    <div className="move-bar-hint">Tap a system to send the fleet, or sleep it so autoplay skips over it.</div>
                   )}
+                  <div className="move-bar-route">
+                    <button
+                      type="button"
+                      className="move-bar-clear"
+                      onClick={() => {
+                        dispatch({
+                          type: "setFleetSleep",
+                          byEmpireId: state.empire.id,
+                          fleetId: moveFleet.id,
+                          sleeping: !moveFleet.sleeping,
+                        });
+                        setMoveMode(null);
+                      }}
+                    >
+                      {moveFleet.sleeping ? "wake fleet" : "sleep fleet"}
+                    </button>
+                  </div>
                 </div>
               );
             })()}
