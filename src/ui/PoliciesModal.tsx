@@ -1,5 +1,5 @@
 import { policyById } from "../sim/content";
-import { availablePoliciesFor, empireDiameter } from "../sim/reducer";
+import { availablePoliciesFor, empireDiameter, humanEmpireOrThrow } from "../sim/reducer";
 import { useGame } from "../store";
 import { ModifierChip } from "./modifierUi";
 import { RESOURCE_ICON } from "./icons";
@@ -7,7 +7,7 @@ import { RESOURCE_ICON } from "./icons";
 export function PoliciesModal({ onClose }: { onClose: () => void }) {
   const state = useGame((s) => s.state);
   const dispatch = useGame((s) => s.dispatch);
-  const empire = state.empire;
+  const empire = humanEmpireOrThrow(state);
   const available = availablePoliciesFor(state, empire);
   const adopted = empire.adoptedPolicies
     .map((id) => policyById(id))

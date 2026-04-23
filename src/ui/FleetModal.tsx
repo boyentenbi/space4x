@@ -26,7 +26,8 @@ export function FleetModal({ fleetId, onClose }: { fleetId: string; onClose: () 
   const empire = empireById(state, fleet.empireId);
   const species = empire ? speciesById(empire.speciesId) : null;
   const system = state.galaxy.systems[fleet.systemId];
-  const isPlayer = fleet.empireId === state.empire.id;
+  const playerId = state.humanEmpireId;
+  const isPlayer = !!playerId && fleet.empireId === playerId;
   const sleeping = !!fleet.sleeping;
   const autoDiscover = !!fleet.autoDiscover;
 
@@ -73,7 +74,7 @@ export function FleetModal({ fleetId, onClose }: { fleetId: string; onClose: () 
               onClick={() =>
                 dispatch({
                   type: "setFleetAutoDiscover",
-                  byEmpireId: state.empire.id,
+                  byEmpireId: playerId!,
                   fleetId: fleet.id,
                   autoDiscover: !autoDiscover,
                 })
@@ -86,7 +87,7 @@ export function FleetModal({ fleetId, onClose }: { fleetId: string; onClose: () 
               onClick={() =>
                 dispatch({
                   type: "setFleetSleep",
-                  byEmpireId: state.empire.id,
+                  byEmpireId: playerId!,
                   fleetId: fleet.id,
                   sleeping: !sleeping,
                 })

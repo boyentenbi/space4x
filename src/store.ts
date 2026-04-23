@@ -3,7 +3,7 @@ import { initialState, needsPlayerAttention, reduce, type Action } from "./sim/r
 import { speciesById } from "./sim/content";
 import type { GameState } from "./sim/types";
 
-const STORAGE_KEY = "space4x:save:v25";
+const STORAGE_KEY = "space4x:save:v26";
 
 // Cap on the state history ring. Each end-turn + each dispatched
 // action pushes one entry. Set generously — a GameState is not huge
@@ -15,11 +15,15 @@ function loadSaved(): GameState | null {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as GameState;
-    if (parsed.schemaVersion !== 25) return null;
-    // Refresh species-derived fields so content tweaks (colors, portrait
-    // art, etc.) propagate to existing saves without a schema bump.
-    const species = speciesById(parsed.empire.speciesId);
-    if (species) parsed.empire.color = species.color;
+    if (parsed.schemaVersion !== 26) return null;
+    // Refresh species-derived fields on the human empire so content
+    // tweaks (colors, portrait art, etc.) propagate to existing
+    // saves without a schema bump.
+    const human = parsed.empires.find((e) => e.id === parsed.humanEmpireId);
+    if (human) {
+      const species = speciesById(human.speciesId);
+      if (species) human.color = species.color;
+    }
     return parsed;
   } catch {
     return null;

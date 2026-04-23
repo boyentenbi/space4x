@@ -26,6 +26,8 @@ import {
   growthEstimate,
   HAMMERS_PER_POP,
   hammersBreakdownFor,
+  humanEmpire,
+  humanEmpireOrThrow,
   OCCUPATION_TURNS_TO_FLIP,
   perTurnIncome,
   popsBreakdownFor,
@@ -90,26 +92,30 @@ function attentionFocus(state: GameState): AttentionFocus {
   if (state.gameOver) return { kind: "gameOver" };
   if (state.pendingFirstContacts.length > 0) return { kind: "firstContact" };
   if (state.eventQueue.length > 0) return { kind: "event" };
+  // No human → nothing to focus on. (UI shouldn't render this branch
+  // anyway, but be defensive.)
+  const player = humanEmpire(state);
+  if (!player) return { kind: "none" };
   // Any foreign fleet visible in player sensor pauses autoplay so
   // the player can react before something they don't recognise
   // (potentially about to declare war by stepping into territory)
   // does anything. Resolves when the fleet leaves sensor or is
   // destroyed.
-  const foreign = foreignFleetsInSensor(state, state.empire);
+  const foreign = foreignFleetsInSensor(state, player);
   if (foreign.length > 0) {
     return { kind: "hostileFleet", fleetId: foreign[0].id, systemId: foreign[0].systemId };
   }
   for (const f of Object.values(state.fleets)) {
-    if (f.empireId !== state.empire.id) continue;
+    if (f.empireId !== player.id) continue;
     if (f.shipCount <= 0) continue;
     if (f.destinationSystemId) continue;
     if (f.sleeping) continue;
     if (f.autoDiscover) continue;
     return { kind: "idleFleet", fleetId: f.id, systemId: f.systemId };
   }
-  if (allOrdersOf(state, state.empire).length === 0) {
-    const capBody = state.empire.capitalBodyId ? state.galaxy.bodies[state.empire.capitalBodyId] : null;
-    return { kind: "emptyQueue", systemId: capBody?.systemId ?? state.empire.systemIds[0] ?? null };
+  if (allOrdersOf(state, player).length === 0) {
+    const capBody = player.capitalBodyId ? state.galaxy.bodies[player.capitalBodyId] : null;
+    return { kind: "emptyQueue", systemId: capBody?.systemId ?? player.systemIds[0] ?? null };
   }
   return { kind: "none" };
 }
@@ -566,8 +572,12 @@ export function MainScreen() {
     enemiesToDeclare: string[]; // empire ids we'd end up at war with
   } | null>(null);
 
-  const origin = originById(state.empire.originId);
-  const species = speciesById(state.empire.speciesId);
+  // The UI assumes a human-controlled empire is always present.
+  // Bind it once so we don't need humanEmpireOrThrow(state) on every
+  // line; this replaces what used to be `player`.
+  const player = humanEmpireOrThrow(state);
+  const origin = originById(player.originId);
+  const species = speciesById(player.speciesId);
   const pendingEvent = state.eventQueue[0] ?? null;
 
   // Arrow-key navigation: hold left to step backwards through history,
@@ -620,13 +630,13 @@ export function MainScreen() {
     };
   }, [goBack, goForward]);
 
-  const capital = state.empire.capitalBodyId
-    ? state.galaxy.bodies[state.empire.capitalBodyId]
+  const capital = player.capitalBodyId
+    ? state.galaxy.bodies[player.capitalBodyId]
     : null;
   const capitalSystem = capital ? state.galaxy.systems[capital.systemId] : null;
 
   const deltas: Resources = perTurnIncome(state);
-  const totalHammers = state.empire.systemIds.reduce((sum, sid) => {
+  const totalHammers = player.systemIds.reduce((sum, sid) => {
     const sys = state.galaxy.systems[sid];
     if (!sys) return sum;
     return sum + sys.bodyIds.reduce((s, bid) => s + (state.galaxy.bodies[bid]?.hammers ?? 0), 0);
@@ -634,24 +644,24 @@ export function MainScreen() {
   const popsNow = totalPops(state);
   // Effective cap accounts for species maxPopsMult (e.g. insectoid +50%),
   // matching what pop growth actually allows.
-  const popsCap = state.empire.systemIds.reduce((sum, sid) => {
+  const popsCap = player.systemIds.reduce((sum, sid) => {
     const sys = state.galaxy.systems[sid];
     if (!sys) return sum;
     return (
       sum +
       sys.bodyIds.reduce((s, bid) => {
         const body = state.galaxy.bodies[bid];
-        return s + (body ? maxPopsFor(state.empire, body) : 0);
+        return s + (body ? maxPopsFor(player, body) : 0);
       }, 0)
     );
   }, 0);
-  const colonizeHammerCost = effectiveColonizeHammers(state.empire);
-  const colonizePoliticalCost = effectiveColonizePolitical(state.empire);
+  const colonizeHammerCost = effectiveColonizeHammers(player);
+  const colonizePoliticalCost = effectiveColonizePolitical(player);
   // Turns to finish a new colonize project, given current hammer rate and
   // any existing FIFO queue already consuming from the pool.
   function turnsToColonize(): number {
     if (totalHammers <= 0) return Infinity;
-    const backlogHammers = allOrdersOf(state, state.empire).reduce(
+    const backlogHammers = allOrdersOf(state, player).reduce(
       (s, o) => s + (o.hammersRequired - o.hammersPaid),
       0,
     );
@@ -665,7 +675,7 @@ export function MainScreen() {
   const moveFleetStale =
     !!moveMode &&
     (!moveFleet ||
-      moveFleet.empireId !== state.empire.id ||
+      moveFleet.empireId !== player.id ||
       moveFleet.shipCount <= 0);
   useEffect(() => {
     if (moveFleetStale) setMoveMode(null);
@@ -695,8 +705,8 @@ export function MainScreen() {
     for (const sid of path) {
       const sys = state.galaxy.systems[sid];
       if (!sys || !sys.ownerId) continue;
-      if (sys.ownerId === state.empire.id) continue;
-      if (atWar(state, state.empire.id, sys.ownerId)) continue;
+      if (sys.ownerId === player.id) continue;
+      if (atWar(state, player.id, sys.ownerId)) continue;
       uniq.add(sys.ownerId);
     }
     return [...uniq];
@@ -710,7 +720,7 @@ export function MainScreen() {
     if (splitCount !== null) {
       dispatch({
         type: "splitFleet",
-        byEmpireId: state.empire.id,
+        byEmpireId: player.id,
         fleetId,
         count: splitCount,
         toSystemId,
@@ -721,7 +731,7 @@ export function MainScreen() {
     } else {
       dispatch({
         type: "setFleetDestination",
-        byEmpireId: state.empire.id,
+        byEmpireId: player.id,
         fleetId,
         toSystemId,
       });
@@ -768,8 +778,8 @@ export function MainScreen() {
   // been discovered (shouldn't happen via map clicks — those systems
   // aren't rendered — but could survive across saves), fall back to
   // the capital as if nothing were selected.
-  const playerSensor = sensorSet(state, state.empire.id);
-  const playerDiscovered = new Set(state.empire.perception.discovered);
+  const playerSensor = sensorSet(state, player.id);
+  const playerDiscovered = new Set(player.perception.discovered);
   const rawFocus = selectedSystemId
     ? state.galaxy.systems[selectedSystemId] ?? null
     : capitalSystem;
@@ -781,7 +791,7 @@ export function MainScreen() {
   const focusStale =
     !!focusSystem && !playerSensor.has(focusSystem.id) && playerDiscovered.has(focusSystem.id);
   const focusSnapshot = focusStale && focusSystem
-    ? state.empire.perception.snapshots[focusSystem.id] ?? null
+    ? player.perception.snapshots[focusSystem.id] ?? null
     : null;
   const focusBodies = focusSystem
     ? focusSystem.bodyIds.map((bid) => state.galaxy.bodies[bid]).filter((b): b is Body => !!b)
@@ -793,7 +803,7 @@ export function MainScreen() {
   const focusOwnerEmpire = focusOwnerId
     ? empireById(state, focusOwnerId)
     : null;
-  const focusIsOurs = focusOwnerEmpire?.id === state.empire.id;
+  const focusIsOurs = focusOwnerEmpire?.id === player.id;
   const focusOwnerSpecies = focusOwnerEmpire
     ? speciesById(focusOwnerEmpire.speciesId)
     : null;
@@ -802,13 +812,13 @@ export function MainScreen() {
     <>
       {/* ===== Left sidebar ===== */}
       <div className="sidebar">
-        {(state.empire.portraitArt || species?.art) && (
+        {(player.portraitArt || species?.art) && (
           <div
             className="portrait-card"
-            style={{ borderColor: state.empire.color }}
-            title={`${species?.name ?? ""} · ${state.empire.name}`}
+            style={{ borderColor: player.color }}
+            title={`${species?.name ?? ""} · ${player.name}`}
           >
-            <img src={state.empire.portraitArt || species?.art} alt={species?.name ?? ""} />
+            <img src={player.portraitArt || species?.art} alt={species?.name ?? ""} />
           </div>
         )}
         {(() => {
@@ -908,26 +918,26 @@ export function MainScreen() {
             <ResCell
               key={k}
               icon={RESOURCE_ICON[k]}
-              value={Math.round(empireResourceStock(state.empire, k))}
+              value={Math.round(empireResourceStock(player, k))}
               delta={deltas[k]}
-              onClick={() => setBreakdown(resourceBreakdownAsStat(state, state.empire, k))}
+              onClick={() => setBreakdown(resourceBreakdownAsStat(state, player, k))}
             />
           ))}
           <ResCell
             icon={COMPUTE_ICON}
-            value={`${state.empire.compute.cap - projectedFleetCompute(state, state.empire)}/${state.empire.compute.cap}`}
-            onClick={() => setBreakdown(computeBreakdownFor(state, state.empire))}
+            value={`${player.compute.cap - projectedFleetCompute(state, player)}/${player.compute.cap}`}
+            onClick={() => setBreakdown(computeBreakdownFor(state, player))}
           />
           <ResCell
             icon={HAMMERS_ICON}
             value={totalHammers}
-            onClick={() => setBreakdown(hammersBreakdownFor(state, state.empire))}
+            onClick={() => setBreakdown(hammersBreakdownFor(state, player))}
           />
           <ResCell
             icon={POPS_ICON}
             value={`${Math.floor(popsNow)}/${popsCap}`}
-            delta={expectedPopGrowth(state, state.empire)}
-            onClick={() => setBreakdown(popsBreakdownFor(state, state.empire))}
+            delta={expectedPopGrowth(state, player)}
+            onClick={() => setBreakdown(popsBreakdownFor(state, player))}
           />
         </div>
 
@@ -1024,7 +1034,7 @@ export function MainScreen() {
                 ownerColor={focusStale ? null : focusOwnerEmpire?.color ?? null}
                 capitalBodyId={focusStale ? null : focusOwnerEmpire?.capitalBodyId ?? null}
                 turn={state.turn}
-                seenFlavourIds={new Set(state.empire.perception.seenFlavour)}
+                seenFlavourIds={new Set(player.perception.seenFlavour)}
               />
             ) : (
               <div className="scene-empty">Tap a star on the galaxy map.</div>
@@ -1066,7 +1076,7 @@ export function MainScreen() {
                   <span className="fleet-strip-label">Fleets</span>
                   {fleets.map((f) => {
                     const empire = empireById(state, f.empireId);
-                    const isPlayer = f.empireId === state.empire.id;
+                    const isPlayer = f.empireId === player.id;
                     const canMove = isPlayer && f.shipCount > 0;
                     const isMoving = moveMode?.fleetId === f.id;
                     const destSys = f.destinationSystemId
@@ -1133,35 +1143,35 @@ export function MainScreen() {
                   // Body-scope projects are always queryable — canQueueProjectFor
                   // already enforces whether the target is legal. This is what
                   // lets the star row show "Build Outpost" in unclaimed systems.
-                  const bodyProjects = availableBodyProjectsFor(state, state.empire, body.id);
+                  const bodyProjects = availableBodyProjectsFor(state, player, body.id);
                   return (
                     <BodyRow
                       key={body.id}
                       body={body}
                       income={focusIsOurs ? bodyIncome(state, body) : {}}
-                      isCapital={body.id === state.empire.capitalBodyId}
+                      isCapital={body.id === player.capitalBodyId}
                       owned={focusIsOurs}
                       colonizable={canColonize(state, body.id)}
                       activeOrder={order}
                       colonizeTurns={colonizeTurnEstimate}
                       colonizeHammers={colonizeHammerCost}
                       colonizePolitical={colonizePoliticalCost}
-                      growth={focusIsOurs ? growthEstimate(state, state.empire, body) : null}
+                      growth={focusIsOurs ? growthEstimate(state, player, body) : null}
                       bodyProjects={bodyProjects}
                       bodyProjectOrder={bodyProjectOrderFor(state, body.id)}
                       hammerRate={totalHammers}
-                      flavourSeen={state.empire.perception.seenFlavour.includes(body.id)}
+                      flavourSeen={player.perception.seenFlavour.includes(body.id)}
                       onColonize={() =>
                         dispatch({
                           type: "queueColonize",
-                          byEmpireId: state.empire.id,
+                          byEmpireId: player.id,
                           targetBodyId: body.id,
                         })
                       }
                       onQueueBodyProject={(projectId) =>
                         dispatch({
                           type: "queueEmpireProject",
-                          byEmpireId: state.empire.id,
+                          byEmpireId: player.id,
                           projectId,
                           targetBodyId: body.id,
                         })
@@ -1169,7 +1179,7 @@ export function MainScreen() {
                       onCancelOrder={(orderId) =>
                         dispatch({
                           type: "cancelOrder",
-                          byEmpireId: state.empire.id,
+                          byEmpireId: player.id,
                           orderId,
                         })
                       }
@@ -1188,20 +1198,20 @@ export function MainScreen() {
                 order plus any empire-scope projects still available. */}
             <BuildQueueCard
               state={state}
-              projects={allOrdersOf(state, state.empire)}
-              available={availableProjectsFor(state, state.empire)}
+              projects={allOrdersOf(state, player)}
+              available={availableProjectsFor(state, player)}
               hammerRate={totalHammers}
               onQueue={(pid) =>
                 dispatch({
                   type: "queueEmpireProject",
-                  byEmpireId: state.empire.id,
+                  byEmpireId: player.id,
                   projectId: pid,
                 })
               }
               onCancel={(oid) =>
                 dispatch({
                   type: "cancelOrder",
-                  byEmpireId: state.empire.id,
+                  byEmpireId: player.id,
                   orderId: oid,
                 })
               }
@@ -1218,7 +1228,7 @@ export function MainScreen() {
               return (
                 <div className="phase-banner" style={{ borderColor: e.color }}>
                   <span className="phase-banner-dot" style={{ background: e.color }} />
-                  {e.id === state.empire.id ? "Your turn resolving…" : `${e.name} acting…`}
+                  {e.id === player.id ? "Your turn resolving…" : `${e.name} acting…`}
                 </div>
               );
             })()}
@@ -1237,13 +1247,13 @@ export function MainScreen() {
                     }
                   : null
               }
-              viewerEmpire={state.empire}
+              viewerEmpire={player}
               sensor={playerSensor}
               hostileEmpireIds={(() => {
                 const s = new Set<string>();
                 for (const e of allEmpires(state)) {
-                  if (e.id === state.empire.id) continue;
-                  if (atWar(state, state.empire.id, e.id)) s.add(e.id);
+                  if (e.id === player.id) continue;
+                  if (atWar(state, player.id, e.id)) s.add(e.id);
                 }
                 return s;
               })()}
@@ -1320,7 +1330,7 @@ export function MainScreen() {
                         onClick={() =>
                           dispatch({
                             type: "setFleetDestination",
-                            byEmpireId: state.empire.id,
+                            byEmpireId: player.id,
                             fleetId: moveFleet.id,
                             toSystemId: null,
                           })
@@ -1339,7 +1349,7 @@ export function MainScreen() {
                       onClick={() => {
                         dispatch({
                           type: "setFleetAutoDiscover",
-                          byEmpireId: state.empire.id,
+                          byEmpireId: player.id,
                           fleetId: moveFleet.id,
                           autoDiscover: !moveFleet.autoDiscover,
                         });
@@ -1354,7 +1364,7 @@ export function MainScreen() {
                       onClick={() => {
                         dispatch({
                           type: "setFleetSleep",
-                          byEmpireId: state.empire.id,
+                          byEmpireId: player.id,
                           fleetId: moveFleet.id,
                           sleeping: !moveFleet.sleeping,
                         });
@@ -1368,7 +1378,7 @@ export function MainScreen() {
               );
             })()}
             <span className="panel-stats">
-              {state.empire.systemIds.length}/{Object.keys(state.galaxy.systems).length} yours
+              {player.systemIds.length}/{Object.keys(state.galaxy.systems).length} yours
             </span>
           </div>
         </div>

@@ -20,7 +20,7 @@ export function EmpireRosterModal({
           {empires.map((e) => {
             const species = speciesById(e.speciesId);
             const portraitSrc = e.portraitArt || species?.art;
-            const isPlayer = e.id === state.empire.id;
+            const isPlayer = e.id === state.humanEmpireId;
             return (
               <button
                 key={e.id}
@@ -39,7 +39,7 @@ export function EmpireRosterModal({
                 <div className="roster-body">
                   <div className="roster-name">
                     {e.name || (isPlayer ? "Your empire" : "Unknown")}
-                    {!isPlayer && atWar(state, state.empire.id, e.id) && (
+                    {!isPlayer && state.humanEmpireId && atWar(state, state.humanEmpireId, e.id) && (
                       <span className="roster-war-tag">at war</span>
                     )}
                   </div>

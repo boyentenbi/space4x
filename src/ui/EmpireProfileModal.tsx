@@ -45,11 +45,12 @@ export function EmpireProfileModal({
   const species = speciesById(empire.speciesId);
   const leader = empire.leaderId ? leaderContentById(empire.leaderId) : null;
   const portraitSrc = empire.portraitArt || species?.art;
-  const isPlayer = empireId === state.empire.id;
+  const playerId = state.humanEmpireId;
+  const isPlayer = !!playerId && empireId === playerId;
   const modifiers = empireModifiers(empire);
   const pops = totalPopsOf(state, empire);
   const systemsOwned = empire.systemIds.length;
-  const isAtWar = !isPlayer && atWar(state, state.empire.id, empire.id);
+  const isAtWar = !!playerId && !isPlayer && atWar(state, playerId, empire.id);
 
   return (
     <div className="modal-scrim" onClick={onClose}>
@@ -120,7 +121,7 @@ export function EmpireProfileModal({
                   onClick={() => {
                     dispatch({
                       type: "makePeace",
-                      byEmpireId: state.empire.id,
+                      byEmpireId: playerId!,
                       targetEmpireId: empire.id,
                     });
                     onClose();
@@ -134,7 +135,7 @@ export function EmpireProfileModal({
                   onClick={() => {
                     dispatch({
                       type: "declareWar",
-                      byEmpireId: state.empire.id,
+                      byEmpireId: playerId!,
                       targetEmpireId: empire.id,
                     });
                     onClose();

@@ -110,7 +110,7 @@ function runOnePhase(
   state: GameState,
   empireId?: string,
 ): GameState {
-  const target = empireId ?? state.empire.id;
+  const target = empireId ?? state.humanEmpireId;
   let s = reduce(state, { type: "beginRound" });
   // runPhase processes the current empire and advances the pointer.
   // Stop once we've run the target empire's phase.
@@ -134,8 +134,9 @@ function makeState(overrides: {
 }): GameState {
   const fleetsRec: Record<string, Fleet> = {};
   for (const f of overrides.fleets ?? []) fleetsRec[f.id] = f;
+  const ais = overrides.aiEmpires ?? [];
   const raw: GameState = {
-    schemaVersion: 25,
+    schemaVersion: 26,
     turn: overrides.turn ?? 1,
     rngSeed: 1,
     galaxy: {
@@ -145,8 +146,8 @@ function makeState(overrides: {
       width: 10,
       height: 10,
     },
-    empire: overrides.empire,
-    aiEmpires: overrides.aiEmpires ?? [],
+    empires: [overrides.empire, ...ais],
+    humanEmpireId: overrides.empire.id,
     fleets: fleetsRec,
     wars: overrides.wars ?? [],
     eventQueue: [],
@@ -589,7 +590,7 @@ describe("AI scoreState value function", () => {
       targetBodyId: "b_vacant",
     });
     expect(queued.galaxy.bodies["b_cap"].pops).toBe(25);
-    expect(allOrdersOf(queued, queued.empire)).toHaveLength(1);
+    expect(allOrdersOf(queued, queued.empires[0])).toHaveLength(1);
   });
 
   it("refuses to queue colonize when the capital has fewer than COLONIZE_POP_COST pops", () => {
@@ -617,7 +618,7 @@ describe("AI scoreState value function", () => {
       targetBodyId: "b_vacant",
     });
     // No order queued, capital pops untouched.
-    expect(allOrdersOf(attempted, attempted.empire)).toHaveLength(0);
+    expect(allOrdersOf(attempted, attempted.empires[0])).toHaveLength(0);
     expect(attempted.galaxy.bodies["b_cap"].pops).toBe(4);
   });
 
@@ -645,13 +646,13 @@ describe("AI scoreState value function", () => {
       byEmpireId: "e_player",
       targetBodyId: "b_vacant",
     });
-    const orderId = allOrdersOf(queued, queued.empire)[0].id;
+    const orderId = allOrdersOf(queued, queued.empires[0])[0].id;
     const cancelled = reduce(queued, {
       type: "cancelOrder",
       byEmpireId: "e_player",
       orderId,
     });
-    expect(allOrdersOf(cancelled, cancelled.empire)).toHaveLength(0);
+    expect(allOrdersOf(cancelled, cancelled.empires[0])).toHaveLength(0);
     expect(cancelled.galaxy.bodies["b_cap"].pops).toBe(30);
   });
 
@@ -1749,9 +1750,9 @@ describe("conquering", () => {
     expect(sys?.ownerId).toBe("e_player");
     expect(sys?.occupation).toBeUndefined();
     // Player now owns both systems.
-    expect(s.empire.systemIds).toContain("s_target");
+    expect(s.empires[0].systemIds).toContain("s_target");
     // AI is eliminated (lost its only system).
-    expect(s.aiEmpires.find((e) => e.id === "e_ai")).toBeUndefined();
+    expect(s.empires.find((e) => e.id === "e_ai")).toBeUndefined();
   });
 
   it("doesn't start an occupation on unowned space", () => {
@@ -1814,7 +1815,9 @@ describe("conquering", () => {
     });
     for (let i = 0; i < 3; i++) s = reduce(s, { type: "endTurn" });
     expect(s.galaxy.systems["s_home"]?.ownerId).toBe("e_ai");
-    expect(s.empire.systemIds.length).toBe(0);
+    // Player is gone (eliminated, removed from empires[]), so look
+    // them up by id rather than by index.
+    expect(s.empires.find((e) => e.id === "e_player")).toBeUndefined();
     expect(s.gameOver).toBe(true);
   });
 });
@@ -1924,7 +1927,7 @@ describe("empire elimination ignores fleets", () => {
     for (let i = 0; i < 3; i++) s = reduce(s, { type: "endTurn" });
     expect(s.galaxy.systems["s_ai"]?.ownerId).toBe("e_player");
     // AI is gone — even though f_ghost was still floating around.
-    expect(s.aiEmpires.find((e) => e.id === "e_ai")).toBeUndefined();
+    expect(s.empires.find((e) => e.id === "e_ai")).toBeUndefined();
     // And the orphan fleet has been cleaned up.
     expect(s.fleets["f_ghost"]).toBeUndefined();
   });
@@ -2051,13 +2054,14 @@ describe("fog of war: first contact via sensor", () => {
       fleets: [playerScout],
     });
     // Not yet met — no territory touches, no scout triggered detection.
-    expect(state.empire.flags.includes("met:e_ai")).toBe(false);
-    expect(state.aiEmpires[0].flags.includes("met:e_player")).toBe(false);
+    expect(state.empires[0].flags.includes("met:e_ai")).toBe(false);
+    expect(state.empires[1].flags.includes("met:e_player")).toBe(false);
 
     // One round of endTurn runs detectFirstContacts at isLast.
     const next = reduce(state, { type: "endTurn" });
-    expect(next.empire.flags.includes("met:e_ai")).toBe(true);
-    expect(next.aiEmpires[0].flags.includes("met:e_player")).toBe(true);
+    expect(next.empires[0].flags.includes("met:e_ai")).toBe(true);
+    // The AI gets the symmetric "met:e_player" flag.
+    expect(next.empires[1].flags.includes("met:e_player")).toBe(true);
   });
 });
 
@@ -2121,10 +2125,10 @@ describe("fog of war: updateVisibility", () => {
       turn: 7,
     });
     const next = produce(state, (draft) => updateVisibility(draft));
-    expect([...next.empire.perception.discovered].sort()).toEqual(["s_home", "s_mid"]);
-    expect(next.empire.perception.snapshots["s_home"]).toBeDefined();
-    expect(next.empire.perception.snapshots["s_mid"]).toBeDefined();
-    expect(next.empire.perception.snapshots["s_home"].turn).toBe(7);
+    expect([...next.empires[0].perception.discovered].sort()).toEqual(["s_home", "s_mid"]);
+    expect(next.empires[0].perception.snapshots["s_home"]).toBeDefined();
+    expect(next.empires[0].perception.snapshots["s_mid"]).toBeDefined();
+    expect(next.empires[0].perception.snapshots["s_home"].turn).toBe(7);
   });
 
   it("snapshots an in-sensor enemy fleet by empire and ship count", () => {
@@ -2150,7 +2154,7 @@ describe("fog of war: updateVisibility", () => {
       fleets: [enemyFleet],
     });
     const next = produce(state, (draft) => updateVisibility(draft));
-    const snap = next.empire.perception.snapshots["s_n"];
+    const snap = next.empires[0].perception.snapshots["s_n"];
     expect(snap).toBeDefined();
     expect(snap.ownerId).toBe("e_ai");
     expect(snap.fleets).toEqual([{ empireId: "e_ai", shipCount: 5 }]);
@@ -2179,8 +2183,8 @@ describe("fog of war: updateVisibility", () => {
       fleets: [hiddenFleet],
     });
     const next = produce(state, (draft) => updateVisibility(draft));
-    expect(next.empire.perception.discovered).not.toContain("s_far");
-    expect(next.empire.perception.snapshots["s_far"]).toBeUndefined();
+    expect(next.empires[0].perception.discovered).not.toContain("s_far");
+    expect(next.empires[0].perception.snapshots["s_far"]).toBeUndefined();
   });
 
   it("keeps a stale snapshot once a system leaves sensor range", () => {
@@ -2212,8 +2216,8 @@ describe("fog of war: updateVisibility", () => {
       turn: 1,
     });
     const seen = produce(turn1State, (draft) => updateVisibility(draft));
-    expect(seen.empire.perception.snapshots["s_target"]?.turn).toBe(1);
-    expect(seen.empire.perception.snapshots["s_target"]?.ownerId).toBeNull();
+    expect(seen.empires[0].perception.snapshots["s_target"]?.turn).toBe(1);
+    expect(seen.empires[0].perception.snapshots["s_target"]?.ownerId).toBeNull();
 
     // Turn 2: scout moves away to s_else; AI takes s_target and parks
     // a fleet there; updateVisibility runs again.
@@ -2221,7 +2225,7 @@ describe("fog of war: updateVisibility", () => {
       draft.turn = 2;
       draft.fleets["f1"].systemId = "s_else";
       draft.galaxy.systems["s_target"].ownerId = "e_ai";
-      draft.aiEmpires[0].systemIds = ["s_target"];
+      draft.empires[1].systemIds = ["s_target"];
       draft.fleets["f_ai"] = {
         id: "f_ai",
         empireId: "e_ai",
@@ -2232,7 +2236,7 @@ describe("fog of war: updateVisibility", () => {
     });
     // The stale snapshot from turn 1 must NOT have been overwritten —
     // s_target is no longer in the player's sensor.
-    const stale = turn2State.empire.perception.snapshots["s_target"];
+    const stale = turn2State.empires[0].perception.snapshots["s_target"];
     expect(stale.turn).toBe(1);
     expect(stale.ownerId).toBeNull();
     expect(stale.fleets).toEqual([]);
@@ -2276,7 +2280,7 @@ describe("autoplay attention: foreign fleet in sensor", () => {
       // Crucially: no wars. Pre-fix this case wouldn't alert.
     });
     expect(atWar(state, "e_player", "e_ai")).toBe(false);
-    const visible = foreignFleetsInSensor(state, state.empire);
+    const visible = foreignFleetsInSensor(state, state.empires[0]);
     expect(visible.map((f) => f.id)).toContain("f_observer");
     expect(needsPlayerAttention(state)).toBe(true);
   });
@@ -2345,7 +2349,7 @@ describe("fog of war: AI info-leak invariants", () => {
       wars: [["e_ai", "e_enemy"].sort() as [string, string]],
     });
     // Sanity: the reserve's system is NOT in the AI's discovered.
-    expect(state.aiEmpires[0].perception.discovered).not.toContain("s_hidden");
+    expect(state.empires[1].perception.discovered).not.toContain("s_hidden");
 
     const decided = runAiMoves(state, "e_ai");
     expect(decided.fleets["f_attacker"]?.destinationSystemId).toBe("s_target");
@@ -2467,8 +2471,9 @@ describe("fog of war: AI info-leak invariants", () => {
       turn: 1,
     });
     // Confirm the scout's adjacency covers s_border and the
-    // snapshot records the 5-ship fleet.
-    const snap1 = turn1.aiEmpires[0].perception.snapshots["s_border"];
+    // snapshot records the 5-ship fleet. The scout belongs to e_ai
+    // (index 1 — player at 0, AI at 1, enemy at 2).
+    const snap1 = turn1.empires[1].perception.snapshots["s_border"];
     expect(snap1).toBeDefined();
     expect(snap1.fleets).toEqual([{ empireId: "e_enemy", shipCount: 5 }]);
 
@@ -2480,7 +2485,7 @@ describe("fog of war: AI info-leak invariants", () => {
       draft.fleets["f_enemy"].shipCount = 30;
       updateVisibility(draft);
     });
-    expect(turn2.aiEmpires[0].perception.snapshots["s_border"].fleets).toEqual([
+    expect(turn2.empires[1].perception.snapshots["s_border"].fleets).toEqual([
       { empireId: "e_enemy", shipCount: 5 },
     ]);
 
@@ -2530,8 +2535,8 @@ describe("fog of war: AI info-leak invariants", () => {
       });
     const bigHidden = makeStateFor(30);
     const noHidden = makeStateFor(0);
-    expect(bigHidden.aiEmpires[0].perception.discovered).not.toContain("s_enemy");
-    expect(noHidden.aiEmpires[0].perception.discovered).not.toContain("s_enemy");
+    expect(bigHidden.empires[0].perception.discovered).not.toContain("s_enemy");
+    expect(noHidden.empires[0].perception.discovered).not.toContain("s_enemy");
 
     const bigDecision = runAiMoves(bigHidden, "e_ai").fleets["f_our"]?.destinationSystemId;
     const smallDecision = runAiMoves(noHidden, "e_ai").fleets["f_our"]?.destinationSystemId;
@@ -2575,8 +2580,8 @@ describe("fog of war: AI info-leak invariants", () => {
       wars: [["e_ai", "e_enemy"].sort() as [string, string]],
     });
     // Sanity: s_border is discovered (adjacent to own), s_beyond is not.
-    expect(state.aiEmpires[0].perception.discovered).toContain("s_border");
-    expect(state.aiEmpires[0].perception.discovered).not.toContain("s_beyond");
+    expect(state.empires[1].perception.discovered).toContain("s_border");
+    expect(state.empires[1].perception.discovered).not.toContain("s_beyond");
 
     const decided = runAiMoves(state, "e_ai");
     expect(decided.fleets["f_attacker"]?.destinationSystemId).toBe("s_border");
@@ -2604,8 +2609,8 @@ describe("fog of war: filterStateFor", () => {
     expect(filtered.galaxy.bodies).toHaveProperty("b_ai");
     expect(filtered.galaxy.bodies).not.toHaveProperty("b_dark");
     // Acting empire passes through unchanged.
-    const actingInFiltered = filtered.aiEmpires.find((e) => e.id === "e_ai");
-    expect(actingInFiltered).toBe(state.aiEmpires[0]);
+    const actingInFiltered = filtered.empires.find((e) => e.id === "e_ai");
+    expect(actingInFiltered).toBe(state.empires[1]);
   });
 
   it("redacts private fields on empires other than the acting one", () => {
@@ -2635,12 +2640,13 @@ describe("fog of war: filterStateFor", () => {
     const filtered = filterStateFor(state, "e_ai");
     // From the AI's view the player looks like a stub: known identity
     // fields, zeroed private state.
-    expect(filtered.empire.id).toBe("e_player");
-    expect(filtered.empire.name).toBe(state.empire.name);
-    expect(filtered.empire.political).toBe(0);
-    expect(filtered.empire.storyModifiers).toEqual({});
-    expect(filtered.empire.completedProjects).toEqual([]);
-    expect(filtered.empire.perception.discovered).toEqual([]);
+    const playerInFiltered = filtered.empires.find((e) => e.id === "e_player")!;
+    expect(playerInFiltered.id).toBe("e_player");
+    expect(playerInFiltered.name).toBe(state.empires[0].name);
+    expect(playerInFiltered.political).toBe(0);
+    expect(playerInFiltered.storyModifiers).toEqual({});
+    expect(playerInFiltered.completedProjects).toEqual([]);
+    expect(playerInFiltered.perception.discovered).toEqual([]);
   });
 
   it("replaces live fleets at stale-discovered systems with synthetic ones from the snapshot", () => {
@@ -2727,8 +2733,8 @@ describe("fog of war: scouting reward", () => {
     });
     // s_neighbor is discovered (1-jump from own) but NOT yet surveyed
     // (fleet's never been there; empire doesn't own it).
-    expect(state.aiEmpires[0].perception.discovered).toContain("s_neighbor");
-    expect(state.aiEmpires[0].perception.surveyed).not.toContain("s_neighbor");
+    expect(state.empires[1].perception.discovered).toContain("s_neighbor");
+    expect(state.empires[1].perception.surveyed).not.toContain("s_neighbor");
 
     const decided = runAiMoves(state, "e_ai");
     expect(decided.fleets["f_scout"]?.destinationSystemId).toBe("s_neighbor");
@@ -2771,8 +2777,8 @@ describe("fog of war: scouting reward", () => {
       });
     const withBig = mk(30);
     const withNone = mk(0);
-    expect(withBig.aiEmpires[0].perception.discovered).not.toContain("s_hidden");
-    expect(withNone.aiEmpires[0].perception.discovered).not.toContain("s_hidden");
+    expect(withBig.empires[0].perception.discovered).not.toContain("s_hidden");
+    expect(withNone.empires[0].perception.discovered).not.toContain("s_hidden");
     const a = runAiMoves(withBig, "e_ai").fleets["f_scout"]?.destinationSystemId;
     const b = runAiMoves(withNone, "e_ai").fleets["f_scout"]?.destinationSystemId;
     expect(a).toBe(b);
@@ -2856,10 +2862,10 @@ describe("fleet auto-discover: destination picker", () => {
       empire: me,
       fleets: [fleet],
     });
-    expect(state.empire.perception.discovered).toContain("s_b");
-    expect(state.empire.perception.surveyed).toContain("s_a");
-    expect(state.empire.perception.surveyed).not.toContain("s_b");
-    const dest = autoDiscoveryDestination(state, state.empire, state.fleets["f_scout"]);
+    expect(state.empires[0].perception.discovered).toContain("s_b");
+    expect(state.empires[0].perception.surveyed).toContain("s_a");
+    expect(state.empires[0].perception.surveyed).not.toContain("s_b");
+    const dest = autoDiscoveryDestination(state, state.empires[0], state.fleets["f_scout"]);
     expect(dest).toBe("s_b");
   });
 
@@ -2896,7 +2902,7 @@ describe("fleet auto-discover: destination picker", () => {
     // s_enemy must NEVER be returned, even though it's unsurveyed —
     // entering foreign territory auto-declares war and scouting
     // shouldn't do that.
-    const dest = autoDiscoveryDestination(state, state.empire, state.fleets["f_scout"]);
+    const dest = autoDiscoveryDestination(state, state.empires[0], state.fleets["f_scout"]);
     expect(dest).not.toBe("s_enemy");
     expect(dest).not.toBe("s_far");
   });
@@ -2918,7 +2924,7 @@ describe("fog of war: seenFlavour", () => {
     });
     // makeState runs updateVisibility; owning the system should
     // be enough to mark its flavour body as seen.
-    expect(state.empire.perception.seenFlavour).toContain("b_home");
+    expect(state.empires[0].perception.seenFlavour).toContain("b_home");
   });
 
   it("adds a flavour body to seenFlavour once a fleet enters the system", () => {
@@ -2945,13 +2951,13 @@ describe("fog of war: seenFlavour", () => {
     });
     // Scout at home; flavour should NOT be seen yet — sensor
     // reveals s_dig exists but flavour is visit-only.
-    expect(state.aiEmpires[0].perception.seenFlavour).not.toContain("b_dig");
+    expect(state.empires[1].perception.seenFlavour).not.toContain("b_dig");
     // Move the scout into s_dig and re-update visibility.
     const visited = produce(state, (draft) => {
       draft.fleets["f_scout"].systemId = "s_dig";
       updateVisibility(draft);
     });
-    expect(visited.aiEmpires[0].perception.seenFlavour).toContain("b_dig");
+    expect(visited.empires[1].perception.seenFlavour).toContain("b_dig");
   });
 });
 
@@ -3004,7 +3010,7 @@ describe("fog of war: AI decisions", () => {
       fleets: [fleet],
     });
     // Sanity check the seeding: s_far is NOT in the AI's discovered.
-    expect(state.aiEmpires[0].perception.discovered).not.toContain("s_far");
+    expect(state.empires[1].perception.discovered).not.toContain("s_far");
 
     const decided = runAiMoves(state, "e_ai");
     // Whatever destination the AI picks, it mustn't be s_far — that
@@ -3051,10 +3057,10 @@ describe("fog of war: AI decisions", () => {
     // We want the test to bite: force the AI not to have discovered
     // it by moving s_mid out of the AI's systemIds after updateVisibility.
     const hidden = produce(state, (draft) => {
-      const aiDraft = draft.aiEmpires[0];
+      const aiDraft = draft.empires[1];
       aiDraft.perception.discovered = aiDraft.perception.discovered.filter((sid) => sid !== "s_far");
     });
-    expect(hidden.aiEmpires[0].perception.discovered).not.toContain("s_far");
+    expect(hidden.empires[0].perception.discovered).not.toContain("s_far");
 
     const after = produce(hidden, (draft) => {
       const emp = empireById(draft, "e_ai");
@@ -3101,7 +3107,7 @@ describe("fog of war: AI decisions", () => {
     // the enemy-ship cost for empires in enemiesOf(), which comes
     // from state.wars.
     const stateAtWar = { ...stateAtPeace, wars: [["e_ai", "e_enemy"] as [string, string]] };
-    expect(stateAtWar.aiEmpires[0].perception.discovered).not.toContain("s_far");
+    expect(stateAtWar.empires[0].perception.discovered).not.toContain("s_far");
 
     // Baseline score with the hidden stack in place.
     const scoreHidden = score(stateAtWar, "e_ai");

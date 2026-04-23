@@ -1,20 +1,29 @@
 import { produce } from "immer";
 import { eventById, EVENTS } from "./content";
 import { mulberry32 } from "./rng";
-import type { Condition, Effect, GameEvent, GameState, ResourceKey } from "./types";
+import type { Condition, Effect, Empire, GameEvent, GameState, ResourceKey } from "./types";
 
 const RESOURCE_KEYS: ResourceKey[] = ["food", "energy", "political"];
 
+// Local helper to avoid a circular import on reducer.ts. Events are
+// fundamentally for the human empire — there's no eventQueue per AI.
+function human(state: GameState): Empire | null {
+  if (!state.humanEmpireId) return null;
+  return state.empires.find((e) => e.id === state.humanEmpireId) ?? null;
+}
+
 export function conditionMet(state: GameState, cond: Condition): boolean {
+  const player = human(state);
+  if (!player) return false;
   switch (cond.kind) {
     case "hasFlag":
-      return state.empire.flags.includes(cond.flag);
+      return player.flags.includes(cond.flag);
     case "lacksFlag":
-      return !state.empire.flags.includes(cond.flag);
+      return !player.flags.includes(cond.flag);
     case "minResource":
-      return state.empire[cond.resource] >= cond.value;
+      return player[cond.resource] >= cond.value;
     case "originIs":
-      return state.empire.originId === cond.originId;
+      return player.originId === cond.originId;
   }
 }
 
@@ -41,14 +50,15 @@ export function pickRandomEvent(state: GameState, seed: number): GameEvent | nul
 
 export function applyEffect(state: GameState, effect: Effect): GameState {
   return produce(state, (draft) => {
+    const player = human(draft);
+    if (!player) return;
     switch (effect.kind) {
       case "addResource": {
-        draft.empire[effect.resource] += effect.value;
+        player[effect.resource] += effect.value;
         break;
       }
       case "addPops": {
-        // Pops live on bodies — funnel event-granted pops into the capital.
-        const capitalId = draft.empire.capitalBodyId;
+        const capitalId = player.capitalBodyId;
         if (capitalId && draft.galaxy.bodies[capitalId]) {
           const body = draft.galaxy.bodies[capitalId];
           body.pops = Math.min(body.maxPops, body.pops + effect.value);
@@ -56,15 +66,14 @@ export function applyEffect(state: GameState, effect: Effect): GameState {
         break;
       }
       case "addFlag":
-        if (!draft.empire.flags.includes(effect.flag)) {
-          draft.empire.flags.push(effect.flag);
+        if (!player.flags.includes(effect.flag)) {
+          player.flags.push(effect.flag);
         }
         break;
       case "removeFlag":
-        draft.empire.flags = draft.empire.flags.filter((f) => f !== effect.flag);
+        player.flags = player.flags.filter((f) => f !== effect.flag);
         break;
       case "logText":
-        // Log text is attached when the choice resolves; no-op here.
         break;
     }
   });

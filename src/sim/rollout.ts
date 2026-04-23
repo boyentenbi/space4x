@@ -1,7 +1,5 @@
 import { produce } from "immer";
 import {
-  aiPlanMoves,
-  aiPlanProject,
   filterStateFor,
   initialState,
   reduce,
@@ -9,7 +7,6 @@ import {
   totalFleetShipsFor,
   totalPopsOf,
 } from "./reducer";
-import { eventById } from "./content";
 import type { Empire, Expansionism, GameState, Politic } from "./types";
 
 // One empire's stats at some moment in a rollout. Snapshot, not a
@@ -65,7 +62,7 @@ export interface RolloutOptions {
 }
 
 function snapshotEmpires(state: GameState): EmpireSnapshot[] {
-  const empires: Empire[] = [state.empire, ...state.aiEmpires];
+  const empires: Empire[] = state.empires;
   return empires.map((e) => ({
     id: e.id,
     name: e.name,
@@ -80,15 +77,13 @@ function snapshotEmpires(state: GameState): EmpireSnapshot[] {
   }));
 }
 
-// Runs a full game with NO human input. The "player" empire is driven
-// by the same AI planners (aiPlanProject + aiPlanMoves) the AIs use,
-// so all sides are evaluated by the same decision function. Random
-// events and first-contact modals are auto-resolved (event picks
-// choice 0; first contact dismisses) to keep the loop unblocked.
-//
-// One round per loop iteration; we exit on gameOver, when turn count
-// hits maxTurns, or if the loop is making no progress (defensive
-// against a bug where neither endTurn nor an event-resolve advances).
+// Runs a full game with NO human input. We bootstrap a state through
+// the regular newGame action (which seeds one empire as "human") then
+// immediately strip humanEmpireId, putting the sim in headless mode:
+// no events fire, no first-contact modals queue, and every empire
+// gets its phase planned by aiPlanProject / aiPlanMoves through the
+// regular reducer. Termination = state.empires.length <= 1 (someone
+// won outright), or hitting maxTurns.
 export function randomRollout(opts: RolloutOptions): RolloutResult {
   const maxTurns = opts.maxTurns ?? 200;
   let state = reduce(initialState(), {
@@ -100,46 +95,19 @@ export function randomRollout(opts: RolloutOptions): RolloutResult {
     expansionism: opts.expansionism ?? "pragmatist",
     politic: opts.politic ?? "centrist",
   });
+  // Headless: drop the human flag. With it gone the begin-round /
+  // run-phase loops treat every empire identically — the AI planners
+  // run for all of them, no events queue, no first contact queues.
+  state = produce(state, (d) => {
+    d.humanEmpireId = undefined;
+  });
 
   const history: Array<{ turn: number; empires: EmpireSnapshot[] }> = [];
 
-  // Defensive infinite-loop guard. Each successful turn advances
-  // state.turn; if we ever do 100 iterations without a turn change
-  // something is wedged and we bail.
   let stuckCount = 0;
   let lastTurn = state.turn;
 
-  while (state.turn < maxTurns && !state.gameOver) {
-    // Auto-resolve modal-blocking queues before driving the round.
-    if (state.eventQueue.length > 0) {
-      const ev = state.eventQueue[0];
-      const event = eventById(ev.eventId);
-      const choice = event?.choices[0];
-      if (choice) {
-        state = reduce(state, {
-          type: "resolveEvent",
-          eventId: ev.eventId,
-          choiceId: choice.id,
-        });
-      } else {
-        // Defensive: no choice → drop the event so we don't deadlock.
-        state = produce(state, (d) => { d.eventQueue.shift(); });
-      }
-      continue;
-    }
-    if (state.pendingFirstContacts.length > 0) {
-      state = reduce(state, { type: "dismissFirstContact" });
-      continue;
-    }
-
-    // Drive the player-side empire as an AI. aiPlanProject queues
-    // body / empire orders; aiPlanMoves sets fleet destinations.
-    // Both run before the round begins; the existing endTurn flow
-    // executes them in the player's phase alongside the AIs'.
-    state = produce(state, (draft) => {
-      aiPlanProject(draft, draft.empire);
-      aiPlanMoves(draft, draft.empire);
-    });
+  while (state.turn < maxTurns && state.empires.length > 1) {
     state = reduce(state, { type: "endTurn" });
 
     if (opts.recordHistory) {
@@ -169,7 +137,7 @@ export function randomRollout(opts: RolloutOptions): RolloutResult {
   return {
     seed: opts.seed,
     turns: state.turn,
-    gameOver: state.gameOver,
+    gameOver: state.empires.length <= 1,
     winner,
     finalEmpires,
     history: opts.recordHistory ? history : undefined,

@@ -393,12 +393,21 @@ export type PerceivedGameState = GameState & {
 };
 
 export interface GameState {
-  schemaVersion: 25;
+  schemaVersion: 26;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;
-  empire: Empire;           // The player's empire.
-  aiEmpires: Empire[];      // AI-controlled rivals.
+  // All empires in play. The sim treats every empire identically;
+  // there's no "player slot." Whether any of them is human-driven
+  // is signalled by `humanEmpireId` below — used only for things
+  // that genuinely need to know (random events / first-contact
+  // modals fire only for the human; chronicle phrasing uses "you"
+  // for the human; gameOver fires when the human is eliminated).
+  // When humanEmpireId is undefined, the sim runs fully headless
+  // (rollouts) and those player-only paths are inert.
+  empires: Empire[];
+  // Optional id of the empire under human control. Off → headless.
+  humanEmpireId?: string;
   fleets: Record<string, Fleet>;
   // Ordered pairs of warring empires. Each pair is sorted by id so
   // lookups are canonical; membership is symmetric.
@@ -408,14 +417,17 @@ export interface GameState {
   // dispatching runPhase actions with pacing, advancing this id through
   // the turn order until it wraps back to null at end-of-round.
   currentPhaseEmpireId?: string | null;
+  // Random events queued for the human empire. Headless → empty
+  // (no events fire when there's nobody to surface them to).
   eventQueue: PendingEvent[];
   eventLog: Array<{ turn: number; eventId: string; choiceId: string | null; text: string }>;
-  // Modal queue: a project just finished for the player and we want to
-  // show its completion panel before returning to the normal flow.
+  // Modal queue: a project just finished for the human empire.
   projectCompletions: Array<{ projectId: string; turn: number }>;
-  // First-contact events the player hasn't seen yet. Each entry pops
-  // a modal (or chronicle highlight) introducing the rival empire.
+  // First-contact events the human empire hasn't seen yet.
   pendingFirstContacts: Array<{ otherEmpireId: string; turn: number }>;
+  // True once the human empire has lost its last system. In headless
+  // mode (no human), use external termination criteria instead
+  // (e.g. last empire standing).
   gameOver: boolean;
 }
 

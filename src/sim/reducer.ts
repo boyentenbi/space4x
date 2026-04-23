@@ -24,7 +24,7 @@ import type {
 
 // Every empire-scoped action carries `byEmpireId` so the player and the
 // AI go through the same validation + effect path. Player UI passes
-// `state.empire.id`; the AI passes the acting empire's id.
+// `state.humanEmpireId`; the AI passes the acting empire's id.
 export type Action =
   | {
       type: "newGame";
@@ -280,31 +280,11 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 25,
+    schemaVersion: 26,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
-    empire: {
-      id: "empire_player",
-      name: "",
-      originId: "",
-      speciesId: "",
-      color: "#7ec8ff",
-      food: 0,
-      energy: 0,
-      political: 0,
-      compute: { cap: 0, used: 0 },
-      expansionism: "pragmatist",
-      politic: "centrist",
-      capitalBodyId: null,
-      systemIds: [],
-      storyModifiers: {},
-      completedProjects: [],
-      adoptedPolicies: [],
-      flags: [],
-      perception: { discovered: [], snapshots: {}, seenFlavour: [], surveyed: [] },
-    },
-    aiEmpires: [],
+    empires: [],
     fleets: {},
     wars: [],
     currentPhaseEmpireId: null,
@@ -353,12 +333,26 @@ function spawnShipsInSystem(
 // ===== Cross-empire helpers =====
 
 export function allEmpires(state: GameState): Empire[] {
-  return [state.empire, ...state.aiEmpires];
+  return state.empires;
 }
 
 export function empireById(state: GameState, id: string): Empire | null {
-  if (state.empire.id === id) return state.empire;
-  return state.aiEmpires.find((e) => e.id === id) ?? null;
+  return state.empires.find((e) => e.id === id) ?? null;
+}
+
+// The human-controlled empire, if any. Live UI sessions always have
+// one; rollouts run with humanEmpireId undefined and treat this as
+// null. Throws on lookup failure when the caller insists (the !
+// variant) — useful in UI code where "human exists" is a precondition.
+export function humanEmpire(state: GameState): Empire | null {
+  if (!state.humanEmpireId) return null;
+  return empireById(state, state.humanEmpireId);
+}
+
+export function humanEmpireOrThrow(state: GameState): Empire {
+  const e = humanEmpire(state);
+  if (!e) throw new Error("humanEmpire required but not set");
+  return e;
 }
 
 // ===== Per-empire helpers (empire arg explicit) =====
@@ -1057,10 +1051,13 @@ export function needsPlayerAttention(state: GameState): boolean {
   if (state.eventQueue.length > 0) return true;
   if (state.pendingFirstContacts.length > 0) return true;
   if (state.projectCompletions.length > 0) return true;
-  if (foreignFleetsInSensor(state, state.empire).length > 0) return true;
+  // Headless: no human → there's nothing the human needs. Skip the
+  // rest of the gates.
+  const player = humanEmpire(state);
+  if (!player) return false;
+  if (foreignFleetsInSensor(state, player).length > 0) return true;
   // Player-driven decision points: nothing being built, or any of
   // our fleets is idling and hasn't been marked "sleeping."
-  const player = state.empire;
   if (allOrdersOf(state, player).length === 0) return true;
   for (const f of Object.values(state.fleets)) {
     if (f.empireId !== player.id) continue;
@@ -1462,10 +1459,10 @@ function resolveCombat(draft: GameState): void {
       if (f.shipCount <= 0) delete draft.fleets[f.id];
     }
 
-    if (empires.includes(draft.empire.id)) {
+    const playerId = draft.humanEmpireId;
+    if (playerId && empires.includes(playerId)) {
       const sys = draft.galaxy.systems[sysId];
       const sysName = sys?.name ?? "a contested system";
-      const playerId = draft.empire.id;
       const parts: string[] = [];
       // Player side first, then each foreign empire alphabetically.
       const orderedEmpires = empires.slice().sort((a, b) => {
@@ -1553,7 +1550,8 @@ function processOccupation(draft: GameState): void {
     const continuing = sys.occupation && sys.occupation.empireId === invaderId;
     const newTurns = continuing ? sys.occupation!.turns + 1 : 1;
     draft.galaxy.systems[sys.id].occupation = { empireId: invaderId, turns: newTurns };
-    if (!continuing && (ownerId === draft.empire.id || invaderId === draft.empire.id)) {
+    const playerId = draft.humanEmpireId;
+    if (!continuing && playerId && (ownerId === playerId || invaderId === playerId)) {
       const invader = empireById(draft, invaderId);
       draft.eventLog.push({
         turn: draft.turn,
@@ -1611,8 +1609,8 @@ function flipSystem(
   }
 
   // Log for the player if they're on either side of it.
-  const playerId = draft.empire.id;
-  if (fromOwnerId === playerId || toOwnerId === playerId) {
+  const playerId = draft.humanEmpireId;
+  if (playerId && (fromOwnerId === playerId || toOwnerId === playerId)) {
     const winner = toOwnerId === playerId ? "You" : newOwner.name;
     const loser = fromOwnerId === playerId ? "you" : oldOwner.name;
     draft.eventLog.push({
@@ -1817,8 +1815,7 @@ export function filterStateFor(
       bodies: filteredBodies,
       hyperlanes: filteredLanes,
     },
-    empire: state.empire.id === empireId ? state.empire : redact(state.empire),
-    aiEmpires: state.aiEmpires.map(redact),
+    empires: state.empires.map((e) => (e.id === empireId ? e : redact(e))),
     fleets: filteredFleets,
   };
   return filtered as PerceivedGameState;
@@ -1922,7 +1919,7 @@ function detectFirstContacts(draft: GameState): void {
   const sensorByEmpire = new Map<string, Set<string>>();
   for (const e of empires) sensorByEmpire.set(e.id, sensorSet(draft, e.id, adj));
   const fleetsList = Object.values(draft.fleets).filter((f) => f.shipCount > 0);
-  const playerId = draft.empire.id;
+  const playerId = draft.humanEmpireId;
 
   for (let i = 0; i < empires.length; i++) {
     for (let j = i + 1; j < empires.length; j++) {
@@ -1969,39 +1966,40 @@ function detectFirstContacts(draft: GameState): void {
 
 function checkEliminations(draft: GameState): void {
   // Lose your last system → you're out, regardless of stray fleets.
-  // The previous "wandering ghost empire" rule kept doomed empires
-  // limping along with surviving fleets, which dragged rollouts on
-  // long after the meaningful conflict was resolved and let dead
-  // empires keep biting. Same rule for player + AIs.
-  if (draft.empire.systemIds.length === 0 && !draft.gameOver) {
-    draft.gameOver = true;
-    draft.eventLog.push({
-      turn: draft.turn,
-      eventId: "empire_eliminated",
-      choiceId: null,
-      text: `Your empire has fallen. There is nothing left to command.`,
-    });
-  }
+  // Sweep every empire (no human/AI distinction); if the human's
+  // empire was among the casualties, set gameOver. AI eliminations
+  // also drop wars + orphan fleets so the world stops tracking
+  // ships nobody can command.
   const survivors: Empire[] = [];
-  for (const ai of draft.aiEmpires) {
-    if (ai.systemIds.length > 0) {
-      survivors.push(ai);
+  for (const e of draft.empires) {
+    if (e.systemIds.length > 0) {
+      survivors.push(e);
     } else {
-      // Clean up wars + any orphan fleets so the world doesn't keep
-      // tracking ships nobody can command.
-      draft.wars = draft.wars.filter(([a, b]) => a !== ai.id && b !== ai.id);
+      draft.wars = draft.wars.filter(([a, b]) => a !== e.id && b !== e.id);
       for (const fid of Object.keys(draft.fleets)) {
-        if (draft.fleets[fid].empireId === ai.id) delete draft.fleets[fid];
+        if (draft.fleets[fid].empireId === e.id) delete draft.fleets[fid];
       }
-      draft.eventLog.push({
-        turn: draft.turn,
-        eventId: "empire_eliminated",
-        choiceId: null,
-        text: `${ai.name} has fallen.`,
-      });
+      if (e.id === draft.humanEmpireId) {
+        if (!draft.gameOver) {
+          draft.gameOver = true;
+          draft.eventLog.push({
+            turn: draft.turn,
+            eventId: "empire_eliminated",
+            choiceId: null,
+            text: `Your empire has fallen. There is nothing left to command.`,
+          });
+        }
+      } else {
+        draft.eventLog.push({
+          turn: draft.turn,
+          eventId: "empire_eliminated",
+          choiceId: null,
+          text: `${e.name} has fallen.`,
+        });
+      }
     }
   }
-  draft.aiEmpires = survivors;
+  draft.empires = survivors;
 }
 
 export function fleetsInSystem(state: GameState, systemId: string): Fleet[] {
@@ -2048,7 +2046,8 @@ export function maybeAutoDeclareWar(
   if (atWar(state, moverEmpireId, ownerId)) return;
   const pair = sortedPair(moverEmpireId, ownerId);
   state.wars.push(pair);
-  if (moverEmpireId === state.empire.id || ownerId === state.empire.id) {
+  const playerId = state.humanEmpireId;
+  if (playerId && (moverEmpireId === playerId || ownerId === playerId)) {
     const mover = empireById(state, moverEmpireId);
     const defender = empireById(state, ownerId);
     state.eventLog.push({
@@ -2170,25 +2169,28 @@ export function canColonizeFor(state: GameState, empire: Empire, targetBodyId: s
   return true;
 }
 
-// ===== Player-facing convenience (default to player empire) =====
+// ===== Player-facing convenience (default to human empire) =====
+// Each of these throws if there's no human empire — they're meant
+// for UI code where "human exists" is a precondition. Headless
+// callers should use the *Of variants and pass an explicit empire.
 
 export function ownedBodies(state: GameState): Body[] {
-  return ownedBodiesOf(state, state.empire);
+  return ownedBodiesOf(state, humanEmpireOrThrow(state));
 }
 export function totalPops(state: GameState): number {
-  return totalPopsOf(state, state.empire);
+  return totalPopsOf(state, humanEmpireOrThrow(state));
 }
 export function bodyIncome(state: GameState, body: Body): Resources {
-  return bodyIncomeFor(state.empire, body);
+  return bodyIncomeFor(humanEmpireOrThrow(state), body);
 }
 export function perTurnIncome(state: GameState): Resources {
-  return perTurnIncomeOf(state, state.empire);
+  return perTurnIncomeOf(state, humanEmpireOrThrow(state));
 }
 export function computeCap(state: GameState): number {
-  return computeCapOf(state, state.empire);
+  return computeCapOf(state, humanEmpireOrThrow(state));
 }
 export function canColonize(state: GameState, targetBodyId: string): boolean {
-  return canColonizeFor(state, state.empire, targetBodyId);
+  return canColonizeFor(state, humanEmpireOrThrow(state), targetBodyId);
 }
 
 // ===== Order completion =====
@@ -2215,7 +2217,7 @@ function completeOrder(
     }
     empire.political -= order.politicalCost;
     target.pops = Math.max(target.pops, COLONIZE_STARTER_POPS);
-    if (empire.id === draft.empire.id) {
+    if (empire.id === draft.humanEmpireId) {
       draft.eventLog.push({
         turn: draft.turn,
         eventId: "colonize",
@@ -2272,7 +2274,7 @@ function completeOrder(
         if (sys && !sys.ownerId) {
           sys.ownerId = empire.id;
           if (!empire.systemIds.includes(sys.id)) empire.systemIds.push(sys.id);
-          if (empire.id === draft.empire.id) {
+          if (empire.id === draft.humanEmpireId) {
             draft.eventLog.push({
               turn: draft.turn,
               eventId: "outpost",
@@ -2284,7 +2286,7 @@ function completeOrder(
       }
     }
     empire.completedProjects.push(proj.id);
-    if (empire.id === draft.empire.id) {
+    if (empire.id === draft.humanEmpireId) {
       draft.eventLog.push({
         turn: draft.turn,
         eventId: `project:${proj.id}`,
@@ -2428,7 +2430,7 @@ function tickEmpire(draft: GameState, empire: Empire): void {
       starvedName = target.name;
     }
     empire.food = 0;
-    if (starvedName && empire.id === draft.empire.id) {
+    if (starvedName && empire.id === draft.humanEmpireId) {
       draft.eventLog.push({
         turn: draft.turn,
         eventId: "famine",
@@ -3004,7 +3006,7 @@ function processFleetOrders(draft: GameState, onlyEmpireId?: string): void {
       fleet.destinationSystemId,
     );
     if (!path || path.length === 0) {
-      if (fleet.empireId === draft.empire.id) {
+      if (fleet.empireId === draft.humanEmpireId) {
         const here = draft.galaxy.systems[fleet.systemId];
         const target = draft.galaxy.systems[fleet.destinationSystemId];
         draft.eventLog.push({
@@ -3018,14 +3020,11 @@ function processFleetOrders(draft: GameState, onlyEmpireId?: string): void {
       continue;
     }
     // Compute budget check: moving N ships costs N compute.
-    const owner =
-      draft.empire.id === fleet.empireId
-        ? draft.empire
-        : draft.aiEmpires.find((e) => e.id === fleet.empireId);
+    const owner = empireById(draft, fleet.empireId);
     if (!owner) continue;
     const cost = fleet.shipCount;
     if (owner.compute.used + cost > owner.compute.cap) {
-      if (fleet.empireId === draft.empire.id) {
+      if (fleet.empireId === draft.humanEmpireId) {
         const here = draft.galaxy.systems[fleet.systemId];
         draft.eventLog.push({
           turn: draft.turn,
@@ -3410,7 +3409,7 @@ function applyAdoptPolicy(
   emp.political -= cost;
   emp.adoptedPolicies.push(p.id);
   emp.storyModifiers[`policy:${p.id}`] = [...p.modifiers];
-  const prefix = emp.id === draft.empire.id ? "" : `${emp.name}: `;
+  const prefix = emp.id === draft.humanEmpireId ? "" : `${emp.name}: `;
   draft.eventLog.push({
     turn: draft.turn,
     eventId: `policy:${p.id}`,
@@ -3431,7 +3430,7 @@ function applyDeclareWar(
   draft.wars.push(sortedPair(aggressor.id, target.id));
   // Log only when the player is involved, to keep the chronicle clean
   // of AI-vs-AI noise until we build a dedicated diplomacy feed.
-  const playerId = draft.empire.id;
+  const playerId = draft.humanEmpireId;
   if (aggressor.id === playerId || target.id === playerId) {
     const who = aggressor.id === playerId ? "You" : aggressor.name;
     draft.eventLog.push({
@@ -3453,7 +3452,7 @@ function applyMakePeace(
   if (!atWar(draft, a.id, b.id)) return;
   const [x, y] = sortedPair(a.id, b.id);
   draft.wars = draft.wars.filter(([p, q]) => !(p === x && q === y));
-  const playerId = draft.empire.id;
+  const playerId = draft.humanEmpireId;
   if (a.id === playerId || b.id === playerId) {
     const otherName = a.id === playerId ? b.name : a.name;
     draft.eventLog.push({
@@ -3588,7 +3587,8 @@ export function reduce(state: GameState, action: Action): GameState {
         return { galaxy: nextGalaxy, capitalBodyId: starterBodyId, systemId: sysId };
       }
 
-      const playerStarter = claimStarter(fresh.empire.id, playerStarterId, origin.startingPops);
+      const playerEmpireId = "empire_player";
+      const playerStarter = claimStarter(playerEmpireId, playerStarterId, origin.startingPops);
       // Shuffled palette so each new game picks a different ordering;
       // consumed without replacement so every AI gets a distinct colour.
       const aiColorPool = [...AI_COLOR_PALETTE];
@@ -3613,36 +3613,38 @@ export function reduce(state: GameState, action: Action): GameState {
         draft.turn = 1;
         draft.rngSeed = action.seed >>> 0;
         draft.galaxy = nextGalaxy;
+        draft.humanEmpireId = playerEmpireId;
 
-        // Player empire setup.
-        draft.empire.name = action.empireName || "Unnamed Empire";
-        draft.empire.originId = action.originId;
-        draft.empire.speciesId = action.speciesId;
-        draft.empire.expansionism = action.expansionism;
-        draft.empire.politic = action.politic;
+        // Build the human empire the same way we build AIs — one
+        // makeEmpire call, then fill in the bits the player chose
+        // (name, species, archetype, portrait). The sim doesn't
+        // privilege this entry; UI distinguishes it via humanEmpireId.
         const species = speciesById(action.speciesId);
-        if (species) draft.empire.color = species.color;
-        if (action.portraitArt) draft.empire.portraitArt = action.portraitArt;
-        draft.empire.capitalBodyId = playerStarter.capitalBodyId;
-        draft.empire.systemIds = [playerStarter.systemId];
-        // All empire-wide stocks seed directly from the origin.
-        draft.empire.food = origin.startingResources.food ?? 0;
-        draft.empire.energy = origin.startingResources.energy ?? 0;
-        draft.empire.political = origin.startingResources.political ?? 0;
-        // Apply origin story modifiers + auto-queued starter projects.
+        const playerEmpire = makeEmpire({
+          id: playerEmpireId,
+          name: action.empireName || "Unnamed Empire",
+          color: species?.color ?? "#7ec8ff",
+          speciesId: action.speciesId,
+          originId: action.originId,
+          expansionism: action.expansionism,
+          politic: action.politic,
+          portraitArt: action.portraitArt,
+        });
+        playerEmpire.capitalBodyId = playerStarter.capitalBodyId;
+        playerEmpire.systemIds = [playerStarter.systemId];
+        playerEmpire.food = origin.startingResources.food ?? 0;
+        playerEmpire.energy = origin.startingResources.energy ?? 0;
+        playerEmpire.political = origin.startingResources.political ?? 0;
         if (origin.startingStoryModifiers) {
           for (const [key, mods] of Object.entries(origin.startingStoryModifiers)) {
-            draft.empire.storyModifiers[key] = [...mods];
+            playerEmpire.storyModifiers[key] = [...mods];
           }
         }
         if (origin.startingProjectIds) {
           for (const pid of origin.startingProjectIds) {
             const proj = projectById(pid);
             if (!proj) continue;
-            const hostBodyId =
-              proj.scope === "body"
-                ? draft.empire.capitalBodyId
-                : draft.empire.capitalBodyId;
+            const hostBodyId = playerEmpire.capitalBodyId;
             if (!hostBodyId) continue;
             const hostBody = draft.galaxy.bodies[hostBodyId];
             if (!hostBody) continue;
@@ -3656,26 +3658,28 @@ export function reduce(state: GameState, action: Action): GameState {
             });
           }
         }
-        // Install any origin-provided starter Features on the capital
-        // (e.g. Matriarchal Hive arrives with a Brood Mother).
-        if (origin.startingFeatures && draft.empire.capitalBodyId) {
-          const capBody = draft.galaxy.bodies[draft.empire.capitalBodyId];
+        if (origin.startingFeatures && playerEmpire.capitalBodyId) {
+          const capBody = draft.galaxy.bodies[playerEmpire.capitalBodyId];
           if (capBody) {
             for (const fid of origin.startingFeatures) {
               if (!capBody.features.includes(fid)) capBody.features.push(fid);
             }
           }
         }
-        syncFeatureModifiers(draft, draft.empire);
-        draft.empire.compute.cap = computeCapOf(draft, draft.empire);
-        draft.empire.compute.used = 0;
+        // Push the player into the array first so phase order goes
+        // [human, ai_0, ai_1]. syncFeatureModifiers + computeCapOf
+        // run after we've placed it so the empire sees its own bodies.
+        draft.empires.push(playerEmpire);
+        syncFeatureModifiers(draft, playerEmpire);
+        playerEmpire.compute.cap = computeCapOf(draft, playerEmpire);
+        playerEmpire.compute.used = 0;
         for (const bid of draft.galaxy.systems[playerStarter.systemId].bodyIds) {
           const body = draft.galaxy.bodies[bid];
-          if (body) body.hammers = Math.floor(body.pops * hammersPerPopFor(draft.empire, body));
+          if (body) body.hammers = Math.floor(body.pops * hammersPerPopFor(playerEmpire, body));
         }
 
-        // AI empires — one per leader.
-        draft.aiEmpires = aiStarters.map(({ leader, empireId, color, starter, originObj }) => {
+        // AI empires — one per leader. Same factory + setup loop.
+        for (const { leader, empireId, color, starter, originObj } of aiStarters) {
           const empire = makeEmpire({
             id: empireId,
             name: leader.name,
@@ -3728,20 +3732,17 @@ export function reduce(state: GameState, action: Action): GameState {
               }
             }
           }
+          draft.empires.push(empire);
           syncFeatureModifiers(draft, empire);
           empire.compute.cap = computeCapOf(draft, empire);
-          return empire;
-        });
-        // Seed AI bodies' hammers too so turn-1 rates show correctly.
-        for (const ai of draft.aiEmpires) {
-          for (const bid of draft.galaxy.systems[ai.systemIds[0]].bodyIds) {
+          for (const bid of draft.galaxy.systems[starter.systemId].bodyIds) {
             const body = draft.galaxy.bodies[bid];
-            if (body) body.hammers = Math.floor(body.pops * hammersPerPopFor(ai, body));
+            if (body) body.hammers = Math.floor(body.pops * hammersPerPopFor(empire, body));
           }
         }
 
         // Every empire starts with one frigate at its capital system.
-        spawnShipsInSystem(draft, draft.empire.id, playerStarter.systemId, 1);
+        spawnShipsInSystem(draft, playerEmpireId, playerStarter.systemId, 1);
         for (let i = 0; i < aiStarters.length; i++) {
           spawnShipsInSystem(draft, `empire_ai_${i}`, aiStarters[i].starter.systemId, 1);
         }
@@ -3852,24 +3853,24 @@ export function reduce(state: GameState, action: Action): GameState {
 }
 
 // Per-round kickoff: advance the turn counter, AI project-planning,
-// tick every empire, and arm the phase cycle at the player.
+// tick every empire, and arm the phase cycle at the first empire
+// in the array (which is the human, by newGame ordering).
 function applyBeginRound(state: GameState): GameState {
   return produce(state, (draft) => {
     draft.turn += 1;
     draft.rngSeed = nextSeed(draft.rngSeed);
 
-    // AI project planning runs before ticks so newly-queued orders
-    // drain this turn (mirrors how the player queues before endTurn).
-    for (const ai of draft.aiEmpires) {
-      aiPlanProject(draft, ai);
+    // AI project planning for every non-human empire. The human's
+    // own queue comes from UI dispatches before endTurn (or, in
+    // headless rollouts, the rollout driver pre-plans manually).
+    for (const e of draft.empires) {
+      if (e.id === draft.humanEmpireId) continue;
+      aiPlanProject(draft, e);
     }
 
-    tickEmpire(draft, draft.empire);
-    for (const ai of draft.aiEmpires) {
-      tickEmpire(draft, ai);
-    }
+    for (const e of draft.empires) tickEmpire(draft, e);
 
-    draft.currentPhaseEmpireId = draft.empire.id;
+    draft.currentPhaseEmpireId = draft.empires[0]?.id ?? null;
   });
 }
 
@@ -3882,27 +3883,23 @@ function applyRunPhase(state: GameState): GameState {
   if (!currentId) return state;
 
   let next = produce(state, (draft) => {
-    const isAI = draft.empire.id !== currentId;
+    const acting = empireById(draft, currentId);
+    const isHuman = currentId === draft.humanEmpireId;
     const diplomacyRand = mulberry32(draft.rngSeed ^ 0xd1910ac7);
 
-    if (isAI) {
-      const ai = draft.aiEmpires.find((e) => e.id === currentId);
-      if (ai) {
-        aiPlanDiplomacy(draft, ai, diplomacyRand);
-        aiPlanMoves(draft, ai);
-      }
-    } else {
-      // Player-phase: run the auto-discover chooser for any of the
-      // player's fleets flagged for it. Acts only on fleets without
-      // a current destination — the player's manual routes take
-      // precedence.
-      const player = draft.empire;
+    if (acting && !isHuman) {
+      aiPlanDiplomacy(draft, acting, diplomacyRand);
+      aiPlanMoves(draft, acting);
+    } else if (acting) {
+      // Human's phase: run the auto-discover chooser for any of the
+      // human empire's fleets flagged for it. Acts only on fleets
+      // without a current destination — manual routes take precedence.
       for (const f of Object.values(draft.fleets)) {
         if (f.empireId !== currentId) continue;
         if (f.shipCount <= 0) continue;
         if (!f.autoDiscover) continue;
         if (f.destinationSystemId) continue;
-        const dest = autoDiscoveryDestination(draft, player, f);
+        const dest = autoDiscoveryDestination(draft, acting, f);
         if (dest) {
           applySetFleetDestination(draft, {
             byEmpireId: currentId,
@@ -3916,7 +3913,7 @@ function applyRunPhase(state: GameState): GameState {
     processFleetOrders(draft, currentId);
     resolveCombat(draft);
 
-    const order = [draft.empire.id, ...draft.aiEmpires.map((e) => e.id)];
+    const order = draft.empires.map((e) => e.id);
     const idx = order.indexOf(currentId);
     const isLast = idx === -1 || idx === order.length - 1;
     if (isLast) {
@@ -3931,8 +3928,13 @@ function applyRunPhase(state: GameState): GameState {
   });
 
   // Random event pick happens outside produce so it can consult the
-  // post-round rng. Only fires when we've just finalized (no next phase).
-  if (next.currentPhaseEmpireId === null || next.currentPhaseEmpireId === undefined) {
+  // post-round rng. Only fires when we've just finalized (no next
+  // phase) AND there's a human empire to surface the event to —
+  // headless rollouts skip event generation entirely.
+  if (
+    (next.currentPhaseEmpireId === null || next.currentPhaseEmpireId === undefined) &&
+    next.humanEmpireId
+  ) {
     const rand = mulberry32(next.rngSeed);
     if (rand() < 0.55) {
       const event = pickRandomEvent(next, next.rngSeed);
