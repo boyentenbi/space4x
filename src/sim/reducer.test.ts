@@ -1326,6 +1326,70 @@ describe("AI fleet routing (decision only)", () => {
     // foreign-owned system, which would auto-declare war).
     expect(decided.fleets["f_iso"]?.destinationSystemId).not.toBe("s_other");
   });
+
+  it("isolationist with a big fleet won't invade a juicy peaceful neighbour", () => {
+    // Regression for the "start a war to unlock ×1.2 fleet bonus"
+    // exploit. At-peace isolationist AI sits with 15 ships next to
+    // the player's plump 2-temperate system. Before the baseline-
+    // war gating, scoring this move flipped the atWar flag on in
+    // the projection and retroactively inflated every own ship by
+    // 20% (+1875), which plus occupation credit crossed the
+    // AT_WAR_COST threshold and the AI attacked. With the fix, the
+    // ×1.2 only applies if we were at war BEFORE the move — so the
+    // projection no longer pays a phantom dividend for declaring
+    // war, and AT_WAR_COST dominates. Isolationist stays home.
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const juicy = makeSystem({
+      id: "s_juicy",
+      bodyIds: ["b_a", "b_b"],
+      ownerId: "e_player",
+    });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    // Two populated temperate worlds — the kind of cluster that
+    // previously tempted isolationist AIs to break peace.
+    const juicyA = makeBody({
+      id: "b_a",
+      systemId: "s_juicy",
+      habitability: "temperate",
+      maxPops: 100,
+      pops: 40,
+    });
+    const juicyB = makeBody({
+      id: "b_b",
+      systemId: "s_juicy",
+      habitability: "temperate",
+      maxPops: 100,
+      pops: 40,
+    });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_a",
+      systemIds: ["s_juicy"],
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_ai",
+      systemIds: ["s_ai"],
+      expansionism: "isolationist",
+    });
+    const bigFleet: Fleet = {
+      id: "f_big",
+      empireId: "e_ai",
+      systemId: "s_ai",
+      shipCount: 15,
+    };
+    const state = makeState({
+      systems: [aiHome, juicy],
+      bodies: [aiBody, juicyA, juicyB],
+      hyperlanes: [["s_ai", "s_juicy"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [bigFleet],
+      // Peace — moving into s_juicy would auto-declare war.
+    });
+    const decided = runAiMoves(state, "e_ai");
+    expect(decided.fleets["f_big"]?.destinationSystemId).not.toBe("s_juicy");
+  });
 });
 
 describe("per-empire phases", () => {
