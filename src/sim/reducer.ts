@@ -19,6 +19,7 @@ import type {
   Resources,
   ResourceKey,
   StarSystem,
+  SystemSnapshot,
 } from "./types";
 
 // Every empire-scoped action carries `byEmpireId` so the player and the
@@ -404,12 +405,14 @@ function makeEmpire(spec: {
     completedProjects: [],
     adoptedPolicies: [],
     flags: [],
+    discovered: [],
+    snapshots: {},
   };
 }
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 22,
+    schemaVersion: 23,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -430,6 +433,8 @@ export function initialState(): GameState {
       completedProjects: [],
       adoptedPolicies: [],
       flags: [],
+      discovered: [],
+      snapshots: {},
     },
     aiEmpires: [],
     fleets: {},
@@ -1700,6 +1705,95 @@ function flipSystem(
       choiceId: null,
       text: `${sys.name} has fallen — ${winner} took it from ${loser}.`,
     });
+  }
+}
+
+// Build an undirected adjacency map keyed by system id. Used by both
+// fog-of-war sensor calculation and (eventually) anything else that
+// needs one-jump neighbours.
+function buildAdjacency(state: GameState): Map<string, string[]> {
+  const adj = new Map<string, string[]>();
+  for (const [a, b] of state.galaxy.hyperlanes) {
+    let la = adj.get(a);
+    if (!la) { la = []; adj.set(a, la); }
+    la.push(b);
+    let lb = adj.get(b);
+    if (!lb) { lb = []; adj.set(b, lb); }
+    lb.push(a);
+  }
+  return adj;
+}
+
+// Set of system IDs the empire can currently observe. Sensor sources:
+//   - every system the empire owns (itself + 1-jump neighbours)
+//   - every system containing one of its fleets (itself + 1-jump neighbours)
+// One jump gives exactly one turn of warning before an enemy fleet hits
+// you: they cross from the dark into your sensor border, then on the
+// following turn they hit a system you actually defend.
+export function sensorSet(
+  state: GameState,
+  empireId: string,
+  adj?: Map<string, string[]>,
+): Set<string> {
+  const set = new Set<string>();
+  const empire = empireById(state, empireId);
+  if (!empire) return set;
+  const adjMap = adj ?? buildAdjacency(state);
+  const seed = (sid: string) => {
+    set.add(sid);
+    const ns = adjMap.get(sid);
+    if (ns) for (const n of ns) set.add(n);
+  };
+  for (const sid of empire.systemIds) seed(sid);
+  for (const f of Object.values(state.fleets)) {
+    if (f.empireId !== empireId || f.shipCount <= 0) continue;
+    seed(f.systemId);
+  }
+  return set;
+}
+
+// Snapshot the live state of a single system from `empireId`'s vantage
+// point. Aggregates fleets by empireId so we don't pin down individual
+// fleet ids in the snapshot (those churn).
+function snapshotSystem(
+  state: GameState,
+  systemId: string,
+): SystemSnapshot {
+  const sys = state.galaxy.systems[systemId];
+  const totals = new Map<string, number>();
+  for (const f of Object.values(state.fleets)) {
+    if (f.systemId !== systemId || f.shipCount <= 0) continue;
+    totals.set(f.empireId, (totals.get(f.empireId) ?? 0) + f.shipCount);
+  }
+  const fleets: Array<{ empireId: string; shipCount: number }> = [];
+  for (const [empireId, shipCount] of totals) {
+    fleets.push({ empireId, shipCount });
+  }
+  return {
+    turn: state.turn,
+    ownerId: sys?.ownerId ?? null,
+    fleets,
+  };
+}
+
+// For every empire, derive its sensor set, mark visible systems as
+// discovered, and refresh snapshots for those visible systems. Stale
+// snapshots (out-of-sensor) are left untouched — they decay implicitly
+// by becoming older relative to draft.turn.
+export function updateVisibility(draft: GameState): void {
+  const adj = buildAdjacency(draft);
+  for (const empire of allEmpires(draft)) {
+    const visible = sensorSet(draft, empire.id, adj);
+    // Track discovered as a Set during the merge so we don't pay
+    // O(n) per lookup, then write back as an array (storage shape).
+    const discoveredSet = new Set(empire.discovered);
+    for (const sid of visible) {
+      discoveredSet.add(sid);
+      empire.snapshots[sid] = snapshotSystem(draft, sid);
+    }
+    if (discoveredSet.size !== empire.discovered.length) {
+      empire.discovered = [...discoveredSet];
+    }
   }
 }
 
@@ -3402,6 +3496,11 @@ export function reduce(state: GameState, action: Action): GameState {
         for (let i = 0; i < aiStarters.length; i++) {
           spawnShipsInSystem(draft, `empire_ai_${i}`, aiStarters[i].starter.systemId, 1);
         }
+
+        // Seed fog: each empire starts knowing its capital system + the
+        // 1-jump ring around it. Without this, the very first round of
+        // play has empty discovered/snapshot maps until end-of-round.
+        updateVisibility(draft);
       });
     }
 
@@ -3517,6 +3616,7 @@ function applyRunPhase(state: GameState): GameState {
       processOccupation(draft);
       checkEliminations(draft);
       detectFirstContacts(draft);
+      updateVisibility(draft);
       draft.currentPhaseEmpireId = null;
     } else {
       draft.currentPhaseEmpireId = order[idx + 1];

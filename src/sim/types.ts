@@ -327,6 +327,14 @@ export interface Empire {
   completedProjects: string[];
   adoptedPolicies: string[];
   flags: string[];
+  // Fog of war: every system this empire has ever seen. Monotonic —
+  // once discovered, a system stays discovered (the empire knows the
+  // terrain even if the lights go out). UI shows discovered-but-out-
+  // of-sensor systems with their last snapshot rather than blank.
+  discovered: string[];
+  // Last-seen state of each discovered system. Refreshed every turn
+  // the system is in this empire's sensor range; goes stale otherwise.
+  snapshots: Record<string, SystemSnapshot>;
 }
 
 export interface PendingEvent {
@@ -334,8 +342,18 @@ export interface PendingEvent {
   seed: number;
 }
 
+// Per-empire fog-of-war record: the last-seen state of one system.
+// Refreshed each turn the system is in sensor range; otherwise stale.
+export interface SystemSnapshot {
+  turn: number;                       // Turn this snapshot was taken.
+  ownerId: string | null;             // Last-seen owner.
+  // Aggregated by empire — we don't track individual fleet ids in the
+  // snapshot, just totals per empire present in the system.
+  fleets: Array<{ empireId: string; shipCount: number }>;
+}
+
 export interface GameState {
-  schemaVersion: 22;
+  schemaVersion: 23;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;

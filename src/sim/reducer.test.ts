@@ -11,6 +11,8 @@ import {
   empireById,
   reduce,
   scoreState,
+  sensorSet,
+  updateVisibility,
 } from "./reducer";
 import type { Body, Empire, Fleet, GameState, StarSystem } from "./types";
 
@@ -81,6 +83,8 @@ function makeEmpire(overrides: LegacyEmpireOverrides): Empire {
     completedProjects: overrides.completedProjects ?? [],
     adoptedPolicies: overrides.adoptedPolicies ?? [],
     flags: overrides.flags ?? [],
+    discovered: overrides.discovered ?? [],
+    snapshots: overrides.snapshots ?? {},
   };
 }
 
@@ -118,7 +122,7 @@ function makeState(overrides: {
   const fleetsRec: Record<string, Fleet> = {};
   for (const f of overrides.fleets ?? []) fleetsRec[f.id] = f;
   return {
-    schemaVersion: 22,
+    schemaVersion: 23,
     turn: overrides.turn ?? 1,
     rngSeed: 1,
     galaxy: {
@@ -1683,6 +1687,184 @@ describe("declareWar / makePeace round-trip", () => {
     const next = reduce(state, { type: "endTurn" });
     // War was declared as the fleet crossed the border.
     expect(atWar(next, "e_player", "e_ai")).toBe(true);
+  });
+});
+
+describe("fog of war: sensorSet", () => {
+  it("includes owned systems and their 1-jump neighbours but not 2-jump", () => {
+    // home <-> mid <-> far. Empire owns home only.
+    // sensorSet should be {home, mid}, NOT far.
+    const home = makeSystem({ id: "s_home", bodyIds: [], ownerId: "e_player" });
+    const mid = makeSystem({ id: "s_mid", bodyIds: [], ownerId: null });
+    const far = makeSystem({ id: "s_far", bodyIds: [], ownerId: null });
+    const player = makeEmpire({ id: "e_player", systemIds: ["s_home"] });
+    const state = makeState({
+      systems: [home, mid, far],
+      bodies: [],
+      hyperlanes: [["s_home", "s_mid"], ["s_mid", "s_far"]],
+      empire: player,
+    });
+    const visible = sensorSet(state, "e_player");
+    expect(visible.has("s_home")).toBe(true);
+    expect(visible.has("s_mid")).toBe(true);
+    expect(visible.has("s_far")).toBe(false);
+  });
+
+  it("a fleet sitting alone in a system reveals it and its neighbours", () => {
+    // Empire owns nothing. A scout fleet sits at s_scout, adjacent to s_a.
+    // Without owned territory the only sensor source is the fleet itself.
+    const scout = makeSystem({ id: "s_scout", bodyIds: [], ownerId: null });
+    const neighbour = makeSystem({ id: "s_a", bodyIds: [], ownerId: null });
+    const elsewhere = makeSystem({ id: "s_b", bodyIds: [], ownerId: null });
+    const player = makeEmpire({ id: "e_player", systemIds: [] });
+    const fleet: Fleet = {
+      id: "f1",
+      empireId: "e_player",
+      systemId: "s_scout",
+      shipCount: 1,
+    };
+    const state = makeState({
+      systems: [scout, neighbour, elsewhere],
+      bodies: [],
+      hyperlanes: [["s_scout", "s_a"]],
+      empire: player,
+      fleets: [fleet],
+    });
+    const visible = sensorSet(state, "e_player");
+    expect(visible.has("s_scout")).toBe(true);
+    expect(visible.has("s_a")).toBe(true);
+    expect(visible.has("s_b")).toBe(false);
+  });
+});
+
+describe("fog of war: updateVisibility", () => {
+  it("populates discovered and snapshots for systems in sensor range", () => {
+    const home = makeSystem({ id: "s_home", bodyIds: [], ownerId: "e_player" });
+    const mid = makeSystem({ id: "s_mid", bodyIds: [], ownerId: null });
+    const player = makeEmpire({ id: "e_player", systemIds: ["s_home"] });
+    const state = makeState({
+      systems: [home, mid],
+      bodies: [],
+      hyperlanes: [["s_home", "s_mid"]],
+      empire: player,
+      turn: 7,
+    });
+    const next = produce(state, (draft) => updateVisibility(draft));
+    expect([...next.empire.discovered].sort()).toEqual(["s_home", "s_mid"]);
+    expect(next.empire.snapshots["s_home"]).toBeDefined();
+    expect(next.empire.snapshots["s_mid"]).toBeDefined();
+    expect(next.empire.snapshots["s_home"].turn).toBe(7);
+  });
+
+  it("snapshots an in-sensor enemy fleet by empire and ship count", () => {
+    // Player owns home. AI owns neighbour (1 jump away) and has 5 ships
+    // there. After updateVisibility the player's snapshot of neighbour
+    // should reflect the AI's fleet.
+    const home = makeSystem({ id: "s_home", bodyIds: [], ownerId: "e_player" });
+    const neighbour = makeSystem({ id: "s_n", bodyIds: [], ownerId: "e_ai" });
+    const player = makeEmpire({ id: "e_player", systemIds: ["s_home"] });
+    const ai = makeEmpire({ id: "e_ai", systemIds: ["s_n"] });
+    const enemyFleet: Fleet = {
+      id: "f_enemy",
+      empireId: "e_ai",
+      systemId: "s_n",
+      shipCount: 5,
+    };
+    const state = makeState({
+      systems: [home, neighbour],
+      bodies: [],
+      hyperlanes: [["s_home", "s_n"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [enemyFleet],
+    });
+    const next = produce(state, (draft) => updateVisibility(draft));
+    const snap = next.empire.snapshots["s_n"];
+    expect(snap).toBeDefined();
+    expect(snap.ownerId).toBe("e_ai");
+    expect(snap.fleets).toEqual([{ empireId: "e_ai", shipCount: 5 }]);
+  });
+
+  it("does not snapshot out-of-sensor enemy buildups (hidden isolationist)", () => {
+    // home <-> mid <-> far. Player owns home; AI hides 5 ships at far.
+    // Player's sensor doesn't reach far, so the snapshot is absent.
+    const home = makeSystem({ id: "s_home", bodyIds: [], ownerId: "e_player" });
+    const mid = makeSystem({ id: "s_mid", bodyIds: [], ownerId: null });
+    const far = makeSystem({ id: "s_far", bodyIds: [], ownerId: "e_ai" });
+    const player = makeEmpire({ id: "e_player", systemIds: ["s_home"] });
+    const ai = makeEmpire({ id: "e_ai", systemIds: ["s_far"] });
+    const hiddenFleet: Fleet = {
+      id: "f_hidden",
+      empireId: "e_ai",
+      systemId: "s_far",
+      shipCount: 5,
+    };
+    const state = makeState({
+      systems: [home, mid, far],
+      bodies: [],
+      hyperlanes: [["s_home", "s_mid"], ["s_mid", "s_far"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [hiddenFleet],
+    });
+    const next = produce(state, (draft) => updateVisibility(draft));
+    expect(next.empire.discovered).not.toContain("s_far");
+    expect(next.empire.snapshots["s_far"]).toBeUndefined();
+  });
+
+  it("keeps a stale snapshot once a system leaves sensor range", () => {
+    // Turn 1: scout fleet at s_scout, adjacent to s_target. Player sees
+    // s_target with 0 fleets + ownerId null.
+    // Turn 2: fleet leaves; AI claims s_target and parks 9 ships there.
+    // Player's snapshot of s_target should still reflect turn-1 reality.
+    const scout = makeSystem({ id: "s_scout", bodyIds: [], ownerId: null });
+    const target = makeSystem({ id: "s_target", bodyIds: [], ownerId: null });
+    const elsewhere = makeSystem({ id: "s_else", bodyIds: [], ownerId: null });
+    const player = makeEmpire({ id: "e_player", systemIds: [] });
+    const ai = makeEmpire({ id: "e_ai", systemIds: [] });
+    const fleet: Fleet = {
+      id: "f1",
+      empireId: "e_player",
+      systemId: "s_scout",
+      shipCount: 1,
+    };
+    const turn1State = makeState({
+      systems: [scout, target, elsewhere],
+      bodies: [],
+      hyperlanes: [
+        ["s_scout", "s_target"],
+        ["s_scout", "s_else"],
+      ],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [fleet],
+      turn: 1,
+    });
+    const seen = produce(turn1State, (draft) => updateVisibility(draft));
+    expect(seen.empire.snapshots["s_target"]?.turn).toBe(1);
+    expect(seen.empire.snapshots["s_target"]?.ownerId).toBeNull();
+
+    // Turn 2: scout moves away to s_else; AI takes s_target and parks
+    // a fleet there; updateVisibility runs again.
+    const turn2State = produce(seen, (draft) => {
+      draft.turn = 2;
+      draft.fleets["f1"].systemId = "s_else";
+      draft.galaxy.systems["s_target"].ownerId = "e_ai";
+      draft.aiEmpires[0].systemIds = ["s_target"];
+      draft.fleets["f_ai"] = {
+        id: "f_ai",
+        empireId: "e_ai",
+        systemId: "s_target",
+        shipCount: 9,
+      };
+      updateVisibility(draft);
+    });
+    // The stale snapshot from turn 1 must NOT have been overwritten —
+    // s_target is no longer in the player's sensor.
+    const stale = turn2State.empire.snapshots["s_target"];
+    expect(stale.turn).toBe(1);
+    expect(stale.ownerId).toBeNull();
+    expect(stale.fleets).toEqual([]);
   });
 });
 
