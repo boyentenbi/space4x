@@ -1,21 +1,9 @@
 import { produce } from "immer";
 import { eventById, EVENTS } from "./content";
-import { componentOfSystem } from "./reducer";
 import { mulberry32 } from "./rng";
 import type { Condition, Effect, GameEvent, GameState, ResourceKey } from "./types";
 
 const RESOURCE_KEYS: ResourceKey[] = ["food", "energy", "political"];
-
-function empireResourceTotal(state: GameState, resource: ResourceKey): number {
-  if (resource === "political") return state.empire.political;
-  // food / energy: sum across component pools (event conditions just
-  // want to know if the empire as a whole has enough).
-  let total = 0;
-  for (const cid in state.empire.componentPools) {
-    total += state.empire.componentPools[cid][resource];
-  }
-  return total;
-}
 
 export function conditionMet(state: GameState, cond: Condition): boolean {
   switch (cond.kind) {
@@ -24,7 +12,7 @@ export function conditionMet(state: GameState, cond: Condition): boolean {
     case "lacksFlag":
       return !state.empire.flags.includes(cond.flag);
     case "minResource":
-      return empireResourceTotal(state, cond.resource) >= cond.value;
+      return state.empire[cond.resource] >= cond.value;
     case "originIs":
       return state.empire.originId === cond.originId;
   }
@@ -55,23 +43,7 @@ export function applyEffect(state: GameState, effect: Effect): GameState {
   return produce(state, (draft) => {
     switch (effect.kind) {
       case "addResource": {
-        if (effect.resource === "political") {
-          draft.empire.political += effect.value;
-        } else {
-          // Food/energy land at the capital's component pool so events
-          // benefit the region the player is actually living in.
-          const capBody = draft.empire.capitalBodyId
-            ? draft.galaxy.bodies[draft.empire.capitalBodyId]
-            : null;
-          const capSysId = capBody?.systemId;
-          if (capSysId) {
-            const cid =
-              componentOfSystem(draft, draft.empire, capSysId) ?? capSysId;
-            const pool = draft.empire.componentPools[cid] ?? { food: 0, energy: 0 };
-            pool[effect.resource] += effect.value;
-            draft.empire.componentPools[cid] = pool;
-          }
-        }
+        draft.empire[effect.resource] += effect.value;
         break;
       }
       case "addPops": {

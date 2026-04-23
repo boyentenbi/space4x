@@ -7,7 +7,6 @@ import { mulberry32, nextSeed } from "./rng";
 import type {
   Body,
   BuildOrder,
-  ComponentPool,
   Empire,
   Expansionism,
   Fleet,
@@ -92,145 +91,10 @@ const EMPTY_RESOURCES: Resources = {
 // =====================================================================
 // Connected components — the logistics graph.
 // =====================================================================
-// Food and energy flow between owned systems over hyperlanes. Two
-// owned systems share a component iff there's a hyperlane path between
-// them going entirely through systems this empire owns AND isn't being
-// occupied by an enemy. An enemy occupation blocks transit through the
-// system even though it's still formally ours.
-//
-// The component id is a canonical representative: the lexicographically
-// smallest owned system id in that component. Stable as long as the
-// component's membership is stable; if a system splits off or rejoins,
-// the id may change (and componentPools gets reconciled in tickEmpire).
-
-function systemIsTransitable(sys: StarSystem, empireId: string): boolean {
-  if (sys.ownerId !== empireId) return false;
-  if (sys.occupation && sys.occupation.empireId !== empireId) return false;
-  return true;
-}
-
-// Returns a map systemId → componentId for every owned+transitable
-// system of the given empire. Systems the empire owns but that are
-// currently occupied by an enemy are *not* in the map (they can't
-// pool resources with the rest of the empire).
-export function computeComponents(
-  state: GameState,
-  empire: Empire,
-): Map<string, string> {
-  const result = new Map<string, string>();
-  const ownedSet = new Set(empire.systemIds);
-  // Precompute adjacency restricted to owned+transitable systems.
-  const adj = new Map<string, string[]>();
-  for (const [a, b] of state.galaxy.hyperlanes) {
-    if (!ownedSet.has(a) || !ownedSet.has(b)) continue;
-    const sa = state.galaxy.systems[a];
-    const sb = state.galaxy.systems[b];
-    if (!sa || !sb) continue;
-    if (!systemIsTransitable(sa, empire.id) || !systemIsTransitable(sb, empire.id)) continue;
-    if (!adj.has(a)) adj.set(a, []);
-    if (!adj.has(b)) adj.set(b, []);
-    adj.get(a)!.push(b);
-    adj.get(b)!.push(a);
-  }
-  const visited = new Set<string>();
-  const sortedSystems = [...empire.systemIds].sort();
-  for (const root of sortedSystems) {
-    if (visited.has(root)) continue;
-    const sys = state.galaxy.systems[root];
-    if (!sys || !systemIsTransitable(sys, empire.id)) continue;
-    // BFS. The root is the lex-smallest unvisited system, so it's
-    // also the canonical rep of this component.
-    const queue = [root];
-    visited.add(root);
-    while (queue.length > 0) {
-      const cur = queue.shift()!;
-      result.set(cur, root);
-      for (const n of adj.get(cur) ?? []) {
-        if (!visited.has(n)) {
-          visited.add(n);
-          queue.push(n);
-        }
-      }
-    }
-  }
-  return result;
-}
-
-// The component id a body belongs to, or null if its system is
-// untransitable (e.g., currently being occupied).
-export function componentOfBody(
-  state: GameState,
-  empire: Empire,
-  bodyId: string,
-): string | null {
-  const body = state.galaxy.bodies[bodyId];
-  if (!body) return null;
-  return componentOfSystem(state, empire, body.systemId);
-}
-
-export function componentOfSystem(
-  state: GameState,
-  empire: Empire,
-  systemId: string,
-): string | null {
-  const components = computeComponents(state, empire);
-  return components.get(systemId) ?? null;
-}
-
-// Ensure a pool exists for the given component id, creating an empty
-// one if not. Returns the pool (mutably, so callers can += on it).
-export function getComponentPool(empire: Empire, componentId: string): ComponentPool {
-  let pool = empire.componentPools[componentId];
-  if (!pool) {
-    pool = { food: 0, energy: 0 };
-    empire.componentPools[componentId] = pool;
-  }
-  return pool;
-}
-
-// Aggregates food/energy across all pools. Used for display when we
-// want "total across the whole empire" and for AI scoring (which
-// treats the empire as one actor).
-export function totalComponentFood(empire: Empire): number {
-  let t = 0;
-  for (const k in empire.componentPools) t += empire.componentPools[k].food;
-  return t;
-}
-export function totalComponentEnergy(empire: Empire): number {
-  let t = 0;
-  for (const k in empire.componentPools) t += empire.componentPools[k].energy;
-  return t;
-}
-
 // Generic empire-total accessor. Handy for UI code that wants to show
-// a single number per resource without caring whether it's pooled per
-// component (food/energy) or empire-wide (political).
+// a single number per resource regardless of which field it lives in.
 export function empireResourceStock(empire: Empire, key: ResourceKey): number {
-  if (key === "political") return empire.political;
-  if (key === "food") return totalComponentFood(empire);
-  return totalComponentEnergy(empire);
-}
-
-// Reconcile componentPools against the current component membership:
-// create empty pools for new components; drop pools whose component
-// no longer exists (merged-away or split-away). Called at the start of
-// tickEmpire each round.
-export function reconcileComponentPools(
-  state: GameState,
-  empire: Empire,
-): void {
-  const components = computeComponents(state, empire);
-  const liveIds = new Set(components.values());
-  // Create missing pools.
-  for (const cid of liveIds) {
-    if (!empire.componentPools[cid]) {
-      empire.componentPools[cid] = { food: 0, energy: 0 };
-    }
-  }
-  // Drop defunct ones.
-  for (const cid of Object.keys(empire.componentPools)) {
-    if (!liveIds.has(cid)) delete empire.componentPools[cid];
-  }
+  return empire[key];
 }
 
 // Disc shape carved from this grid by the generator. 15 x 13 yields
@@ -306,24 +170,20 @@ export function bodyGrowthRate(empire: Empire, body: Body): number {
   return Math.max(0, (organic + additive) * headroom);
 }
 
-// Sum of per-body pop growth across all owned bodies this turn, gated
-// per-component on that component's food pool (disconnected regions
-// with empty pantries don't contribute to the total).
+// Sum of per-body pop growth across all owned bodies this turn.
+// Growth only fires when the empire has food on hand — once the
+// shared pantry goes empty, nothing grows.
 export function expectedPopGrowth(state: GameState, empire: Empire): number {
-  const components = computeComponents(state, empire);
+  if (empire.food <= 0) return 0;
   let total = 0;
   for (const body of ownedBodiesOf(state, empire)) {
-    const cid = components.get(body.systemId);
-    if (!cid) continue;
-    const pool = empire.componentPools[cid];
-    if (!pool || pool.food <= 0) continue;
     total += bodyGrowthRate(empire, body);
   }
   return total;
 }
 
 export function growthEstimate(
-  state: GameState,
+  _state: GameState,
   empire: Empire,
   body: Body,
 ):
@@ -337,9 +197,7 @@ export function growthEstimate(
   if (body.pops <= 0) return { kind: "uncolonized" };
   const cap = maxPopsFor(empire, body);
   if (body.pops >= cap) return { kind: "full" };
-  const cid = componentOfSystem(state, empire, body.systemId);
-  const pool = cid ? empire.componentPools[cid] : null;
-  if (!pool || pool.food <= 0) return { kind: "starved" };
+  if (empire.food <= 0) return { kind: "starved" };
   const rate = bodyGrowthRate(empire, body);
   if (rate <= 0) return { kind: "full" };
   return { kind: "growing", perTurn: rate };
@@ -395,8 +253,9 @@ function makeEmpire(spec: {
     speciesId: spec.speciesId,
     originId: spec.originId,
     color: spec.color,
+    food: 0,
+    energy: 0,
     political: 0,
-    componentPools: {},
     compute: { cap: 0, used: 0 },
     portraitArt: spec.portraitArt,
     expansionism: spec.expansionism,
@@ -414,7 +273,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 24,
+    schemaVersion: 25,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -424,8 +283,9 @@ export function initialState(): GameState {
       originId: "",
       speciesId: "",
       color: "#7ec8ff",
+      food: 0,
+      energy: 0,
       political: 0,
-      componentPools: {},
       compute: { cap: 0, used: 0 },
       expansionism: "pragmatist",
       politic: "centrist",
@@ -1034,30 +894,27 @@ export function popsBreakdownFor(state: GameState, empire: Empire): StatBreakdow
   // so the logistic damping is visible instead of hidden inside the
   // final number.
   const growthRows: StatBreakdownSection["rows"] = [];
-  const components = computeComponents(state, empire);
   const growthMult = popGrowthMultiplier(empire);
   const empireAdd = popGrowthAdditive(empire);
+  const starvedEmpire = empire.food <= 0;
   for (const body of ownedBodiesOf(state, empire)) {
     // Skip bodies with no organic growth surface at all (no pops,
     // uncolonised) and bodies that can't grow (at cap).
     if (body.pops <= 0) continue;
     const cap = maxPopsFor(empire, body);
-    const cid = components.get(body.systemId);
-    const pool = cid ? empire.componentPools[cid] : null;
-    const starved = !pool || pool.food <= 0;
     const bodyAdd = sumDelta(bodyFeatureModifiers(body), "popGrowthAdd");
     const organic = BASE_ORGANIC_GROWTH_RATE * growthMult * body.pops;
     const raw = organic + empireAdd + bodyAdd;
     const rate = bodyGrowthRate(empire, body);
     const pops = Math.round(body.pops * 10) / 10;
-    const detail = starved
-      ? `starved (no food in component)`
+    const detail = starvedEmpire
+      ? `starved (empire food pool empty)`
       : `${raw.toFixed(2)} × (1 − ${pops}/${cap}) = ${rate.toFixed(2)}`;
     growthRows.push({
       id: body.id,
       name: body.name,
       detail,
-      value: starved ? 0 : rate,
+      value: starvedEmpire ? 0 : rate,
       habitability: body.habitability,
     });
   }
@@ -1115,53 +972,26 @@ export function empirePoliticalIncomeOf(state: GameState, empire: Empire): numbe
 // energy modifiers credit to the capital's component; fleet + outpost
 // upkeep drains from whatever component the fleet / outpost is in.
 // Bodies in systems that are currently untransitable (occupied by an
-// enemy, so not in any component) are silently dropped — their
-// output can't be shipped out during the siege.
-export function componentIncomeOf(
-  state: GameState,
-  empire: Empire,
-  componentId: string,
-): { food: number; energy: number } {
-  const components = computeComponents(state, empire);
-  let food = 0;
-  let energy = 0;
-  for (const body of ownedBodiesOf(state, empire)) {
-    if (components.get(body.systemId) !== componentId) continue;
-    const contrib = bodyIncomeFor(empire, body);
-    food += contrib.food;
-    energy += contrib.energy;
-  }
-  const capSysId = empire.capitalBodyId
-    ? state.galaxy.bodies[empire.capitalBodyId]?.systemId
-    : null;
-  if (capSysId && components.get(capSysId) === componentId) {
-    const mods = empireModifiers(empire);
-    food += flatEmpireIncome(mods, "food");
-    energy += flatEmpireIncome(mods, "energy");
-  }
-  // Outpost upkeep drains the local component's pool — cutting a
-  // region off means that region has to pay for its own outposts.
-  // Fleets no longer have upkeep (hammers throttle production directly).
-  const outpostCost = BALANCE.outpostEnergyUpkeep;
-  for (const sid of empire.systemIds) {
-    if (components.get(sid) !== componentId) continue;
-    energy -= outpostCost;
-  }
-  return { food, energy };
-}
-
-// Empire-wide aggregate income — used for UI totals and AI scoring
-// where we want "one number per resource" rather than per-component
-// breakdown.
+// Empire-wide aggregate income. Sums per-body yields, adds flat
+// empire-level modifiers (e.g. Steady Evolution's +0.2 political),
+// and subtracts outpost upkeep on every owned system.
 export function perTurnIncomeOf(state: GameState, empire: Empire): Resources {
-  const out: Resources = { food: 0, energy: 0, political: empirePoliticalIncomeOf(state, empire) };
-  const components = computeComponents(state, empire);
-  const ids = new Set(components.values());
-  for (const cid of ids) {
-    const ci = componentIncomeOf(state, empire, cid);
-    out.food += ci.food;
-    out.energy += ci.energy;
+  const out: Resources = {
+    food: 0,
+    energy: 0,
+    political: empirePoliticalIncomeOf(state, empire),
+  };
+  for (const body of ownedBodiesOf(state, empire)) {
+    const contrib = bodyIncomeFor(empire, body);
+    out.food += contrib.food;
+    out.energy += contrib.energy;
   }
+  const mods = empireModifiers(empire);
+  out.food += flatEmpireIncome(mods, "food");
+  out.energy += flatEmpireIncome(mods, "energy");
+  // Outpost upkeep: each owned system drains a little energy.
+  const outpostCost = BALANCE.outpostEnergyUpkeep;
+  out.energy -= outpostCost * empire.systemIds.length;
   return out;
 }
 
@@ -1873,7 +1703,7 @@ function snapshotSystem(
 //       fleets reconstructed from the empire's snapshot (aggregated
 //       per-empire counts).
 //   - fleets (at undiscovered systems) → dropped entirely.
-//   - other empires' private fields (political, componentPools,
+//   - other empires' private fields (political, food, energy,
 //       storyModifiers, completedProjects, adoptedPolicies, flags,
 //       compute, perception) → zeroed.
 //   - other empires' systemIds → intersected with the acting
@@ -1953,8 +1783,9 @@ export function filterStateFor(
       speciesId: e.speciesId,
       originId: e.originId,
       color: e.color,
+      food: 0,
+      energy: 0,
       political: 0,
-      componentPools: {},
       compute: { cap: 0, used: 0 },
       portraitArt: e.portraitArt,
       expansionism: e.expansionism,
@@ -2336,7 +2167,7 @@ function completeOrder(
   draft: GameState,
   empire: Empire,
   order: BuildOrder,
-  hostBodyId: string,
+  _hostBodyId: string,
 ): void {
   if (order.kind === "colonize") {
     const target = draft.galaxy.bodies[order.targetBodyId];
@@ -2362,19 +2193,12 @@ function completeOrder(
   } else if (order.kind === "empire_project") {
     const proj = projectById(order.projectId);
     if (!proj) return;
-    // One-shot stock costs. Political pays from empire; food/energy
-    // pay from the host body's component pool (or capital's component
-    // if this is a capital-scope project). No component = no deduction
-    // (edge case: project completed in an occupied system).
+    // One-shot stock costs, all drawn from empire-wide pools.
     if (proj.costs) {
-      const hostBody = draft.galaxy.bodies[hostBodyId];
-      const compId = hostBody ? componentOfSystem(draft, empire, hostBody.systemId) : null;
-      const pool = compId ? empire.componentPools[compId] : null;
       for (const k of RESOURCE_KEYS) {
         const c = proj.costs[k];
         if (!c) continue;
-        if (k === "political") empire.political -= c;
-        else if (pool) pool[k] -= c;
+        empire[k] -= c;
       }
     }
     // Apply completion effects.
@@ -2440,35 +2264,6 @@ function completeOrder(
 
 // ===== Per-empire turn tick =====
 
-// Kill one pop during a famine, restricted to bodies in one connected
-// component (since food pools are per-component now). Preferentially
-// targets the largest non-capital colony in the component so the
-// empire's capital is the last to collapse.
-function killStarvingPopInComponent(
-  draft: GameState,
-  empire: Empire,
-  components: Map<string, string>,
-  componentId: string,
-): string | null {
-  const candidates: Body[] = [];
-  for (const body of ownedBodiesOf(draft, empire)) {
-    if (body.pops <= 0) continue;
-    if (components.get(body.systemId) !== componentId) continue;
-    candidates.push(body);
-  }
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => {
-    const aCap = a.id === empire.capitalBodyId ? 1 : 0;
-    const bCap = b.id === empire.capitalBodyId ? 1 : 0;
-    if (aCap !== bCap) return aCap - bCap;        // non-capital first
-    return b.pops - a.pops;                        // highest pops first
-  });
-  const target = draft.galaxy.bodies[candidates[0].id];
-  if (!target) return null;
-  target.pops -= 1;
-  return target.name;
-}
-
 // Per-turn energy cost of each owned system's outpost.
 export function outpostEnergyUpkeep(empire: Empire): number {
   return empire.systemIds.length * BALANCE.outpostEnergyUpkeep;
@@ -2486,22 +2281,14 @@ function tickEmpire(draft: GameState, empire: Empire): void {
   //    systems (those being occupied by an enemy) aren't in the map,
   //    so their stranded income is implicitly lost — can't ship
   //    under siege.
-  reconcileComponentPools(draft, empire);
-  const components = computeComponents(draft, empire);
 
-  // 2. Apply political income (empire-wide).
-  empire.political += empirePoliticalIncomeOf(draft, empire);
+  // 2. Apply empire-wide resource income in one pass.
+  const income = perTurnIncomeOf(draft, empire);
+  empire.food += income.food;
+  empire.energy += income.energy;
+  empire.political += income.political;
 
-  // 3. Apply per-component food + energy income.
-  const compIds = new Set(components.values());
-  for (const cid of compIds) {
-    const ci = componentIncomeOf(draft, empire, cid);
-    const pool = getComponentPool(empire, cid);
-    pool.food += ci.food;
-    pool.energy += ci.energy;
-  }
-
-  // 4. Reset per-body hammer flow + empire compute.
+  // 3. Reset per-body hammer flow + empire compute.
   empire.compute.cap = computeCapOf(draft, empire);
   empire.compute.used = 0;
   for (const body of ownedBodiesOf(draft, empire)) {
@@ -2511,7 +2298,7 @@ function tickEmpire(draft: GameState, empire: Empire): void {
     }
   }
 
-  // 5. Drain each body's hammers into its own FIFO queue. Hammers are
+  // 4. Drain each body's hammers into its own FIFO queue. Hammers are
   //    system-local — a frontier system's output can't be pooled into
   //    a capital megaproject. Completed orders roll up via the same
   //    completeOrder path the empire queue used to.
@@ -2534,19 +2321,14 @@ function tickEmpire(draft: GameState, empire: Empire): void {
     }
   }
 
-  // 6. Pop growth — deterministic logistic, per-component food gate.
-  //    ΔPops = (BASE × popGrowthMult × pops + additive) × (1 − pops/cap)
-  //    A body only grows if its component has food; the growth cost
-  //    (50 food/pop) drains from that component's pool only.
+  // 5. Pop growth — deterministic logistic, gated on the empire's
+  //    food pool. Growth drains food at POP_GROWTH_FOOD_COST/pop
+  //    added. Once food hits zero nothing more grows this turn.
   const growthMult = popGrowthMultiplier(empire);
   const growthAdd = popGrowthAdditive(empire);
   for (const sid of empire.systemIds) {
     const sys = draft.galaxy.systems[sid];
     if (!sys) continue;
-    const cid = components.get(sid);
-    if (!cid) continue; // untransitable system: no shared food
-    const pool = empire.componentPools[cid];
-    if (!pool) continue;
     for (const bid of sys.bodyIds) {
       const body = draft.galaxy.bodies[bid];
       if (!body) continue;
@@ -2554,74 +2336,38 @@ function tickEmpire(draft: GameState, empire: Empire): void {
       if (body.pops > cap) body.pops = cap;
       if (body.pops >= cap) continue;
       if (body.pops <= 0) continue;
-      if (pool.food <= 0) continue;
+      if (empire.food <= 0) continue;
       const headroom = cap > 0 ? (cap - body.pops) / cap : 0;
       const organic = BASE_ORGANIC_GROWTH_RATE * growthMult * body.pops;
-      // Body-local additive (e.g. the queen on her host body) stacks
-      // on top of the empire-wide additive pool.
       const localAdd = sumDelta(bodyFeatureModifiers(body), "popGrowthAdd");
       const delta = (organic + growthAdd + localAdd) * headroom;
       if (delta <= 0) continue;
       const capped = Math.min(delta, cap - body.pops);
       body.pops += capped;
-      pool.food -= POP_GROWTH_FOOD_COST * capped;
+      empire.food -= POP_GROWTH_FOOD_COST * capped;
     }
   }
 
-  // 7. Internal migration. Within each connected component, drift
-  //    MIGRATION_RATE_PER_POP × source.pops from the most-populated
-  //    body toward the body with the most absolute headroom. Scales
-  //    with empire size so late-game hives move meaningful numbers
-  //    while early colonies still trickle. Uncolonised bodies aren't
-  //    eligible sinks — colony ships remain the way to settle new
-  //    worlds.
-  for (const cid of compIds) {
-    const inComponent: Body[] = [];
+  // 6. Famine. If the empire ran through its food, pick the biggest
+  //    populated body and lose a pop there; clamp food back to zero.
+  if (empire.food < 0) {
+    let starvedName: string | null = null;
+    let target: Body | null = null;
     for (const body of ownedBodiesOf(draft, empire)) {
-      if (components.get(body.systemId) !== cid) continue;
-      inComponent.push(body);
+      if (body.pops <= 0) continue;
+      if (!target || body.pops > target.pops) target = body;
     }
-    if (inComponent.length < 2) continue;
-    let source: Body | null = null;
-    let sink: Body | null = null;
-    for (const b of inComponent) {
-      const cap = maxPopsFor(empire, b);
-      if (b.pops >= 1 && (!source || b.pops > source.pops)) source = b;
-      const headroom = cap - b.pops;
-      if (
-        b.pops > 0 &&
-        headroom > 0 &&
-        (!sink || headroom > maxPopsFor(empire, sink) - sink.pops)
-      ) {
-        sink = b;
-      }
+    if (target) {
+      target.pops = Math.max(0, target.pops - 1);
+      starvedName = target.name;
     }
-    if (!source || !sink || source.id === sink.id) continue;
-    if (source.pops <= sink.pops) continue; // don't reverse-flow
-    // Scales with source population; cap the flow at the imbalance so
-    // we don't overshoot the sink past the source in one turn.
-    const desired = MIGRATION_RATE_PER_POP * source.pops;
-    const maxFair = (source.pops - sink.pops) / 2;
-    const moved = Math.min(desired, maxFair, source.pops);
-    if (moved <= 0) continue;
-    source.pops -= moved;
-    sink.pops += moved;
-  }
-
-  // 8. Per-component famine. Each component with food < 0 starves one
-  //    pop somewhere *in that component* and clamps food back to zero.
-  //    A disconnected region runs out of food first; famines are local.
-  for (const cid of compIds) {
-    const pool = empire.componentPools[cid];
-    if (!pool || pool.food >= 0) continue;
-    const starved = killStarvingPopInComponent(draft, empire, components, cid);
-    pool.food = 0;
-    if (starved && empire.id === draft.empire.id) {
+    empire.food = 0;
+    if (starvedName && empire.id === draft.empire.id) {
       draft.eventLog.push({
         turn: draft.turn,
         eventId: "famine",
         choiceId: null,
-        text: `Famine on ${starved}. A pop died.`,
+        text: `Famine on ${starvedName}. A pop died.`,
       });
     }
   }
@@ -3747,15 +3493,10 @@ export function reduce(state: GameState, action: Action): GameState {
         if (action.portraitArt) draft.empire.portraitArt = action.portraitArt;
         draft.empire.capitalBodyId = playerStarter.capitalBodyId;
         draft.empire.systemIds = [playerStarter.systemId];
-        // Political lives on the empire; food and energy go into the
-        // starter's component pool (just the starter system for now).
+        // All empire-wide stocks seed directly from the origin.
+        draft.empire.food = origin.startingResources.food ?? 0;
+        draft.empire.energy = origin.startingResources.energy ?? 0;
         draft.empire.political = origin.startingResources.political ?? 0;
-        draft.empire.componentPools = {
-          [playerStarter.systemId]: {
-            food: origin.startingResources.food ?? 0,
-            energy: origin.startingResources.energy ?? 0,
-          },
-        };
         // Apply origin story modifiers + auto-queued starter projects.
         if (origin.startingStoryModifiers) {
           for (const [key, mods] of Object.entries(origin.startingStoryModifiers)) {
@@ -3817,13 +3558,9 @@ export function reduce(state: GameState, action: Action): GameState {
           empire.capitalBodyId = starter.capitalBodyId;
           empire.systemIds = [starter.systemId];
           if (originObj) {
+            empire.food = originObj.startingResources.food ?? 0;
+            empire.energy = originObj.startingResources.energy ?? 0;
             empire.political = originObj.startingResources.political ?? 0;
-            empire.componentPools = {
-              [starter.systemId]: {
-                food: originObj.startingResources.food ?? 0,
-                energy: originObj.startingResources.energy ?? 0,
-              },
-            };
             if (originObj.startingStoryModifiers) {
               for (const [key, mods] of Object.entries(originObj.startingStoryModifiers)) {
                 empire.storyModifiers[key] = [...mods];

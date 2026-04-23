@@ -6,7 +6,6 @@ import {
   allOrdersOf,
   atWar,
   availableBodyProjectsFor,
-  computeComponents,
   availableProjectsFor,
   bodyComputeOutput,
   bodyIncome,
@@ -1221,7 +1220,6 @@ export function MainScreen() {
                     }
                   : null
               }
-              playerComponents={computeComponents(state, state.empire)}
               viewerEmpire={state.empire}
               sensor={playerSensor}
             />

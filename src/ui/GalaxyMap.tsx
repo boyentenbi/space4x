@@ -130,32 +130,6 @@ function polylineD(points: Array<[number, number]>): string {
   return `M ${first[0].toFixed(2)} ${first[1].toFixed(2)} ${body}${isClosed ? " Z" : ""}`;
 }
 
-// Distinct palette for visualising the player empire's connected
-// components. Hash the component id into this list so colours are
-// stable across renders. Deliberately avoids the player's own empire
-// colour so the badge reads as "component" vs "ownership".
-const COMPONENT_PALETTE = [
-  "#f2d06b", // amber
-  "#9ac94a", // lime
-  "#e37c7c", // coral
-  "#7fbfd9", // sky
-  "#c98ae0", // lavender
-  "#e8a850", // tangerine
-];
-
-function hashStr(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function componentColor(componentId: string): string {
-  return COMPONENT_PALETTE[hashStr(componentId) % COMPONENT_PALETTE.length];
-}
-
 // Fog display state for one system from the viewer's perspective.
 //   live   — in sensor right now; show true state.
 //   stale  — discovered before, out of sensor now; show the last snapshot
@@ -193,7 +167,6 @@ export function GalaxyMap({
   selectedId,
   onSelect,
   moveMode,
-  playerComponents,
   viewerEmpire,
   sensor,
 }: {
@@ -210,11 +183,6 @@ export function GalaxyMap({
     pathSystemIds: string[];
     highlightColor: string;
   } | null;
-  // Map systemId → componentId for the player empire's owned systems.
-  // Multiple componentIds mean the empire is split; each component gets
-  // a distinct tint so the player can see the logistics topology at a
-  // glance.
-  playerComponents?: Map<string, string>;
   // Fog of war: whose perspective we're rendering from, and which
   // systems are currently in that empire's sensor range. Both must be
   // supplied together; omitting them renders every system live.
@@ -363,12 +331,8 @@ export function GalaxyMap({
 
   // Per-empire perimeter + interior edges so each empire's territory
   // renders as one contiguous region with faint internal lines.
-  // perimeterSegments also keeps the originating systemId alongside
-  // each edge, which the split-component renderer uses to colour the
-  // outline per-region instead of per-empire.
   const perimeterByOwner = new Map<string, Edge[]>();
   const interiorByOwner = new Map<string, Edge[]>();
-  const perimeterSegments: Array<{ sysId: string; x1: number; y1: number; x2: number; y2: number }> = [];
   for (const sys of visibleSystems) {
     const ownerId = displayBySystem.get(sys.id)!.ownerId;
     if (!ownerId) continue;
@@ -389,7 +353,6 @@ export function GalaxyMap({
       } else {
         if (!perimeterByOwner.has(ownerId)) perimeterByOwner.set(ownerId, []);
         perimeterByOwner.get(ownerId)!.push({ x1: ax, y1: ay, x2: bx, y2: by });
-        perimeterSegments.push({ sysId: sys.id, x1: ax, y1: ay, x2: bx, y2: by });
       }
     }
   }
@@ -487,31 +450,19 @@ export function GalaxyMap({
         );
       })()}
 
-      {/* Component coloring: when the player empire is split into 2+
-          connected regions, each region gets its own tint on the
-          territory fill and perimeter instead of the empire's base
-          colour. For single-component empires (and for every other
-          empire), ownership colour is used unchanged. */}
+      {/* Territory rendering: fill + interior lines + perimeter, all
+          keyed by the owning empire's colour. Ownership comes from
+          the fog-adjusted display state so stale hexes paint with
+          their last-seen owner's colour. */}
       {(() => {
-        const splitIntoComponents =
-          !!playerComponents && new Set(playerComponents.values()).size >= 2;
-        // Resolve the color used to fill / outline the given system.
-        // Owner comes from the fog-adjusted display state so stale
-        // hexes paint with their last-seen owner's colour.
         const colorFor = (sys: StarSystem): string | null => {
           const ownerId = displayBySystem.get(sys.id)?.ownerId ?? null;
           if (!ownerId) return null;
           const empire = empireById.get(ownerId);
-          if (!empire) return null;
-          if (splitIntoComponents) {
-            const cid = playerComponents?.get(sys.id);
-            if (cid) return componentColor(cid);
-          }
-          return empire.color;
+          return empire?.color ?? null;
         };
         return (
           <>
-            {/* Territory fill: one translucent blob per owner/component. */}
             <g className="territory-fill">
               {visibleSystems.map((sys) => {
                 const c = colorFor(sys);
@@ -529,10 +480,6 @@ export function GalaxyMap({
               })}
             </g>
 
-            {/* Interior edges: one faint line per cross-hex edge, coloured
-                by the owning empire (or per-component when split). Edges
-                between two different-component hexes are left empire-
-                coloured so the split reads visually through the boundary. */}
             <g className="territory-interior">
               {Array.from(interiorByOwner.entries()).flatMap(([ownerId, edges]) => {
                 const empire = empireById.get(ownerId);
@@ -551,52 +498,23 @@ export function GalaxyMap({
               })}
             </g>
 
-            {/* Perimeter: outline per system. For the player-when-split
-                case we render per-hex outline segments keyed by each
-                system's component colour, so the border visibly changes
-                between regions. Otherwise fall back to the empire-wide
-                polyline outline the map has always used. */}
-            {splitIntoComponents ? (
-              <g className="territory-border">
-                {perimeterSegments.map(({ sysId, x1, y1, x2, y2 }, i) => {
-                  const sys = galaxy.systems[sysId];
-                  if (!sys) return null;
-                  const c = colorFor(sys);
-                  if (!c) return null;
-                  return (
-                    <line
-                      key={`border-seg-${i}`}
-                      x1={x1}
-                      y1={y1}
-                      x2={x2}
-                      y2={y2}
-                      stroke={c}
-                      strokeWidth={1.4}
-                      strokeLinecap="round"
-                      opacity={0.9}
-                    />
-                  );
-                })}
-              </g>
-            ) : (
-              <g className="territory-border">
-                {Array.from(perimeterByOwner.entries()).flatMap(([ownerId, edges]) => {
-                  const empire = empireById.get(ownerId);
-                  if (!empire) return [];
-                  return buildPolylines(edges).map((pl, i) => (
-                    <path
-                      key={`${ownerId}-p-${i}`}
-                      d={polylineD(pl)}
-                      fill="none"
-                      stroke={empire.color}
-                      strokeWidth={1.6}
-                      strokeLinejoin="round"
-                      strokeLinecap="round"
-                    />
-                  ));
-                })}
-              </g>
-            )}
+            <g className="territory-border">
+              {Array.from(perimeterByOwner.entries()).flatMap(([ownerId, edges]) => {
+                const empire = empireById.get(ownerId);
+                if (!empire) return [];
+                return buildPolylines(edges).map((pl, i) => (
+                  <path
+                    key={`${ownerId}-p-${i}`}
+                    d={polylineD(pl)}
+                    fill="none"
+                    stroke={empire.color}
+                    strokeWidth={1.6}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                ));
+              })}
+            </g>
           </>
         );
       })()}
