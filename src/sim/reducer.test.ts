@@ -1819,6 +1819,117 @@ describe("conquering", () => {
   });
 });
 
+describe("setFleetDestination clears auto-discover", () => {
+  it("setting a manual destination on an auto-discover fleet ends auto-discover", () => {
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_home"], ownerId: "e_player" });
+    const target = makeSystem({ id: "s_target", bodyIds: [], ownerId: null });
+    const homeBody = makeBody({ id: "b_home", systemId: "s_home", pops: 10 });
+    const player = makeEmpire({ id: "e_player", capitalBodyId: "b_home", systemIds: ["s_home"] });
+    const fleet: Fleet = {
+      id: "f_scout",
+      empireId: "e_player",
+      systemId: "s_home",
+      shipCount: 1,
+      autoDiscover: true,
+    };
+    const state = makeState({
+      systems: [home, target],
+      bodies: [homeBody],
+      hyperlanes: [["s_home", "s_target"]],
+      empire: player,
+      fleets: [fleet],
+    });
+    const next = reduce(state, {
+      type: "setFleetDestination",
+      byEmpireId: "e_player",
+      fleetId: "f_scout",
+      toSystemId: "s_target",
+    });
+    expect(next.fleets["f_scout"]?.destinationSystemId).toBe("s_target");
+    expect(next.fleets["f_scout"]?.autoDiscover).toBeFalsy();
+  });
+
+  it("cancelling a route on an auto-discover fleet also ends auto-discover", () => {
+    // The "cancel route" path in the move bar dispatches
+    // setFleetDestination with toSystemId=null. We treat that as
+    // the player taking manual control too — otherwise the chooser
+    // would re-route the fleet next turn and the cancel would
+    // appear to do nothing.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_home"], ownerId: "e_player" });
+    const target = makeSystem({ id: "s_target", bodyIds: [], ownerId: null });
+    const homeBody = makeBody({ id: "b_home", systemId: "s_home", pops: 10 });
+    const player = makeEmpire({ id: "e_player", capitalBodyId: "b_home", systemIds: ["s_home"] });
+    const fleet: Fleet = {
+      id: "f_scout",
+      empireId: "e_player",
+      systemId: "s_home",
+      shipCount: 1,
+      autoDiscover: true,
+      destinationSystemId: "s_target",
+    };
+    const state = makeState({
+      systems: [home, target],
+      bodies: [homeBody],
+      hyperlanes: [["s_home", "s_target"]],
+      empire: player,
+      fleets: [fleet],
+    });
+    const next = reduce(state, {
+      type: "setFleetDestination",
+      byEmpireId: "e_player",
+      fleetId: "f_scout",
+      toSystemId: null,
+    });
+    expect(next.fleets["f_scout"]?.destinationSystemId).toBeUndefined();
+    expect(next.fleets["f_scout"]?.autoDiscover).toBeFalsy();
+  });
+});
+
+describe("empire elimination ignores fleets", () => {
+  it("eliminates an AI the round it loses its last system, even with surviving fleets", () => {
+    // AI owns s_ai. Player invades and flips it (via the standard
+    // 3-turn occupation flow). The AI has a stray fleet at s_else
+    // that survives. Old "wandering ghost" rule kept the AI alive
+    // via that fleet; new rule retires it the moment systemIds
+    // empties out, and orphan fleets get cleaned up.
+    const playerHome = makeSystem({ id: "s_player", bodyIds: ["b_player"], ownerId: "e_player" });
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const elsewhere = makeSystem({ id: "s_else", bodyIds: [], ownerId: null });
+    const playerBody = makeBody({ id: "b_player", systemId: "s_player", pops: 30 });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const player = makeEmpire({ id: "e_player", capitalBodyId: "b_player", systemIds: ["s_player"] });
+    const ai = makeEmpire({ id: "e_ai", capitalBodyId: "b_ai", systemIds: ["s_ai"] });
+    const invader: Fleet = {
+      id: "f_invader",
+      empireId: "e_player",
+      systemId: "s_ai",
+      shipCount: 10,
+    };
+    const ghost: Fleet = {
+      id: "f_ghost",
+      empireId: "e_ai",
+      systemId: "s_else",
+      shipCount: 4,
+    };
+    let s = makeState({
+      systems: [playerHome, aiHome, elsewhere],
+      bodies: [playerBody, aiBody],
+      hyperlanes: [["s_player", "s_ai"], ["s_ai", "s_else"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [invader, ghost],
+      wars: [["e_ai", "e_player"].sort() as [string, string]],
+    });
+    // Three rounds of unopposed occupation flip s_ai to e_player.
+    for (let i = 0; i < 3; i++) s = reduce(s, { type: "endTurn" });
+    expect(s.galaxy.systems["s_ai"]?.ownerId).toBe("e_player");
+    // AI is gone — even though f_ghost was still floating around.
+    expect(s.aiEmpires.find((e) => e.id === "e_ai")).toBeUndefined();
+    // And the orphan fleet has been cleaned up.
+    expect(s.fleets["f_ghost"]).toBeUndefined();
+  });
+});
+
 describe("splitFleet action", () => {
   it("peels off a co-located fleet with its own destination", () => {
     const home = makeSystem({ id: "s_home", bodyIds: [], ownerId: "e_player" });

@@ -1968,20 +1968,12 @@ function detectFirstContacts(draft: GameState): void {
 }
 
 function checkEliminations(draft: GameState): void {
-  // An empire is eliminated only when it has no systems AND no ships.
-  // Lose your last planet but keep a fleet? You're a wandering ghost
-  // empire until that fleet dies. Same rule for player + AIs.
-  function hasShips(empireId: string): boolean {
-    for (const f of Object.values(draft.fleets)) {
-      if (f.empireId === empireId && f.shipCount > 0) return true;
-    }
-    return false;
-  }
-  if (
-    draft.empire.systemIds.length === 0 &&
-    !hasShips(draft.empire.id) &&
-    !draft.gameOver
-  ) {
+  // Lose your last system → you're out, regardless of stray fleets.
+  // The previous "wandering ghost empire" rule kept doomed empires
+  // limping along with surviving fleets, which dragged rollouts on
+  // long after the meaningful conflict was resolved and let dead
+  // empires keep biting. Same rule for player + AIs.
+  if (draft.empire.systemIds.length === 0 && !draft.gameOver) {
     draft.gameOver = true;
     draft.eventLog.push({
       turn: draft.turn,
@@ -1992,11 +1984,15 @@ function checkEliminations(draft: GameState): void {
   }
   const survivors: Empire[] = [];
   for (const ai of draft.aiEmpires) {
-    if (ai.systemIds.length > 0 || hasShips(ai.id)) {
+    if (ai.systemIds.length > 0) {
       survivors.push(ai);
     } else {
-      // Clean up wars (they have no fleets left either).
+      // Clean up wars + any orphan fleets so the world doesn't keep
+      // tracking ships nobody can command.
       draft.wars = draft.wars.filter(([a, b]) => a !== ai.id && b !== ai.id);
+      for (const fid of Object.keys(draft.fleets)) {
+        if (draft.fleets[fid].empireId === ai.id) delete draft.fleets[fid];
+      }
       draft.eventLog.push({
         turn: draft.turn,
         eventId: "empire_eliminated",
@@ -3789,7 +3785,19 @@ export function reduce(state: GameState, action: Action): GameState {
       return produce(state, (draft) => applyMakePeace(draft, action));
 
     case "setFleetDestination":
-      return produce(state, (draft) => applySetFleetDestination(draft, action));
+      // Player-dispatched route changes count as taking manual
+      // control of the fleet — clear any auto-discover flag so the
+      // chooser doesn't immediately overwrite the new route (or
+      // re-pick one after the player cancelled). The auto-discover
+      // chooser itself calls applySetFleetDestination directly,
+      // bypassing this case, so it doesn't disable itself.
+      return produce(state, (draft) => {
+        applySetFleetDestination(draft, action);
+        const f = draft.fleets[action.fleetId];
+        if (f && f.empireId === action.byEmpireId && f.autoDiscover) {
+          delete f.autoDiscover;
+        }
+      });
 
     case "splitFleet":
       return produce(state, (draft) => applySplitFleet(draft, action));
