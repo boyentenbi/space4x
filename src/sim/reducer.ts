@@ -242,6 +242,22 @@ const AI_COLOR_PALETTE = [
   "#d07030", // rust
 ];
 
+// Min RGB-distance for an AI color to be safely "different" from
+// another color. Full black-to-white spans ~441; 80 corresponds to
+// roughly an 18% shift across the cube — far enough that humans
+// don't confuse them at a glance even on a small hex.
+const COLOR_DISTANCE_THRESHOLD = 80;
+
+function colorDistance(a: string, b: string): number {
+  const ra = parseInt(a.slice(1, 3), 16);
+  const ga = parseInt(a.slice(3, 5), 16);
+  const ba = parseInt(a.slice(5, 7), 16);
+  const rb = parseInt(b.slice(1, 3), 16);
+  const gb = parseInt(b.slice(3, 5), 16);
+  const bb = parseInt(b.slice(5, 7), 16);
+  return Math.sqrt((ra - rb) ** 2 + (ga - gb) ** 2 + (ba - bb) ** 2);
+}
+
 const AI_EMPIRE_COUNT = 2;
 
 function pickAiLeaders(rand: () => number, count: number): Leader[] {
@@ -3599,9 +3615,17 @@ export function reduce(state: GameState, action: Action): GameState {
 
       const playerEmpireId = "empire_player";
       const playerStarter = claimStarter(playerEmpireId, playerStarterId, origin.startingPops);
-      // Shuffled palette so each new game picks a different ordering;
-      // consumed without replacement so every AI gets a distinct colour.
-      const aiColorPool = [...AI_COLOR_PALETTE];
+      // AI palette: shuffled per game (so each game has a different
+      // ordering) and consumed without replacement (so two AIs never
+      // share a colour). Also filtered against the player's species
+      // colour so an AI never paints the map in a near-identical hue
+      // to the player's own — caught in play that insectoid-purple
+      // and the palette violet were close enough to confuse.
+      const playerSpeciesColor =
+        speciesById(action.speciesId)?.color ?? "#7ec8ff";
+      const aiColorPool = AI_COLOR_PALETTE.filter(
+        (c) => colorDistance(c, playerSpeciesColor) >= COLOR_DISTANCE_THRESHOLD,
+      );
       for (let i = aiColorPool.length - 1; i > 0; i--) {
         const j = Math.floor(rand() * (i + 1));
         [aiColorPool[i], aiColorPool[j]] = [aiColorPool[j], aiColorPool[i]];
