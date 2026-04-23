@@ -38,6 +38,7 @@ import type { StatBreakdown } from "../sim/reducer";
 import { projectById } from "../sim/content";
 import { RESOURCE_KEYS } from "../sim/events";
 import type { Body, Resources, ResourceKey } from "../sim/types";
+import { ChronicleModal } from "./ChronicleModal";
 import { EventModal } from "./EventModal";
 import { GalaxyMap } from "./GalaxyMap";
 import { SystemScene } from "./SystemScene";
@@ -495,6 +496,7 @@ export function MainScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
   const [policiesOpen, setPoliciesOpen] = useState(false);
+  const [chronicleOpen, setChronicleOpen] = useState(false);
   const [profileEmpireId, setProfileEmpireId] = useState<string | null>(null);
   const [fleetModalId, setFleetModalId] = useState<string | null>(null);
   const [breakdown, setBreakdown] = useState<StatBreakdown | null>(null);
@@ -834,6 +836,12 @@ export function MainScreen() {
         </button>
         <button className="menu-btn" onClick={() => setRosterOpen(true)}>
           Empires
+        </button>
+        <button className="menu-btn" onClick={() => setChronicleOpen(true)}>
+          Chronicle
+          {state.eventLog.length > 0 && (
+            <span className="menu-btn-count">{state.eventLog.length}</span>
+          )}
         </button>
         <button className="menu-btn" onClick={() => setMenuOpen(true)}>
           Menu
@@ -1224,25 +1232,6 @@ export function MainScreen() {
               {state.empire.systemIds.length}/{Object.keys(state.galaxy.systems).length} yours
             </span>
           </div>
-
-          <div className="chronicle-panel">
-            <div className="panel-label">
-              <span>Chronicle</span>
-              <span className="count">{state.eventLog.length}</span>
-            </div>
-            <div className="log-scroll">
-              {state.eventLog.length === 0 ? (
-                <div className="log-empty">Nothing recorded yet. End a turn to see what happens.</div>
-              ) : (
-                [...state.eventLog].reverse().map((entry, i) => (
-                  <div key={`${entry.turn}-${i}`} className="log-item">
-                    <span className="turn-tag">T{entry.turn}</span>
-                    {entry.text}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
         </div>
       </div>
 
@@ -1317,6 +1306,12 @@ export function MainScreen() {
         />
       )}
       {policiesOpen && <PoliciesModal onClose={() => setPoliciesOpen(false)} />}
+      {chronicleOpen && (
+        <ChronicleModal
+          log={state.eventLog}
+          onClose={() => setChronicleOpen(false)}
+        />
+      )}
       {fleetModalId && (
         <FleetModal fleetId={fleetModalId} onClose={() => setFleetModalId(null)} />
       )}

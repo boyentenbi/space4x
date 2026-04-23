@@ -34,11 +34,6 @@ when you want to remember something later.
 
 ## UI
 
-- **Move chronicle to a modal behind a button on the left sidebar.**
-  Currently the chronicle log is always visible — give it its own
-  modal gated by a button next to portrait/end-turn. Clears sidebar
-  real estate and matches the pattern used by the other modals
-  (empire profile, policies, stat breakdown).
 
 ## Gameplay
 
