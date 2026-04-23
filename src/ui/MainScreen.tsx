@@ -125,19 +125,24 @@ function ResCell({
   value,
   delta,
   onClick,
+  emphasis,
 }: {
   icon: string;
   value: string | number;
   delta?: number;
   onClick?: () => void;
+  // "maxed" colours the value red to flag that the stock / capacity
+  // has hit ceiling (pops at max on every body, for instance).
+  emphasis?: "maxed";
 }) {
   const d = delta ?? 0;
   const cls = d > 0 ? "pos" : d < 0 ? "neg" : "";
+  const valueCls = emphasis === "maxed" ? "cell-value maxed" : "cell-value";
   const Tag: "button" | "div" = onClick ? "button" : "div";
   return (
     <Tag className="res-cell" onClick={onClick} type={onClick ? "button" : undefined}>
       <img className="cell-icon" src={icon} alt="" />
-      <span className="cell-value">{value}</span>
+      <span className={valueCls}>{value}</span>
       {delta !== undefined && <span className={`cell-delta ${cls}`}>{fmtDelta(d)}</span>}
     </Tag>
   );
@@ -938,6 +943,7 @@ export function MainScreen() {
             value={`${Math.floor(popsNow)}/${popsCap}`}
             delta={expectedPopGrowth(state, player)}
             onClick={() => setBreakdown(popsBreakdownFor(state, player))}
+            emphasis={popsCap > 0 && Math.floor(popsNow) >= popsCap ? "maxed" : undefined}
           />
         </div>
 
