@@ -32,9 +32,6 @@ when you want to remember something later.
   action) == advance(filter(state, empireId), action)` on the
   subset advance writes, under identity-filter preconditions.
 
-## UI
-
-
 ## Gameplay
 
 - **Presence-score term (open question).** The shipped scouting
