@@ -28,6 +28,7 @@ export function FleetModal({ fleetId, onClose }: { fleetId: string; onClose: () 
   const system = state.galaxy.systems[fleet.systemId];
   const isPlayer = fleet.empireId === state.empire.id;
   const sleeping = !!fleet.sleeping;
+  const autoDiscover = !!fleet.autoDiscover;
 
   const status = !isPlayer
     ? "Foreign fleet — cannot command."
@@ -35,7 +36,9 @@ export function FleetModal({ fleetId, onClose }: { fleetId: string; onClose: () 
       ? "No ships left."
       : sleeping
         ? "Sleeping — autoplay won't pause for this fleet. Tap the fleet pill to set a route."
-        : "Tap the fleet pill on the system view to set a route.";
+        : autoDiscover
+          ? "Auto-discover — steers itself to the nearest unsurveyed system each turn."
+          : "Tap the fleet pill on the system view to set a route.";
 
   return (
     <div className="modal-scrim" onClick={onClose}>
@@ -64,19 +67,34 @@ export function FleetModal({ fleetId, onClose }: { fleetId: string; onClose: () 
         <div className="fleet-blocked">{status}</div>
 
         {isPlayer && fleet.shipCount > 0 && (
-          <button
-            className="menu-btn"
-            onClick={() =>
-              dispatch({
-                type: "setFleetSleep",
-                byEmpireId: state.empire.id,
-                fleetId: fleet.id,
-                sleeping: !sleeping,
-              })
-            }
-          >
-            {sleeping ? "Wake fleet" : "Sleep fleet"}
-          </button>
+          <>
+            <button
+              className="menu-btn"
+              onClick={() =>
+                dispatch({
+                  type: "setFleetAutoDiscover",
+                  byEmpireId: state.empire.id,
+                  fleetId: fleet.id,
+                  autoDiscover: !autoDiscover,
+                })
+              }
+            >
+              {autoDiscover ? "Stop auto-discover" : "Auto-discover"}
+            </button>
+            <button
+              className="menu-btn"
+              onClick={() =>
+                dispatch({
+                  type: "setFleetSleep",
+                  byEmpireId: state.empire.id,
+                  fleetId: fleet.id,
+                  sleeping: !sleeping,
+                })
+              }
+            >
+              {sleeping ? "Wake fleet" : "Sleep fleet"}
+            </button>
+          </>
         )}
 
         <button className="close-btn" onClick={onClose}>close</button>

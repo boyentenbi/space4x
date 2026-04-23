@@ -56,6 +56,13 @@ export interface Fleet {
   // autoplay — it doesn't trigger the "idle fleet needs orders"
   // auto-stop condition. Pure UI state; the sim ignores it.
   sleeping?: boolean;
+  // Auto-discover mode. Each turn the fleet's owning phase runs a
+  // small chooser that sets a destination to the nearest discovered-
+  // but-not-yet-surveyed system, pushing the frontier outward
+  // without player intervention. Like `sleeping` it exempts the
+  // fleet from the idle-fleet attention check; unlike sleeping it
+  // actually drives movement.
+  autoDiscover?: boolean;
 }
 
 export interface Body {

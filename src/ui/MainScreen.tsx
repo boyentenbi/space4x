@@ -1231,6 +1231,21 @@ export function MainScreen() {
                       className="move-bar-clear"
                       onClick={() => {
                         dispatch({
+                          type: "setFleetAutoDiscover",
+                          byEmpireId: state.empire.id,
+                          fleetId: moveFleet.id,
+                          autoDiscover: !moveFleet.autoDiscover,
+                        });
+                        setMoveMode(null);
+                      }}
+                    >
+                      {moveFleet.autoDiscover ? "stop auto-discover" : "auto-discover"}
+                    </button>
+                    <button
+                      type="button"
+                      className="move-bar-clear"
+                      onClick={() => {
+                        dispatch({
                           type: "setFleetSleep",
                           byEmpireId: state.empire.id,
                           fleetId: moveFleet.id,

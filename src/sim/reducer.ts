@@ -61,6 +61,7 @@ export type Action =
   | { type: "declareWar"; byEmpireId: string; targetEmpireId: string }
   | { type: "makePeace"; byEmpireId: string; targetEmpireId: string }
   | { type: "setFleetSleep"; byEmpireId: string; fleetId: string; sleeping: boolean }
+  | { type: "setFleetAutoDiscover"; byEmpireId: string; fleetId: string; autoDiscover: boolean }
   | { type: "dismissProjectCompletion" }
   | { type: "dismissFirstContact" };
 
@@ -1228,9 +1229,44 @@ export function needsPlayerAttention(state: GameState): boolean {
     if (f.shipCount <= 0) continue;
     if (f.destinationSystemId) continue;
     if (f.sleeping) continue;
-    return true; // idle, non-sleeping fleet
+    if (f.autoDiscover) continue; // the auto-discover chooser will set a route
+    return true; // idle, non-sleeping, non-auto fleet
   }
   return false;
+}
+
+// Auto-discover destination picker. From the fleet's current system,
+// BFS through the empire's discovered graph and return the nearest
+// system that hasn't been surveyed yet (i.e. no fleet has been
+// physically inside it). Returning that as the next destination
+// pushes the frontier one jump outward each turn — once the fleet
+// arrives the newly-reached system becomes surveyed, and next turn
+// the chooser picks the next nearest unsurveyed one.
+//
+// Returns null when there's nothing left to discover within the
+// connected component of the empire's discovered graph.
+function autoDiscoveryDestination(
+  state: GameState,
+  empire: Empire,
+  fleet: Fleet,
+): string | null {
+  const surveyed = new Set(empire.perception.surveyed);
+  const discovered = new Set(empire.perception.discovered);
+  const adj = buildAdjacency(state);
+  const visited = new Set<string>([fleet.systemId]);
+  const queue: string[] = [fleet.systemId];
+  let head = 0;
+  while (head < queue.length) {
+    const id = queue[head++];
+    if (id !== fleet.systemId && !surveyed.has(id)) return id;
+    for (const n of adj.get(id) ?? []) {
+      if (visited.has(n)) continue;
+      if (!discovered.has(n)) continue;
+      visited.add(n);
+      queue.push(n);
+    }
+  }
+  return null;
 }
 
 // Cross-empire: does *any* empire already have a colonize order on this body?
@@ -3844,8 +3880,25 @@ export function reduce(state: GameState, action: Action): GameState {
         const f = draft.fleets[action.fleetId];
         if (!f) return;
         if (f.empireId !== action.byEmpireId) return;
-        if (action.sleeping) f.sleeping = true;
-        else delete f.sleeping;
+        if (action.sleeping) {
+          f.sleeping = true;
+          delete f.autoDiscover; // mutually exclusive
+        } else {
+          delete f.sleeping;
+        }
+      });
+
+    case "setFleetAutoDiscover":
+      return produce(state, (draft) => {
+        const f = draft.fleets[action.fleetId];
+        if (!f) return;
+        if (f.empireId !== action.byEmpireId) return;
+        if (action.autoDiscover) {
+          f.autoDiscover = true;
+          delete f.sleeping; // mutually exclusive
+        } else {
+          delete f.autoDiscover;
+        }
       });
 
     case "beginRound": {
@@ -3910,6 +3963,26 @@ function applyRunPhase(state: GameState): GameState {
       if (ai) {
         aiPlanDiplomacy(draft, ai, diplomacyRand);
         aiPlanMoves(draft, ai);
+      }
+    } else {
+      // Player-phase: run the auto-discover chooser for any of the
+      // player's fleets flagged for it. Acts only on fleets without
+      // a current destination — the player's manual routes take
+      // precedence.
+      const player = draft.empire;
+      for (const f of Object.values(draft.fleets)) {
+        if (f.empireId !== currentId) continue;
+        if (f.shipCount <= 0) continue;
+        if (!f.autoDiscover) continue;
+        if (f.destinationSystemId) continue;
+        const dest = autoDiscoveryDestination(draft, player, f);
+        if (dest) {
+          applySetFleetDestination(draft, {
+            byEmpireId: currentId,
+            fleetId: f.id,
+            toSystemId: dest,
+          });
+        }
       }
     }
 
