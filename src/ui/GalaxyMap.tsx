@@ -1,4 +1,4 @@
-import type { Empire, Fleet, Galaxy, StarSystem } from "../sim/types";
+import type { Empire, Fleet, Galaxy, StarSystem, SystemSnapshot } from "../sim/types";
 import { HAB_COLOR } from "./icons";
 
 const HEX_SIZE = 16;       // radius of each hex
@@ -156,6 +156,30 @@ function componentColor(componentId: string): string {
   return COMPONENT_PALETTE[hashStr(componentId) % COMPONENT_PALETTE.length];
 }
 
+// Fog display state for one system from the viewer's perspective.
+//   live   — in sensor right now; show true state.
+//   stale  — discovered before, out of sensor now; show the last snapshot
+//            we took, dimmed. No occupation ring, no live fleet data.
+//   hidden — never discovered; omit the system from rendering entirely.
+// When no viewerEmpire is supplied, every system is treated as live
+// (dev/spectator view — no fog applied).
+type DisplayKind = "live" | "stale" | "hidden";
+
+interface DisplayFleet {
+  key: string;
+  empireId: string;
+  shipCount: number;
+}
+
+interface SystemDisplay {
+  kind: DisplayKind;
+  ownerId: string | null;
+  fleets: DisplayFleet[];
+  showOccupation: boolean;
+  // When stale, reads the snapshot turn for UI hints / future "last seen".
+  snapshotTurn?: number;
+}
+
 export function GalaxyMap({
   galaxy,
   empires,
@@ -164,6 +188,8 @@ export function GalaxyMap({
   onSelect,
   moveMode,
   playerComponents,
+  viewerEmpire,
+  sensor,
 }: {
   galaxy: Galaxy;
   empires: Empire[];
@@ -183,6 +209,11 @@ export function GalaxyMap({
   // a distinct tint so the player can see the logistics topology at a
   // glance.
   playerComponents?: Map<string, string>;
+  // Fog of war: whose perspective we're rendering from, and which
+  // systems are currently in that empire's sensor range. Both must be
+  // supplied together; omitting them renders every system live.
+  viewerEmpire?: Empire | null;
+  sensor?: Set<string> | null;
 }) {
   const systems = Object.values(galaxy.systems);
 
@@ -198,17 +229,86 @@ export function GalaxyMap({
     fleetsBySystem.set(f.systemId, arr);
   }
 
-  // Lookup: "q,r" -> system (for neighbor ownership check).
+  // Per-system fog resolution. Unexplored → hidden; in sensor → live;
+  // else → stale (from snapshot). Done once up front so every render
+  // branch can just look up by systemId.
+  const fogActive = !!(viewerEmpire && sensor);
+  const discovered = fogActive ? new Set(viewerEmpire!.discovered) : null;
+  const snapshots = fogActive ? viewerEmpire!.snapshots : null;
+  const displayBySystem = new Map<string, SystemDisplay>();
+  for (const sys of systems) {
+    if (!fogActive) {
+      const liveFleets: DisplayFleet[] = (fleetsBySystem.get(sys.id) ?? []).map((f) => ({
+        key: f.id,
+        empireId: f.empireId,
+        shipCount: f.shipCount,
+      }));
+      displayBySystem.set(sys.id, {
+        kind: "live",
+        ownerId: sys.ownerId,
+        fleets: liveFleets,
+        showOccupation: true,
+      });
+      continue;
+    }
+    if (!discovered!.has(sys.id)) {
+      displayBySystem.set(sys.id, {
+        kind: "hidden",
+        ownerId: null,
+        fleets: [],
+        showOccupation: false,
+      });
+      continue;
+    }
+    if (sensor!.has(sys.id)) {
+      const liveFleets: DisplayFleet[] = (fleetsBySystem.get(sys.id) ?? []).map((f) => ({
+        key: f.id,
+        empireId: f.empireId,
+        shipCount: f.shipCount,
+      }));
+      displayBySystem.set(sys.id, {
+        kind: "live",
+        ownerId: sys.ownerId,
+        fleets: liveFleets,
+        showOccupation: true,
+      });
+      continue;
+    }
+    // Stale — fall back to the last snapshot we took of this system.
+    const snap: SystemSnapshot | undefined = snapshots![sys.id];
+    const staleFleets: DisplayFleet[] = (snap?.fleets ?? []).map((f, idx) => ({
+      key: `stale-${sys.id}-${f.empireId}-${idx}`,
+      empireId: f.empireId,
+      shipCount: f.shipCount,
+    }));
+    displayBySystem.set(sys.id, {
+      kind: "stale",
+      ownerId: snap?.ownerId ?? null,
+      fleets: staleFleets,
+      showOccupation: false,
+      snapshotTurn: snap?.turn,
+    });
+  }
+
+  // Systems actually rendered this frame (hidden ones drop out).
+  const visibleSystems = systems.filter((s) => displayBySystem.get(s.id)!.kind !== "hidden");
+
+  // Lookup: "q,r" -> system (for neighbor ownership check). Limited to
+  // visibleSystems so an unexplored neighbour reads as "outside" — we
+  // don't leak its true ownership into the border of a visible hex.
   const byCoord = new Map<string, StarSystem>();
-  for (const s of systems) byCoord.set(`${s.q},${s.r}`, s);
+  for (const s of visibleSystems) byCoord.set(`${s.q},${s.r}`, s);
 
   function ownerIdAt(q: number, r: number): string | null {
     const s = byCoord.get(`${q},${r}`);
-    return s?.ownerId ?? null;
+    if (!s) return null;
+    return displayBySystem.get(s.id)?.ownerId ?? null;
   }
 
-  // Bounds for viewBox.
-  const pts = systems.map((s) => hexToPixel(s.q, s.r));
+  // Bounds for viewBox. Use only visibleSystems so early-game (when we
+  // have ~7 systems discovered) the viewport actually fits what we've
+  // found, rather than zooming out over a vast empty galaxy.
+  const pts = (visibleSystems.length > 0 ? visibleSystems : systems).map((s) => hexToPixel(s.q, s.r));
   const pad = HEX_SIZE + 4;
   const minX = Math.min(...pts.map((p) => p.x)) - pad;
   const maxX = Math.max(...pts.map((p) => p.x)) + pad;
@@ -225,8 +325,8 @@ export function GalaxyMap({
   const perimeterByOwner = new Map<string, Edge[]>();
   const interiorByOwner = new Map<string, Edge[]>();
   const perimeterSegments: Array<{ sysId: string; x1: number; y1: number; x2: number; y2: number }> = [];
-  for (const sys of systems) {
-    const ownerId = sys.ownerId;
+  for (const sys of visibleSystems) {
+    const ownerId = displayBySystem.get(sys.id)!.ownerId;
     if (!ownerId) continue;
     const { x, y } = hexToPixel(sys.q, sys.r);
     const corners = hexCorners(x, y, HEX_SIZE - 1);
@@ -264,9 +364,17 @@ export function GalaxyMap({
           const a = galaxy.systems[aId];
           const b = galaxy.systems[bId];
           if (!a || !b) return null;
+          // Only draw a hyperlane if the viewer has discovered both
+          // endpoints. One endpoint discovered isn't enough — we don't
+          // know what's on the other side, so the lane isn't known to us.
+          const da = displayBySystem.get(aId);
+          const db = displayBySystem.get(bId);
+          if (!da || !db || da.kind === "hidden" || db.kind === "hidden") return null;
           const pa = hexToPixel(a.q, a.r);
           const pb = hexToPixel(b.q, b.r);
-          const sharedOwner = a.ownerId && a.ownerId === b.ownerId ? a.ownerId : null;
+          const aOwner = da.ownerId;
+          const bOwner = db.ownerId;
+          const sharedOwner = aOwner && aOwner === bOwner ? aOwner : null;
           const color = sharedOwner
             ? (empireById.get(sharedOwner)?.color ?? "#3a4355")
             : "#3a4355";
@@ -328,9 +436,12 @@ export function GalaxyMap({
         const splitIntoComponents =
           !!playerComponents && new Set(playerComponents.values()).size >= 2;
         // Resolve the color used to fill / outline the given system.
+        // Owner comes from the fog-adjusted display state so stale
+        // hexes paint with their last-seen owner's colour.
         const colorFor = (sys: StarSystem): string | null => {
-          if (!sys.ownerId) return null;
-          const empire = empireById.get(sys.ownerId);
+          const ownerId = displayBySystem.get(sys.id)?.ownerId ?? null;
+          if (!ownerId) return null;
+          const empire = empireById.get(ownerId);
           if (!empire) return null;
           if (splitIntoComponents) {
             const cid = playerComponents?.get(sys.id);
@@ -342,15 +453,16 @@ export function GalaxyMap({
           <>
             {/* Territory fill: one translucent blob per owner/component. */}
             <g className="territory-fill">
-              {systems.map((sys) => {
+              {visibleSystems.map((sys) => {
                 const c = colorFor(sys);
                 if (!c) return null;
+                const stale = displayBySystem.get(sys.id)?.kind === "stale";
                 const { x, y } = hexToPixel(sys.q, sys.r);
                 return (
                   <polygon
                     key={`fill-${sys.id}`}
                     points={polygonPoints(hexCorners(x, y, HEX_SIZE - 1))}
-                    fill={`${c}33`}
+                    fill={`${c}${stale ? "1a" : "33"}`}
                     stroke="none"
                   />
                 );
@@ -430,9 +542,11 @@ export function GalaxyMap({
       })()}
 
       {/* Systems — star dot + optional selected highlight. */}
-      {systems.map((sys) => {
+      {visibleSystems.map((sys) => {
+        const display = displayBySystem.get(sys.id)!;
         const { x, y } = hexToPixel(sys.q, sys.r);
-        const isOwned = !!sys.ownerId;
+        const isOwned = !!display.ownerId;
+        const isStale = display.kind === "stale";
         const isSelected = sys.id === selectedId;
         const isMoveOrigin = moveMode?.originSystemId === sys.id;
         const isMoveDest =
@@ -450,7 +564,7 @@ export function GalaxyMap({
               e.stopPropagation();
               onSelect(sys.id === selectedId ? null : sys.id);
             }}
-            style={{ cursor: "pointer" }}
+            style={{ cursor: "pointer", opacity: isStale ? 0.55 : 1 }}
           >
             {/* Move-mode origin ring — dashed, highlight colour. */}
             {isMoveOrigin && moveMode && (
@@ -487,8 +601,10 @@ export function GalaxyMap({
               />
             )}
             {/* Occupation ring — pulsing red, reads unambiguously as
-                "your system is being taken" regardless of who's doing it. */}
-            {sys.occupation && (
+                "your system is being taken" regardless of who's doing it.
+                Gated on display.showOccupation: stale views can't peek
+                at live siege state. */}
+            {sys.occupation && display.showOccupation && (
               <polygon
                 className="siege-ring"
                 points={polygonPoints(hexCorners(x, y, HEX_SIZE - 0.5))}
@@ -512,17 +628,20 @@ export function GalaxyMap({
             <circle cx={x} cy={y} r={2.2} fill={isOwned ? "#fff" : "#8a96ab"} opacity={isOwned ? 0.95 : 0.7} />
             {/* Fleet indicators — small triangles in the upper-left
                 corner of the hex, one per empire with a fleet here,
-                coloured by empire. Tiny text for ship count >= 2. */}
+                coloured by empire. Tiny text for ship count >= 2.
+                Stale systems draw from the snapshot's aggregated
+                per-empire counts; live systems draw from the real
+                fleets list. Either way the display shape is the same. */}
             {(() => {
-              const sysFleets = fleetsBySystem.get(sys.id);
-              if (!sysFleets || sysFleets.length === 0) return null;
+              const sysFleets = display.fleets;
+              if (sysFleets.length === 0) return null;
               return sysFleets.map((f, idx) => {
                 const empire = empireById.get(f.empireId);
                 if (!empire) return null;
                 const baseX = x - HEX_SIZE * 0.6;
                 const baseY = y - HEX_SIZE * 0.35 + idx * 4.5;
                 return (
-                  <g key={f.id}>
+                  <g key={f.key}>
                     <polygon
                       points={`${baseX},${baseY - 1.8} ${baseX + 3.2},${baseY + 1.6} ${baseX - 3.2},${baseY + 1.6}`}
                       fill={empire.color}

@@ -30,6 +30,7 @@ import {
   perTurnIncome,
   popsBreakdownFor,
   resourceBreakdownAsStat,
+  sensorSet,
   shortestPathFor,
   totalPops,
 } from "../sim/reducer";
@@ -1060,6 +1061,8 @@ export function MainScreen() {
                   : null
               }
               playerComponents={computeComponents(state, state.empire)}
+              viewerEmpire={state.empire}
+              sensor={sensorSet(state, state.empire.id)}
             />
             {moveFleet && !moveFleetStale && (() => {
               const dest = moveFleet.destinationSystemId
