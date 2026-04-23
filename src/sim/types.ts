@@ -42,11 +42,17 @@ export interface Fleet {
   empireId: string;
   systemId: string;
   shipCount: number;
-  // Movement is exclusively an end-of-turn world-update now: players
-  // and AIs set destinations via setFleetDestination and the auto-
-  // stepper walks the fleet one hop per turn until it arrives or the
-  // route becomes blocked.
+  // Movement is exclusively an end-of-turn world-update: players and
+  // AIs set destinations via setFleetDestination and the auto-stepper
+  // (processFleetOrders) accumulates hopProgress each turn, performing
+  // a hop and resetting progress to 0 once it reaches TURNS_PER_HOP.
+  // Setting/clearing destinationSystemId also resets hopProgress —
+  // changing course aborts the in-flight jump.
   destinationSystemId?: string;
+  // Turns of progress accumulated toward the next hop. Defaults to 0
+  // when undefined (omitted to keep saves compact for fleets that
+  // aren't moving).
+  hopProgress?: number;
   // Player UI flag. A sleeping fleet is considered "handled" by
   // autoplay — it doesn't trigger the "idle fleet needs orders"
   // auto-stop condition. Pure UI state; the sim ignores it.
@@ -393,7 +399,7 @@ export type PerceivedGameState = GameState & {
 };
 
 export interface GameState {
-  schemaVersion: 26;
+  schemaVersion: 27;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;

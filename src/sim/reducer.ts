@@ -306,7 +306,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 26,
+    schemaVersion: 27,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -1514,6 +1514,14 @@ function resolveCombat(draft: GameState): void {
 
 // Turns an unopposed enemy presence must hold before a system flips.
 export const OCCUPATION_TURNS_TO_FLIP = 3;
+
+// How many turns of accumulated travel before a fleet jumps to its
+// next hop. With TURNS_PER_HOP = 3, even a single-hop journey is a
+// 3-turn commitment — no snap-reactions, position matters in advance.
+// Galaxy diameter (~8 hops) costs ~24 turns to traverse; a typical
+// border crossing is ~10 turns. Changing destination mid-flight resets
+// progress to 0 (you can't bank progress between routes).
+export const TURNS_PER_HOP = 3;
 
 // After combat each turn, advance or clear occupation counters and
 // flip systems that crossed the threshold. Then prune any empires
@@ -3004,15 +3012,35 @@ export function aiPlanProject(draft: GameState, empire: Empire): void {
   }
 }
 
-// Auto-step every fleet carrying a destinationSystemId: recompute the
-// legal-path BFS, walk one hop, and clear the order on arrival. Fleets
+// Total turns until the fleet reaches its destination, accounting
+// for both the partial hop in progress and the remaining hops on the
+// stored path. Returns null if the fleet has no destination, no
+// ships, or the route is currently blocked.
+export function fleetEtaTurns(state: GameState, fleet: Fleet): number | null {
+  if (!fleet.destinationSystemId) return null;
+  if (fleet.shipCount <= 0) return null;
+  if (fleet.systemId === fleet.destinationSystemId) return 0;
+  const path = shortestPathFor(
+    state,
+    fleet.empireId,
+    fleet.systemId,
+    fleet.destinationSystemId,
+  );
+  if (!path || path.length === 0) return null;
+  return (TURNS_PER_HOP - (fleet.hopProgress ?? 0)) + (path.length - 1) * TURNS_PER_HOP;
+}
+
+// Auto-step every fleet carrying a destinationSystemId: accumulate
+// hopProgress, and once it reaches TURNS_PER_HOP perform a single hop
+// (recompute the path BFS, walk to path[0], reset progress). Fleets
 // whose route is now blocked are stranded (destination cleared,
 // chronicled for the player). This is the ONLY mechanism by which
 // fleets move — setFleetDestination never moves a fleet itself.
 //
-// Each hop costs `shipCount` compute from the empire's per-turn budget.
-// If the empire can't afford a hop, the fleet stays put this turn with
-// its route intact and retries next turn.
+// Compute budget: each actually-performed hop costs `shipCount`
+// compute. Turns spent accumulating progress are free. If the empire
+// can't afford a hop on the turn progress completes, the fleet idles
+// at progress = TURNS_PER_HOP and retries next turn.
 function processFleetOrders(draft: GameState, onlyEmpireId?: string): void {
   const fleetIds = Object.keys(draft.fleets);
   for (const fid of fleetIds) {
@@ -3023,6 +3051,7 @@ function processFleetOrders(draft: GameState, onlyEmpireId?: string): void {
     if (onlyEmpireId && fleet.empireId !== onlyEmpireId) continue;
     if (fleet.systemId === fleet.destinationSystemId) {
       fleet.destinationSystemId = undefined;
+      fleet.hopProgress = undefined;
       continue;
     }
     const path = shortestPathFor(
@@ -3043,6 +3072,13 @@ function processFleetOrders(draft: GameState, onlyEmpireId?: string): void {
         });
       }
       fleet.destinationSystemId = undefined;
+      fleet.hopProgress = undefined;
+      continue;
+    }
+    // Tick travel progress; only hop once we've accumulated enough.
+    const progress = (fleet.hopProgress ?? 0) + 1;
+    if (progress < TURNS_PER_HOP) {
+      fleet.hopProgress = progress;
       continue;
     }
     // Compute budget check: moving N ships costs N compute.
@@ -3050,6 +3086,9 @@ function processFleetOrders(draft: GameState, onlyEmpireId?: string): void {
     if (!owner) continue;
     const cost = fleet.shipCount;
     if (owner.compute.used + cost > owner.compute.cap) {
+      // Hold at full progress; we'll try again next turn without
+      // re-paying the travel time.
+      fleet.hopProgress = TURNS_PER_HOP;
       if (fleet.empireId === draft.humanEmpireId) {
         const here = draft.galaxy.systems[fleet.systemId];
         draft.eventLog.push({
@@ -3077,10 +3116,20 @@ function processFleetOrders(draft: GameState, onlyEmpireId?: string): void {
     if (destFleet) {
       destFleet.shipCount += moveCount;
       destFleet.destinationSystemId = nextHop === final ? undefined : final;
+      // Inherit a fresh per-hop clock — the merged fleet hasn't
+      // started accumulating toward the NEXT hop yet.
+      if (nextHop !== final) destFleet.hopProgress = 0;
+      else destFleet.hopProgress = undefined;
       delete draft.fleets[fid];
     } else {
       fleet.systemId = nextHop;
-      if (nextHop === final) fleet.destinationSystemId = undefined;
+      if (nextHop === final) {
+        fleet.destinationSystemId = undefined;
+        fleet.hopProgress = undefined;
+      } else {
+        // Reset for the next hop on the same route.
+        fleet.hopProgress = 0;
+      }
     }
     // Entering a foreign-owned system is a declaration of war.
     maybeAutoDeclareWar(draft, fleet.empireId, nextHop);
@@ -3587,10 +3636,12 @@ function applySetFleetDestination(
   if (fleet.empireId !== action.byEmpireId) return;
   if (action.toSystemId === null) {
     fleet.destinationSystemId = undefined;
+    fleet.hopProgress = undefined;
     return;
   }
   if (action.toSystemId === fleet.systemId) {
     fleet.destinationSystemId = undefined;
+    fleet.hopProgress = undefined;
     return;
   }
   // Destination must have a legal path. Reject the order if there's
@@ -3598,6 +3649,10 @@ function applySetFleetDestination(
   // territory flips, not by setting impossible orders.
   const path = shortestPathFor(draft, fleet.empireId, fleet.systemId, action.toSystemId);
   if (!path || path.length === 0) return;
+  // Course change resets the per-hop clock — banking progress from a
+  // previous route would let players "queue" hops by repeatedly
+  // re-targeting nearby systems.
+  if (fleet.destinationSystemId !== action.toSystemId) fleet.hopProgress = 0;
   fleet.destinationSystemId = action.toSystemId;
 }
 

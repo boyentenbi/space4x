@@ -20,6 +20,7 @@ import {
   effectiveColonizePolitical,
   maxPopsFor,
   empireById,
+  fleetEtaTurns,
   empireResourceStock,
   expectedPopGrowth,
   fleetsInSystem,
@@ -1088,6 +1089,7 @@ export function MainScreen() {
                     const destSys = f.destinationSystemId
                       ? state.galaxy.systems[f.destinationSystemId] ?? null
                       : null;
+                    const eta = destSys ? fleetEtaTurns(state, f) : null;
                     return (
                       <button
                         key={f.id}
@@ -1097,7 +1099,7 @@ export function MainScreen() {
                           empire
                             ? canMove
                               ? destSys
-                                ? `${empire.name} · en route to ${destSys.name}`
+                                ? `${empire.name} · en route to ${destSys.name}${eta != null ? ` (ETA ${eta}t)` : ""}`
                                 : `${empire.name} · tap to move`
                               : `${empire.name} · tap for details`
                             : ""
@@ -1125,6 +1127,7 @@ export function MainScreen() {
                         {destSys && (
                           <span className="fleet-pill-route" style={{ color: empire?.color ?? "var(--text-dim)" }}>
                             → {destSys.name}
+                            {eta != null && <span className="fleet-pill-eta"> {eta}t</span>}
                           </span>
                         )}
                       </button>

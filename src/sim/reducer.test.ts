@@ -1604,9 +1604,12 @@ describe("per-empire phases", () => {
       wars: [["e_ai", "e_player"].sort() as [string, string]],
     });
 
-    const next = reduce(state, { type: "endTurn" });
-    // After one round the two 1-ship fleets should both be dead from
-    // combat — pre-refactor they'd have passed through and survived.
+    // Hop takes TURNS_PER_HOP turns to accumulate, so neither fleet
+    // moves until the third end-turn — but on that round player phase
+    // runs first and steps into s_ai before AI can step out, so they
+    // collide and both 1-ship fleets die.
+    let next = state;
+    for (let i = 0; i < 3; i++) next = reduce(next, { type: "endTurn" });
     expect(next.fleets["f_player"]).toBeUndefined();
     expect(next.fleets["f_ai"]).toBeUndefined();
   });
@@ -1647,15 +1650,18 @@ describe("processFleetOrders via endTurn", () => {
       fleets: [fleet],
     });
 
-    const t1 = reduce(state, { type: "endTurn" });
-    // After one end-turn, fleet should be at mid, still routed to far.
-    expect(t1.fleets["f1"]?.systemId).toBe("s_mid");
-    expect(t1.fleets["f1"]?.destinationSystemId).toBe("s_far");
-
-    const t2 = reduce(t1, { type: "endTurn" });
-    // Arrived; destination cleared.
-    expect(t2.fleets["f1"]?.systemId).toBe("s_far");
-    expect(t2.fleets["f1"]?.destinationSystemId).toBeUndefined();
+    // Each hop takes TURNS_PER_HOP=3 turns to accumulate. After 3
+    // end-turns the fleet should have completed one hop (home → mid)
+    // and reset progress; after 6 it should have completed both hops.
+    let s = state;
+    for (let i = 0; i < 3; i++) s = reduce(s, { type: "endTurn" });
+    expect(s.fleets["f1"]?.systemId).toBe("s_mid");
+    expect(s.fleets["f1"]?.destinationSystemId).toBe("s_far");
+    expect(s.fleets["f1"]?.hopProgress ?? 0).toBe(0);
+    for (let i = 0; i < 3; i++) s = reduce(s, { type: "endTurn" });
+    expect(s.fleets["f1"]?.systemId).toBe("s_far");
+    expect(s.fleets["f1"]?.destinationSystemId).toBeUndefined();
+    expect(s.fleets["f1"]?.hopProgress).toBeUndefined();
   });
 
   it("idles a fleet whose jump would exceed the compute budget", () => {
@@ -2017,7 +2023,9 @@ describe("declareWar / makePeace round-trip", () => {
       fleets: [fleet],
     });
     expect(atWar(state, "e_player", "e_ai")).toBe(false);
-    const next = reduce(state, { type: "endTurn" });
+    // 3 end-turns to complete the one-hop journey to s_enemy.
+    let next = state;
+    for (let i = 0; i < 3; i++) next = reduce(next, { type: "endTurn" });
     // War was declared as the fleet crossed the border.
     expect(atWar(next, "e_player", "e_ai")).toBe(true);
   });

@@ -1451,6 +1451,11 @@ button.res-cell:hover:not(:disabled) {
   opacity: 0.85;
 }
 
+.fleet-pill-eta {
+  margin-left: 3px;
+  opacity: 0.6;
+}
+
 @keyframes fleet-pill-pulse {
   0%, 100% { filter: brightness(1); }
   50%      { filter: brightness(1.35); }
