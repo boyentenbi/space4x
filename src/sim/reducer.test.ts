@@ -226,6 +226,36 @@ describe("deterministic pop growth", () => {
     expect(ticked.galaxy.bodies["b_empty"].pops).toBe(0);
   });
 
+  it("internal migration moves pops from the empire's largest colony to its most-headroom colony", () => {
+    // Big populated world + a sparsely-populated frontier colony
+    // with lots of room. After a tick, pops should drift from big
+    // to the frontier. No hyperlane between them — migration is
+    // empire-wide now (no connectivity gate).
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_big"], ownerId: "e_player" });
+    const remote = makeSystem({ id: "s_remote", bodyIds: ["b_small"], ownerId: "e_player" });
+    const big = makeBody({ id: "b_big", systemId: "s_home", pops: 30, maxPops: 40 });
+    const small = makeBody({ id: "b_small", systemId: "s_remote", pops: 5, maxPops: 80 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_big",
+      systemIds: [home.id, remote.id],
+      resources: { food: 10000, energy: 10000, political: 10 },
+    });
+    const state = makeState({
+      systems: [home, remote],
+      bodies: [big, small],
+      // Deliberately no hyperlane — migration is empire-wide.
+      empire: player,
+    });
+    const ticked = runOnePhase(state, "e_player");
+    // Delta narrows (big loses, small gains) regardless of how much
+    // organic growth both sides also pick up this turn.
+    const beforeDelta = small.pops - big.pops;
+    const afterDelta =
+      ticked.galaxy.bodies["b_small"].pops -
+      ticked.galaxy.bodies["b_big"].pops;
+    expect(afterDelta).toBeGreaterThan(beforeDelta);
+  });
 });
 
 describe("availableBodyProjectsFor", () => {

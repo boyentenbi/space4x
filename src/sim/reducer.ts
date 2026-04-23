@@ -2348,7 +2348,40 @@ function tickEmpire(draft: GameState, empire: Empire): void {
     }
   }
 
-  // 6. Famine. If the empire ran through its food, pick the biggest
+  // 6. Internal migration. Drift MIGRATION_RATE_PER_POP × source.pops
+  //    from the empire's single most-populated body toward its
+  //    single most-absolute-headroom body. Empire-wide: the old
+  //    per-connected-component gating went away with the logistics
+  //    layer; pops are treated as able to relocate anywhere within
+  //    the empire. Uncolonised bodies aren't eligible sinks — colony
+  //    ships remain the way to settle new worlds.
+  {
+    let source: Body | null = null;
+    let sink: Body | null = null;
+    for (const body of ownedBodiesOf(draft, empire)) {
+      const cap = maxPopsFor(empire, body);
+      if (body.pops >= 1 && (!source || body.pops > source.pops)) source = body;
+      const headroom = cap - body.pops;
+      if (
+        body.pops > 0 &&
+        headroom > 0 &&
+        (!sink || headroom > maxPopsFor(empire, sink) - sink.pops)
+      ) {
+        sink = body;
+      }
+    }
+    if (source && sink && source.id !== sink.id && source.pops > sink.pops) {
+      const desired = MIGRATION_RATE_PER_POP * source.pops;
+      const maxFair = (source.pops - sink.pops) / 2;
+      const moved = Math.min(desired, maxFair, source.pops);
+      if (moved > 0) {
+        source.pops -= moved;
+        sink.pops += moved;
+      }
+    }
+  }
+
+  // 7. Famine. If the empire ran through its food, pick the biggest
   //    populated body and lose a pop there; clamp food back to zero.
   if (empire.food < 0) {
     let starvedName: string | null = null;
