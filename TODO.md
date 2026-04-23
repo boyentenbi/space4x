@@ -12,17 +12,6 @@ when you want to remember something later.
   system IDs). Zero runtime cost; a few hundred trivial edits across the
   codebase.
 
-## Bugs
-
-- **Conqueror throws a 1-ship fleet at a 5-ship defender.** Observed
-  in play: an at-war conqueror with a single-ship fleet keeps
-  setting its destination to a player system holding 5+ ships. The
-  move is a guaranteed loss (Lanchester wipes the attacker); the
-  value function should price it deep negative via the ship-loss
-  and post-combat threat terms but apparently doesn't. Failing
-  regression test pending; once it fails, whatever scoring tweak
-  makes it pass will pin the fix.
-
 ## Design questions
 
 - **Build ships in units of 10?** Small-battle granularity is weird

@@ -1282,6 +1282,86 @@ describe("AI fleet routing (decision only)", () => {
     expect(decided.fleets["f_lone"]?.destinationSystemId).not.toBe("s_enemy");
   });
 
+  // The actual in-game bug. The AI's snapshot of a discovered-but-
+  // out-of-sensor system says "0 defenders" (old observation, the
+  // scout has since moved on). Reality has 5 defenders there now.
+  // Without the no-blind-attack rule, `filterStateFor` synthesizes
+  // snapshot fleets for stale systems, scoreCandidate resolves
+  // combat against those, and the AI "sees" an easy walk-in while
+  // reality has a garrison waiting. It then ships 1-ship fleets
+  // into the meat grinder every turn.
+  //
+  // Fix: aiPlanMoves skips foreign-owned destinations not in
+  // current sensor — scout first, invade second.
+  it("conqueror refuses to blindly attack a stale system that might have a garrison", () => {
+    // s_ai — s_mid — s_enemy. AI owns s_ai only (so s_enemy is
+    // NOT adjacent to anything AI owns — out of sensor).
+    // AI's snapshot claims s_enemy has no defenders, but reality
+    // has a 5-ship garrison there right now.
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const mid = makeSystem({ id: "s_mid", bodyIds: [], ownerId: null });
+    const enemyHome = makeSystem({
+      id: "s_enemy",
+      bodyIds: ["b_enemy"],
+      ownerId: "e_player",
+    });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const enemyBody = makeBody({ id: "b_enemy", systemId: "s_enemy", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_enemy",
+      systemIds: ["s_enemy"],
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_ai",
+      systemIds: ["s_ai"],
+      expansionism: "conqueror",
+      perception: {
+        // s_enemy is discovered from an old scout that's moved on.
+        discovered: ["s_ai", "s_mid", "s_enemy"],
+        snapshots: {
+          // Stale snapshot claims nobody is home (old intel).
+          s_enemy: {
+            turn: 1,
+            ownerId: "e_player",
+            fleets: [],
+          },
+        },
+        seenFlavour: [],
+        surveyed: ["s_ai"],
+      },
+    });
+    const aiFleet: Fleet = {
+      id: "f_lone",
+      empireId: "e_ai",
+      systemId: "s_ai",
+      shipCount: 1,
+    };
+    // Reality: 5 defenders are at s_enemy right now. The AI's
+    // snapshot doesn't know.
+    const defenderFleet: Fleet = {
+      id: "f_hidden_garrison",
+      empireId: "e_player",
+      systemId: "s_enemy",
+      shipCount: 5,
+    };
+    const state = makeState({
+      systems: [aiHome, mid, enemyHome],
+      bodies: [aiBody, enemyBody],
+      hyperlanes: [["s_ai", "s_mid"], ["s_mid", "s_enemy"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [aiFleet, defenderFleet],
+      wars: [["e_ai", "e_player"].sort() as [string, string]],
+      turn: 5,
+    });
+    const decided = runAiMoves(state, "e_ai");
+    // The lone ship shouldn't go — it can't see what's waiting.
+    // Expected behaviour once the fix lands. Fails today.
+    expect(decided.fleets["f_lone"]?.destinationSystemId).not.toBe("s_enemy");
+  });
+
   it("at-war conqueror with a large fleet attacks a smaller adjacent enemy fleet", () => {
     // The threat term in scoreState prices each enemy ship against
     // our own ship value, so wiping out a smaller foe registers as

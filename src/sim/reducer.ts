@@ -3121,6 +3121,17 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
   // from ordinary moves.
   const discovered = new Set(empire.perception.discovered);
 
+  // Current sensor — what the AI can actually observe LIVE right
+  // now. Used to gate blind attacks: a foreign-owned system outside
+  // current sensor carries a stale snapshot which may show an
+  // empty defender list even while reality has a garrison. The AI's
+  // scoreCandidate combat resolves against the stale snapshot and
+  // reports an easy walk-in, so the fleet gets committed to a
+  // guaranteed loss. Rule below: don't send a fleet at a foreign-
+  // owned destination unless we have current sensor on it. Enemy
+  // systems adjacent to us are still fair game — we can see them.
+  const currentSensor = sensorSet(current(draft), empire.id);
+
   for (const fleet of ourFleets) {
     // One BFS from the fleet's current system gives every reachable
     // destination in a single O(nodes + edges) pass. Cache by source
@@ -3210,7 +3221,17 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
     // the mutate also pushes a war into the projection so scoreState
     // sees the full consequence (new enemy, AT_WAR_COST, enabled
     // occupation debit, etc).
+    //
+    // Skip blind-attack candidates: a foreign-owned destination not in
+    // current sensor projects combat against whatever the snapshot
+    // happens to record, which might be nothing. Today's fleet
+    // walks into an unseen garrison, dies, and the AI tries again
+    // next turn. Require live sensor on a foreign target before
+    // committing — scout first, invade second.
     for (const dest of reachable) {
+      const destSys = baseline.galaxy.systems[dest];
+      const foreign = destSys?.ownerId && destSys.ownerId !== empire.id;
+      if (foreign && !currentSensor.has(dest)) continue;
       const score = scoreCandidate((d) => {
         const f = d.fleets[fleet.id];
         if (!f) return;
