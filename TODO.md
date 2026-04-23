@@ -25,19 +25,20 @@ when you want to remember something later.
 
 ## Architecture
 
-- **Fully-headless rollout.** Today `randomRollout` simulates by
-  driving `state.empire` (the "player" slot) with the AI planners
-  and dispatching `endTurn` through the regular reducer path. Works
-  for batch sweeps but still threads through player-only concepts:
-  random events queued for the player, first-contact modals for the
-  player, the `state.empire` vs `state.aiEmpires` split, etc. The
-  cleaner shape is "all empires are equivalent, none is special";
-  rollouts and the UI session just differ in which empire (if any)
-  has its decisions surfaced to a human. Refactor needed: collapse
-  `state.empire` + `state.aiEmpires` into a single `empires: Empire[]`
-  with an optional `humanEmpireId` for UI gating, and route random
-  events / first contacts per-empire (or globally) instead of
-  player-only. Worth doing before multiplayer / spectator views.
+- **Headless state + policies per empire.** Target architecture:
+  game state is fully headless, no `state.empire` / `state.aiEmpires`
+  distinction — just `empires: Empire[]`. Each empire has a *policy*
+  (a function that observes its filtered state and emits actions);
+  the AI policy is `aiPlanProject` + `aiPlanMoves` wrapped together,
+  the human policy reads from the UI. Random events / first contacts
+  / project completions get queued per-empire and the human's are
+  the only ones that pop a modal. Rollouts then = "every empire
+  uses the AI policy"; the live game = "one empire uses the human
+  policy, rest use the AI policy"; multiplayer = "N empires use a
+  human policy, rest use AI." Worth doing before multiplayer /
+  spectator / replay; the in-place player-slot hack we have now
+  papers over the abstraction but breaks down once any of those
+  features land.
 
 
 - **`filterStateFor` as a distinct type.** Today fog-correctness is
