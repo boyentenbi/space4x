@@ -68,7 +68,7 @@ export type Action =
 // Colonization tunables. Pop counts + space caps are now on a 10x
 // scale (so a starter temperate world runs ~40 pops instead of 4),
 // which gives per-turn growth a smoother feel.
-export const COLONIZE_HAMMERS = 500;
+export const COLONIZE_HAMMERS = 5000;
 export const COLONIZE_POLITICAL = 5;
 // Pops the colony ship "carries": deducted from the capital when the
 // order is queued, delivered to the target when it completes. Net zero
@@ -2627,7 +2627,7 @@ function tickEmpire(draft: GameState, empire: Empire): void {
 // Horizon weight on per-turn flows — "how many turns of this future
 // stream do I value". Different per-resource weights sit below; the
 // horizon multiplies all of them uniformly.
-export const FLOW_HORIZON = 5;
+export const FLOW_HORIZON = 50;
 
 // Per-resource weight on flow values. Political is scarce and hard to
 // generate, so each point is worth 3× a point of food / energy / hammers.
@@ -2646,11 +2646,11 @@ export const FLOW_WEIGHTS = {
 // pop potential: maxPops × MAX_POPS_VALUE. Actual population value
 // flows through this term's sibling (bodyFlowScore), not through the
 // intrinsic.
-export const STAR_BODY_VALUE = 600;
+export const STAR_BODY_VALUE = 6000;
 // Score per unit of effective maxPops. Calibrated so a 50%-full
 // temperate (pops ~1.75/t food-eq ≈ 175 flow × horizon 5 = 875) sits
 // at roughly 80% flow / 20% potential with 100 maxPops (200 potential).
-export const MAX_POPS_VALUE = 2;
+export const MAX_POPS_VALUE = 20;
 
 // Occupation progress weighting: how close to a flip does the AI
 // think an active siege is worth? Indexed by occ.turns (1-based),
@@ -2669,8 +2669,8 @@ const OCCUPATION_WEIGHT_BY_TURNS: readonly number[] = [0, 0.3, 0.6, 1.0];
 // takes a standing hit for having the enemy on your books.
 const AT_WAR_COST_PER_ENEMY: Record<Expansionism, number> = {
   conqueror: 0,
-  pragmatist: 500,
-  isolationist: 2000,
+  pragmatist: 5000,
+  isolationist: 20000,
 };
 
 // Per-archetype intrinsic value of a ship, measured in hammer-
@@ -2703,9 +2703,9 @@ const SHIP_VALUE_MULT: Record<Expansionism, number> = {
 // Conquerors gain the most from spreading out; isolationists
 // barely care.
 const SCOUT_VALUE: Record<Expansionism, number> = {
-  conqueror: 100,
-  pragmatist: 50,
-  isolationist: 10,
+  conqueror: 1000,
+  pragmatist: 500,
+  isolationist: 100,
 };
 function shipValueFor(empire: Empire): number {
   const frigate = projectById("build_frigate");
@@ -2860,7 +2860,7 @@ export function scoreState(
     score += stuckShips * shipBase * 0.2;
   }
   // Political stockpile: empire-wide, expensive to regenerate.
-  score += empire.political * 15;
+  score += empire.political * 150;
   // Scouting / reach: monotonic reward for each distinct system the
   // empire has either visited historically (perception.surveyed,
   // frozen under lookahead) or currently occupies (own systems +

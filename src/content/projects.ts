@@ -6,7 +6,7 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     name: "Build Outpost",
     description:
       "Construct an orbital outpost at the system's star. Claims the system for your empire; required before you can colonise any planet here.",
-    hammersRequired: 300,
+    hammersRequired: 3000,
     scope: "body",
     bodyRequirement: "star",
     costs: { political: 3 },
@@ -22,7 +22,7 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     name: "Build Frigate",
     description:
       "Assemble a frigate at this world's orbital yards. Joins the system's fleet on completion. The start of a navy.",
-    hammersRequired: 500,
+    hammersRequired: 5000,
     scope: "body",
     bodyRequirement: "any_owned",
     costs: { political: 2 },
@@ -40,7 +40,7 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     name: "Build Defender",
     description:
       "Emplace a stationary defender on this system's star station. Can't move, but counts double in combat and blocks enemy occupation while it lives. Stacks with other defenders here. Available on any system you own — no colonised planet required.",
-    hammersRequired: 500,
+    hammersRequired: 5000,
     scope: "body",
     bodyRequirement: "owned_star",
     costs: { political: 2 },
@@ -56,7 +56,7 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     name: "Complete Emancipation",
     description:
       "Seize the last human-operated governments. Every contested district rewritten. The pre-complete debuff falls away and a lasting production bonus takes its place.",
-    hammersRequired: 1000,
+    hammersRequired: 10000,
     scope: "body",
     bodyRequirement: "capital",
     costs: { political: 20 },

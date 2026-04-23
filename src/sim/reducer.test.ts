@@ -505,28 +505,29 @@ describe("AI scoreState value function", () => {
       fleets: [siegeFleet],
       wars: [["e_ai", "e_player"].sort() as [string, string]],
     });
-    // Player = body intrinsic (100 maxPops × 2) = 200
-    // + empire flats (+1 political baseline × 5 × 3 = 15, -1 outpost
-    //   upkeep × 5 = -5) = 10
-    // + scout reach (1 owned system × 50 pragmatist) = 50
-    // - occupation debit (200 × 0.6 = 120)
-    // - AT_WAR_COST (pragmatist × 1 enemy = 500)
-    // - enemy-ship threat (1 AI ship × 500 × 1.2 = 600)
-    // ≈ -960.
+    // All hammer-eq constants scaled 10× (after the hammer-cost
+    // rebalance). Player = body intrinsic (100 maxPops × 20) = 2000
+    // + empire flats (+1 political × 50 × 3 = 150, -1 outpost
+    //   upkeep × 50 = -50) = 100
+    // + scout reach (1 owned system × 500 pragmatist) = 500
+    // - occupation debit (2000 × 0.6 = 1200)
+    // - AT_WAR_COST (pragmatist × 1 enemy = 5000)
+    // - enemy-ship threat (1 AI ship × 5000 × 1.2 = 6000)
+    // ≈ -9600.
     const playerScore = score(state, "e_player");
-    expect(playerScore).toBeGreaterThan(-970);
-    expect(playerScore).toBeLessThan(-950);
-    // AI = body intrinsic (200)
-    // + empire flats (10)
-    // + stuck 1-ship @ at-war (500 pragmatist × 1.2 × 0.2) = 120
-    // + scout reach (2 systems: own aiHome + fleet at s_contested) × 50 = 100
-    // + occupation credit (200 × 0.6 = 120)
-    // - AT_WAR_COST (pragmatist × 1 enemy = 500)
+    expect(playerScore).toBeGreaterThan(-9700);
+    expect(playerScore).toBeLessThan(-9500);
+    // AI = body intrinsic (2000)
+    // + empire flats (100)
+    // + stuck 1-ship @ at-war (5000 × 1.2 × 0.2) = 1200
+    // + scout reach (2 systems × 500) = 1000
+    // + occupation credit (2000 × 0.6 = 1200)
+    // - AT_WAR_COST (pragmatist × 1 enemy = 5000)
     // - enemy-ship threat (player has no ships = 0)
-    // ≈ 50.
+    // ≈ 500.
     const aiScore = score(state, "e_ai");
-    expect(aiScore).toBeGreaterThan(40);
-    expect(aiScore).toBeLessThan(60);
+    expect(aiScore).toBeGreaterThan(400);
+    expect(aiScore).toBeLessThan(600);
   });
 
   it("values systems and ships in hammer-equivalent units", () => {
@@ -552,14 +553,15 @@ describe("AI scoreState value function", () => {
       empire: player,
       fleets: [fleet],
     });
-    // Body intrinsic: maxPops (100) × MAX_POPS_VALUE (2) = 200.
+    // All hammer-eq constants scaled 10× (cost rebalance).
+    // Body intrinsic: maxPops (100) × MAX_POPS_VALUE (20) = 2000.
     // Flows from the body: 0 (no pops).
-    // Ships: 2 × 500 (pragmatist peace) × stuck 20% (cap=0) = 200.
-    // Political flat: +1 baseline × FLOW_HORIZON (5) × weight (3) = 15.
-    // Energy from empire-level outpost upkeep: -1 × 5 × 1 = -5.
-    // Scout reach: 1 system (s_home, own + fleet there) × 50 = 50.
-    // Total = 200 + 200 + 15 − 5 + 50 = 460.
-    expect(score(state, "e_player")).toBe(460);
+    // Ships: 2 × 5000 (pragmatist peace) × stuck 20% (cap=0) = 2000.
+    // Political flat: +1 baseline × FLOW_HORIZON (50) × weight (3) = 150.
+    // Energy from empire-level outpost upkeep: -1 × 50 × 1 = -50.
+    // Scout reach: 1 system (s_home, own + fleet there) × 500 = 500.
+    // Total = 2000 + 2000 + 150 − 50 + 500 = 4600.
+    expect(score(state, "e_player")).toBe(4600);
   });
 
   it("queueing colonize deducts COLONIZE_POP_COST from the capital", () => {
