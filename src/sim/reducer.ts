@@ -217,13 +217,20 @@ const AI_ORIGIN_BY_SPECIES: Record<string, string> = {
   insectoid: "colony_seeders",
   machine: "graceful_handover",
 };
-const AI_COLOR_OVERRIDES: Record<string, string> = {
-  // Warm amber for humans/insectoid AIs, forest green for machines —
-  // visually distinct from the player's species colours.
-  humans: "#d88a3a",
-  insectoid: "#d88a3a",
-  machine: "#5fa55a",
-};
+// Palette AIs draw from without replacement. Each new game gives
+// every AI a distinct colour regardless of species so two conquerors
+// (or two AIs of the same species) never blur together on the map.
+// Picked to stay visually distant from the player's species colours
+// (blue / purple / cyan) and from the galaxy background.
+const AI_COLOR_PALETTE = [
+  "#d88a3a", // warm amber
+  "#5fa55a", // forest green
+  "#d94f6d", // rose
+  "#e0c74a", // gold
+  "#9a74d6", // violet
+  "#4ca897", // teal
+  "#d07030", // rust
+];
 
 const AI_EMPIRE_COUNT = 2;
 
@@ -1050,6 +1057,7 @@ export function needsPlayerAttention(state: GameState): boolean {
   if (state.eventQueue.length > 0) return true;
   if (state.pendingFirstContacts.length > 0) return true;
   if (state.projectCompletions.length > 0) return true;
+  if (hostileFleetsInSensor(state, state.empire).length > 0) return true;
   // Player-driven decision points: nothing being built, or any of
   // our fleets is idling and hasn't been marked "sleeping."
   const player = state.empire;
@@ -1869,7 +1877,32 @@ export function updateVisibility(draft: GameState): void {
     if (surveyedSet.size !== empire.perception.surveyed.length) {
       empire.perception.surveyed = [...surveyedSet];
     }
+
   }
+}
+
+// Pure derivation: at-war enemy fleets currently in this empire's
+// sensor. Fully stateless — the "autoplay pause on hostile sensor"
+// is just "while this returns non-empty, needsPlayerAttention is
+// true." Dealing with the situation (destroying, making peace,
+// moving out of sensor, or them leaving) clears the alert
+// automatically. `visible` is optional — caller can pass in a
+// precomputed sensor set to skip re-deriving it.
+export function hostileFleetsInSensor(
+  state: GameState,
+  empire: Empire,
+  visible?: Set<string>,
+): Fleet[] {
+  const v = visible ?? sensorSet(state, empire.id);
+  const out: Fleet[] = [];
+  for (const f of Object.values(state.fleets)) {
+    if (f.shipCount <= 0) continue;
+    if (f.empireId === empire.id) continue;
+    if (!v.has(f.systemId)) continue;
+    if (!atWar(state, empire.id, f.empireId)) continue;
+    out.push(f);
+  }
+  return out;
 }
 
 // First-contact detection: fires when empire A's sensor first covers
@@ -3535,6 +3568,13 @@ export function reduce(state: GameState, action: Action): GameState {
       }
 
       const playerStarter = claimStarter(fresh.empire.id, playerStarterId, origin.startingPops);
+      // Shuffled palette so each new game picks a different ordering;
+      // consumed without replacement so every AI gets a distinct colour.
+      const aiColorPool = [...AI_COLOR_PALETTE];
+      for (let i = aiColorPool.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [aiColorPool[i], aiColorPool[j]] = [aiColorPool[j], aiColorPool[i]];
+      }
       const aiStarters = aiStarterIds.map((sid, i) => {
         const leader = aiLeaders[i];
         const aiOriginId = AI_ORIGIN_BY_SPECIES[leader.speciesId] ?? "steady_evolution";
@@ -3542,7 +3582,7 @@ export function reduce(state: GameState, action: Action): GameState {
         return {
           leader,
           empireId: `empire_ai_${i}`,
-          color: AI_COLOR_OVERRIDES[leader.speciesId] ?? "#7ec8ff",
+          color: aiColorPool[i % aiColorPool.length],
           starter: claimStarter(`empire_ai_${i}`, sid, aiOrigin?.startingPops ?? 4),
           originObj: aiOrigin,
         };

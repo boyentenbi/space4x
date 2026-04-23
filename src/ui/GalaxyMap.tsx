@@ -149,7 +149,6 @@ interface SystemDisplay {
   kind: DisplayKind;
   ownerId: string | null;
   fleets: DisplayFleet[];
-  showOccupation: boolean;
   // When stale, reads the snapshot turn for UI hints / future "last seen".
   snapshotTurn?: number;
   // Has the viewer ever had a fleet physically inside this system
@@ -169,6 +168,7 @@ export function GalaxyMap({
   moveMode,
   viewerEmpire,
   sensor,
+  hostileEmpireIds,
 }: {
   galaxy: Galaxy;
   empires: Empire[];
@@ -188,6 +188,12 @@ export function GalaxyMap({
   // supplied together; omitting them renders every system live.
   viewerEmpire?: Empire | null;
   sensor?: Set<string> | null;
+  // Empire ids the viewer is currently at war with. Any system
+  // carrying one of their fleets gets the "hostile presence" red
+  // ring — a superset of the old occupation-only ring, since an
+  // active occupation always has a hostile fleet there but not
+  // every hostile presence is an ongoing siege.
+  hostileEmpireIds?: Set<string>;
 }) {
   const systems = Object.values(galaxy.systems);
 
@@ -233,7 +239,6 @@ export function GalaxyMap({
         kind: "live",
         ownerId: sys.ownerId,
         fleets: liveFleets,
-        showOccupation: true,
         surveyed: surveyedFlag,
       });
       continue;
@@ -243,7 +248,6 @@ export function GalaxyMap({
         kind: "hidden",
         ownerId: null,
         fleets: [],
-        showOccupation: false,
         surveyed: false,
       });
       continue;
@@ -258,7 +262,6 @@ export function GalaxyMap({
         kind: "live",
         ownerId: sys.ownerId,
         fleets: liveFleets,
-        showOccupation: true,
         surveyed: surveyedFlag,
       });
       continue;
@@ -278,7 +281,6 @@ export function GalaxyMap({
       kind: "stale",
       ownerId: sys.ownerId,
       fleets: staleFleets,
-      showOccupation: false,
       snapshotTurn: snap?.turn,
       surveyed: surveyedFlag,
     });
@@ -600,11 +602,16 @@ export function GalaxyMap({
                 opacity={0.6}
               />
             )}
-            {/* Occupation ring — pulsing red, reads unambiguously as
-                "your system is being taken" regardless of who's doing it.
-                Gated on display.showOccupation: stale views can't peek
-                at live siege state. */}
-            {sys.occupation && display.showOccupation && (
+            {/* Hostile-presence ring — pulsing red on any system
+                that carries a fleet of an empire we're at war with.
+                Superset of the old occupation-only ring: every
+                active occupation shows up here (by definition the
+                occupier has a fleet on-site), plus any at-war
+                foreign fleet poking into space we can observe.
+                Read from display.fleets so fog staleness is
+                respected — the snapshot's fleet list feeds in when
+                the system's out of sensor. */}
+            {!!hostileEmpireIds && display.fleets.some((f) => hostileEmpireIds.has(f.empireId)) && (
               <polygon
                 className="siege-ring"
                 points={polygonPoints(hexCorners(x, y, HEX_SIZE - 0.5))}

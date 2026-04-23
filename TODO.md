@@ -12,6 +12,28 @@ when you want to remember something later.
   system IDs). Zero runtime cost; a few hundred trivial edits across the
   codebase.
 
+## Bugs
+
+- **Conqueror throws a 1-ship fleet at a 5-ship defender.** Observed
+  in play: an at-war conqueror with a single-ship fleet keeps
+  setting its destination to a player system holding 5+ ships. The
+  move is a guaranteed loss (Lanchester wipes the attacker); the
+  value function should price it deep negative via the ship-loss
+  and post-combat threat terms but apparently doesn't. Failing
+  regression test pending; once it fails, whatever scoring tweak
+  makes it pass will pin the fix.
+
+## Design questions
+
+- **Build ships in units of 10?** Small-battle granularity is weird
+  — 1 vs 5 is a guaranteed wipe (Lanchester square), but so is 5
+  vs 25, etc. If a frigate were a 10-ship squadron (tenfold
+  hammer cost, tenfold effect in combat), small numeric differences
+  between fleets would represent meaningful tactical variation
+  instead of all-or-nothing outcomes. Might also let archetype ship
+  mixes (scout-weight vs heavy) live as variants within a
+  build order.
+
 ## Architecture
 
 - **`filterStateFor` as a distinct type.** Today fog-correctness is

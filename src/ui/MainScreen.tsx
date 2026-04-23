@@ -5,6 +5,7 @@ import {
   allEmpires,
   allOrdersOf,
   atWar,
+  hostileFleetsInSensor,
   availableBodyProjectsFor,
   availableProjectsFor,
   bodyComputeOutput,
@@ -81,6 +82,7 @@ type AttentionFocus =
   | { kind: "gameOver" }
   | { kind: "firstContact" }
   | { kind: "event" }
+  | { kind: "hostileFleet"; fleetId: string; systemId: string }
   | { kind: "idleFleet"; fleetId: string; systemId: string }
   | { kind: "emptyQueue"; systemId: string | null };
 
@@ -88,6 +90,12 @@ function attentionFocus(state: GameState): AttentionFocus {
   if (state.gameOver) return { kind: "gameOver" };
   if (state.pendingFirstContacts.length > 0) return { kind: "firstContact" };
   if (state.eventQueue.length > 0) return { kind: "event" };
+  // Any at-war enemy fleet visible in player sensor pauses autoplay
+  // until the situation resolves (fleet leaves, gets killed, peace).
+  const hostile = hostileFleetsInSensor(state, state.empire);
+  if (hostile.length > 0) {
+    return { kind: "hostileFleet", fleetId: hostile[0].id, systemId: hostile[0].systemId };
+  }
   for (const f of Object.values(state.fleets)) {
     if (f.empireId !== state.empire.id) continue;
     if (f.shipCount <= 0) continue;
@@ -840,6 +848,7 @@ export function MainScreen() {
             focus.kind === "gameOver" ? "Game Over" :
             focus.kind === "firstContact" ? "First Contact" :
             focus.kind === "event" ? "Event" :
+            focus.kind === "hostileFleet" ? "Hostile Fleet" :
             focus.kind === "idleFleet" ? "Route Fleet" :
             focus.kind === "emptyQueue" ? "Queue Build" :
             "Attention";
@@ -848,7 +857,12 @@ export function MainScreen() {
               className={`endturn-card attention ${focus.kind}`}
               disabled={modalOwned}
               onClick={() => {
-                if (focus.kind === "idleFleet") {
+                if (focus.kind === "hostileFleet") {
+                  // No dismiss — alert persists until the fleet is
+                  // actually handled (gone from sensor, peace, etc.).
+                  // Click just jumps the map to the threat.
+                  setSelectedSystemId(focus.systemId);
+                } else if (focus.kind === "idleFleet") {
                   setSelectedSystemId(focus.systemId);
                   setMoveMode({ fleetId: focus.fleetId, split: null });
                 } else if (focus.kind === "emptyQueue" && focus.systemId) {
@@ -1222,6 +1236,14 @@ export function MainScreen() {
               }
               viewerEmpire={state.empire}
               sensor={playerSensor}
+              hostileEmpireIds={(() => {
+                const s = new Set<string>();
+                for (const e of allEmpires(state)) {
+                  if (e.id === state.empire.id) continue;
+                  if (atWar(state, state.empire.id, e.id)) s.add(e.id);
+                }
+                return s;
+              })()}
             />
             {moveFleet && !moveFleetStale && (() => {
               const dest = moveFleet.destinationSystemId

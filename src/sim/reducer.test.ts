@@ -86,6 +86,7 @@ function makeEmpire(overrides: LegacyEmpireOverrides): Empire {
       snapshots: {},
       seenFlavour: [],
       surveyed: [],
+      
     },
   };
 }
@@ -1223,6 +1224,62 @@ describe("AI fleet routing (decision only)", () => {
     });
     const decided = runAiMoves(state, "e_ai");
     expect(decided.fleets["f_def"]?.destinationSystemId).toBe("s_left");
+  });
+
+  // User observed an at-war conqueror repeatedly throwing a lone
+  // ship at a 5-ship player garrison. In this minimal setup the
+  // current scoring handles it correctly — the projected combat
+  // kills the attacker, removing its shipValue credit, and the
+  // threat term reads the surviving defenders. Leaving this as a
+  // pinning test so any future scoring regression that reopens
+  // the bug trips it, and keeping the TODO note open for the
+  // scenario that actually reproduced (probably a multi-fleet or
+  // high-momentum state that's not captured here yet).
+  it("conqueror refuses to throw a lone ship at a 5-ship defender", () => {
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const enemyHome = makeSystem({
+      id: "s_enemy",
+      bodyIds: ["b_enemy"],
+      ownerId: "e_player",
+    });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const enemyBody = makeBody({ id: "b_enemy", systemId: "s_enemy", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_enemy",
+      systemIds: ["s_enemy"],
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_ai",
+      systemIds: ["s_ai"],
+      expansionism: "conqueror",
+    });
+    const aiFleet: Fleet = {
+      id: "f_lone",
+      empireId: "e_ai",
+      systemId: "s_ai",
+      shipCount: 1,
+    };
+    const defenderFleet: Fleet = {
+      id: "f_garrison",
+      empireId: "e_player",
+      systemId: "s_enemy",
+      shipCount: 5,
+    };
+    const state = makeState({
+      systems: [aiHome, enemyHome],
+      bodies: [aiBody, enemyBody],
+      hyperlanes: [["s_ai", "s_enemy"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [aiFleet, defenderFleet],
+      wars: [["e_ai", "e_player"].sort() as [string, string]],
+    });
+    const decided = runAiMoves(state, "e_ai");
+    // Once the fix lands, the 1-ship AI should NOT set the 5-ship
+    // system as destination — guaranteed loss.
+    expect(decided.fleets["f_lone"]?.destinationSystemId).not.toBe("s_enemy");
   });
 
   it("at-war conqueror with a large fleet attacks a smaller adjacent enemy fleet", () => {
