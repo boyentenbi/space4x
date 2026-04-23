@@ -207,6 +207,7 @@ function BodyRow({
   onColonize,
   onQueueBodyProject,
   onCancelOrder,
+  flavourSeen,
 }: {
   body: Body;
   income: Partial<Record<ResourceKey, number>>;
@@ -224,6 +225,11 @@ function BodyRow({
   onColonize: () => void;
   onQueueBodyProject: (projectId: string) => void;
   onCancelOrder: (orderId: string) => void;
+  // Whether the viewer has actually seen this body's flavour flags.
+  // Flavour (precursor ruins, rare crystals) is hidden on the surface
+  // and not detectable from orbit — requires a fleet visit or
+  // ownership. When false, flavour chips are suppressed.
+  flavourSeen: boolean;
 }) {
   // Star bodies get a simplified row — no pops/hab/income, just the
   // star thumb + any outpost-related project.
@@ -348,7 +354,7 @@ function BodyRow({
               </span>
             );
           })}
-          {body.flavorFlags.map((f) => (
+          {flavourSeen && body.flavorFlags.map((f) => (
             <span key={f} className="chip flavor">{f.replace(/_/g, " ")}</span>
           ))}
         </div>
@@ -387,7 +393,7 @@ function BodyRow({
         </div>
       )}
 
-      {!owned && body.flavorFlags.length > 0 && (
+      {!owned && flavourSeen && body.flavorFlags.length > 0 && (
         <div className="chips">
           {body.flavorFlags.map((f) => (
             <span key={f} className="chip flavor">{f.replace(/_/g, " ")}</span>
@@ -713,7 +719,7 @@ export function MainScreen() {
   // aren't rendered — but could survive across saves), fall back to
   // the capital as if nothing were selected.
   const playerSensor = sensorSet(state, state.empire.id);
-  const playerDiscovered = new Set(state.empire.discovered);
+  const playerDiscovered = new Set(state.empire.perception.discovered);
   const rawFocus = selectedSystemId
     ? state.galaxy.systems[selectedSystemId] ?? null
     : capitalSystem;
@@ -725,7 +731,7 @@ export function MainScreen() {
   const focusStale =
     !!focusSystem && !playerSensor.has(focusSystem.id) && playerDiscovered.has(focusSystem.id);
   const focusSnapshot = focusStale && focusSystem
-    ? state.empire.snapshots[focusSystem.id] ?? null
+    ? state.empire.perception.snapshots[focusSystem.id] ?? null
     : null;
   const focusBodies = focusSystem
     ? focusSystem.bodyIds.map((bid) => state.galaxy.bodies[bid]).filter((b): b is Body => !!b)
@@ -910,6 +916,7 @@ export function MainScreen() {
                 ownerColor={focusStale ? null : focusOwnerEmpire?.color ?? null}
                 capitalBodyId={focusStale ? null : focusOwnerEmpire?.capitalBodyId ?? null}
                 turn={state.turn}
+                seenFlavourIds={new Set(state.empire.perception.seenFlavour)}
               />
             ) : (
               <div className="scene-empty">Tap a star on the galaxy map.</div>
@@ -1035,6 +1042,7 @@ export function MainScreen() {
                       bodyProjects={bodyProjects}
                       bodyProjectOrder={bodyProjectOrderFor(state, body.id)}
                       hammerRate={totalHammers}
+                      flavourSeen={state.empire.perception.seenFlavour.includes(body.id)}
                       onColonize={() =>
                         dispatch({
                           type: "queueColonize",

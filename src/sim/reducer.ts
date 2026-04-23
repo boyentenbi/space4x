@@ -405,14 +405,13 @@ function makeEmpire(spec: {
     completedProjects: [],
     adoptedPolicies: [],
     flags: [],
-    discovered: [],
-    snapshots: {},
+    perception: { discovered: [], snapshots: {}, seenFlavour: [] },
   };
 }
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 23,
+    schemaVersion: 24,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -433,8 +432,7 @@ export function initialState(): GameState {
       completedProjects: [],
       adoptedPolicies: [],
       flags: [],
-      discovered: [],
-      snapshots: {},
+      perception: { discovered: [], snapshots: {}, seenFlavour: [] },
     },
     aiEmpires: [],
     fleets: {},
@@ -1780,19 +1778,54 @@ function snapshotSystem(
 // discovered, and refresh snapshots for those visible systems. Stale
 // snapshots (out-of-sensor) are left untouched — they decay implicitly
 // by becoming older relative to draft.turn.
+//
+// Also updates `seenFlavour`: when the empire has a fleet physically
+// inside a system, every body in that system with flavour flags gets
+// added to the seen set. Flavour (precursor ruins, rare crystals) is
+// not sensor-detectable — you have to actually be there.
 export function updateVisibility(draft: GameState): void {
   const adj = buildAdjacency(draft);
+  // Pre-group fleets by system for the seenFlavour pass.
+  const fleetsBySystem = new Map<string, Fleet[]>();
+  for (const f of Object.values(draft.fleets)) {
+    if (f.shipCount <= 0) continue;
+    const arr = fleetsBySystem.get(f.systemId);
+    if (arr) arr.push(f); else fleetsBySystem.set(f.systemId, [f]);
+  }
   for (const empire of allEmpires(draft)) {
     const visible = sensorSet(draft, empire.id, adj);
     // Track discovered as a Set during the merge so we don't pay
     // O(n) per lookup, then write back as an array (storage shape).
-    const discoveredSet = new Set(empire.discovered);
+    const discoveredSet = new Set(empire.perception.discovered);
     for (const sid of visible) {
       discoveredSet.add(sid);
-      empire.snapshots[sid] = snapshotSystem(draft, sid);
+      empire.perception.snapshots[sid] = snapshotSystem(draft, sid);
     }
-    if (discoveredSet.size !== empire.discovered.length) {
-      empire.discovered = [...discoveredSet];
+    if (discoveredSet.size !== empire.perception.discovered.length) {
+      empire.perception.discovered = [...discoveredSet];
+    }
+    // seenFlavour: expand for every system the empire owns OR has
+    // a fleet inside right now. Flavour (precursor ruins, rare
+    // crystals) isn't detectable from orbit — you have to be there.
+    // Owned systems qualify too: once settled, the surface is ours
+    // to examine. seenFlavour ids stay in the set once added.
+    const seenSet = new Set(empire.perception.seenFlavour);
+    const visitSystems = new Set<string>(empire.systemIds);
+    for (const [sysId, fs] of fleetsBySystem) {
+      if (fs.some((f) => f.empireId === empire.id)) visitSystems.add(sysId);
+    }
+    for (const sysId of visitSystems) {
+      const sys = draft.galaxy.systems[sysId];
+      if (!sys) continue;
+      for (const bid of sys.bodyIds) {
+        const body = draft.galaxy.bodies[bid];
+        if (!body) continue;
+        if (body.flavorFlags.length === 0) continue;
+        seenSet.add(bid);
+      }
+    }
+    if (seenSet.size !== empire.perception.seenFlavour.length) {
+      empire.perception.seenFlavour = [...seenSet];
     }
   }
 }
@@ -2588,21 +2621,29 @@ export function scoreState(state: GameState, empireId: string): number {
     const enemyShipCost = shipValueFor(empire) * 1.2; // at war by def
     const enemyShipTotals: Record<string, number> = {};
     for (const eid of enemies) enemyShipTotals[eid] = 0;
-    // Fog: count live enemy fleets only at systems currently in our
-    // sensor, and fall back to the last-seen snapshot for systems
-    // we've discovered but aren't observing right now. Undiscovered
-    // systems contribute zero — we don't know what's there, so
-    // threat estimates there can't drive our decisions.
-    const sensor = sensorSet(state, empireId);
+    // Threat: read live for systems where we have active presence
+    // (own system or own fleet), snapshot for everything else we've
+    // discovered. Presence → we legitimately see whatever's at that
+    // system right now, including post-combat outcomes in lookahead
+    // projections ("if I attack this system and win, the enemy fleet
+    // there is gone"). Elsewhere, perception.snapshots is the frozen
+    // plan-time view, so imagining a move can't leak info about
+    // enemies at systems we're not actually present in.
+    const ownPresence = new Set<string>(empire.systemIds);
+    for (const f of Object.values(state.fleets)) {
+      if (f.empireId === empireId && f.shipCount > 0) ownPresence.add(f.systemId);
+    }
+    const liveFleetsByEnemyAtSystem: Record<string, number> = {};
     for (const f of Object.values(state.fleets)) {
       if (f.shipCount <= 0) continue;
       if (enemyShipTotals[f.empireId] === undefined) continue;
-      if (!sensor.has(f.systemId)) continue;
+      if (!ownPresence.has(f.systemId)) continue;
       enemyShipTotals[f.empireId] += f.shipCount;
+      liveFleetsByEnemyAtSystem[f.empireId] = (liveFleetsByEnemyAtSystem[f.empireId] ?? 0) + 1;
     }
-    for (const sid of empire.discovered) {
-      if (sensor.has(sid)) continue;
-      const snap = empire.snapshots[sid];
+    for (const sid of empire.perception.discovered) {
+      if (ownPresence.has(sid)) continue;
+      const snap = empire.perception.snapshots[sid];
       if (!snap) continue;
       for (const sf of snap.fleets) {
         if (enemyShipTotals[sf.empireId] === undefined) continue;
@@ -2700,10 +2741,8 @@ function aiEnumerateProjectActions(state: GameState, empire: Empire): Action[] {
   const actions: Action[] = [];
   // Fog gate: only propose actions whose target is in a system the
   // empire has discovered. You can't plan to settle / build on a
-  // planet you've never seen. Empire's own systems are trivially in
-  // discovered, so all existing body-scope plays on owned worlds
-  // still work.
-  const discovered = new Set(empire.discovered);
+  // planet you've never seen.
+  const discovered = new Set(empire.perception.discovered);
 
   // Colonize candidates — every body in a discovered system;
   // canColonizeFor filters by star/pops/space/ownership/reachability.
@@ -2938,14 +2977,11 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
     lb.push(a);
   }
 
-  // Fog gate: the AI only considers systems it has discovered. A
-  // system the empire has never observed isn't even a destination
-  // candidate — it doesn't appear on their "map". Fleets moving
-  // around inside discovered space naturally push the boundary
-  // outward (a move to a discovered edge system reveals that
-  // system's own neighbours via sensor next turn), so exploration
-  // still happens — it just can't leap past the known frontier.
-  const discovered = new Set(empire.discovered);
+  // Fog gate: the AI only considers systems it has discovered.
+  // Fleets moving around inside discovered space still push the
+  // boundary outward via sensor next turn, so exploration emerges
+  // from ordinary moves.
+  const discovered = new Set(empire.perception.discovered);
 
   for (const fleet of ourFleets) {
     // One BFS from the fleet's current system gives every reachable

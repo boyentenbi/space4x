@@ -233,8 +233,13 @@ export function GalaxyMap({
   // else → stale (from snapshot). Done once up front so every render
   // branch can just look up by systemId.
   const fogActive = !!(viewerEmpire && sensor);
-  const discovered = fogActive ? new Set(viewerEmpire!.discovered) : null;
-  const snapshots = fogActive ? viewerEmpire!.snapshots : null;
+  const discovered = fogActive ? new Set(viewerEmpire!.perception.discovered) : null;
+  const snapshots = fogActive ? viewerEmpire!.perception.snapshots : null;
+  // Hoisted once per render — used inside the per-system map below
+  // to gate the flavour glyph on "we've actually been there."
+  const seenFlavour = viewerEmpire
+    ? new Set(viewerEmpire.perception.seenFlavour)
+    : null;
   const displayBySystem = new Map<string, SystemDisplay>();
   for (const sys of systems) {
     if (!fogActive) {
@@ -554,9 +559,14 @@ export function GalaxyMap({
           !!moveMode &&
           moveMode.pathSystemIds.length > 0 &&
           moveMode.pathSystemIds[moveMode.pathSystemIds.length - 1] === sys.id;
-        const hasFlavor = sys.bodyIds.some((bid) =>
-          (galaxy.bodies[bid]?.flavorFlags.length ?? 0) > 0,
-        );
+        // Flavour glyph reveals only for bodies whose flags the viewer
+        // has actually seen (fleet visited or empire owns). In spectator
+        // / dev mode with no viewerEmpire, every flavour body shows.
+        const hasFlavor = sys.bodyIds.some((bid) => {
+          const body = galaxy.bodies[bid];
+          if (!body || body.flavorFlags.length === 0) return false;
+          return seenFlavour ? seenFlavour.has(bid) : true;
+        });
 
         return (
           <g

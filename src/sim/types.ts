@@ -327,14 +327,10 @@ export interface Empire {
   completedProjects: string[];
   adoptedPolicies: string[];
   flags: string[];
-  // Fog of war: every system this empire has ever seen. Monotonic —
-  // once discovered, a system stays discovered (the empire knows the
-  // terrain even if the lights go out). UI shows discovered-but-out-
-  // of-sensor systems with their last snapshot rather than blank.
-  discovered: string[];
-  // Last-seen state of each discovered system. Refreshed every turn
-  // the system is in this empire's sensor range; goes stale otherwise.
-  snapshots: Record<string, SystemSnapshot>;
+  // All fog-of-war state lives here. Nested so produce() in lookahead
+  // never touches it: scoring reads empire.perception.* from the
+  // projection and gets the plan-time snapshot by structural sharing.
+  perception: Perception;
 }
 
 export interface PendingEvent {
@@ -352,8 +348,27 @@ export interface SystemSnapshot {
   fleets: Array<{ empireId: string; shipCount: number }>;
 }
 
+// Per-empire perception: everything about "what this empire knows",
+// kept together in one sub-object so lookahead can reason about it as
+// a unit. Immer's structural sharing means that if a produce() block
+// never mutates `perception`, the projected state's perception is
+// literally the same reference as baseline's — so reads inside
+// scoreState are automatically frozen at plan-time. This is the
+// foundation of the no-info-leak guarantee.
+export interface Perception {
+  // Every system this empire has ever observed (monotonic).
+  discovered: string[];
+  // Last-seen state of each discovered system.
+  snapshots: Record<string, SystemSnapshot>;
+  // Body ids whose flavour flags the empire has seen (requires a
+  // fleet to have been physically in that body's system at least
+  // once — precursor ruins and rare crystals aren't detectable from
+  // orbit).
+  seenFlavour: string[];
+}
+
 export interface GameState {
-  schemaVersion: 23;
+  schemaVersion: 24;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;

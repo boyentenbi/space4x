@@ -38,12 +38,16 @@ export function SystemScene({
   ownerColor,
   capitalBodyId,
   turn,
+  seenFlavourIds,
 }: {
   system: StarSystem;
   bodies: Body[];
   ownerColor: string | null;
   capitalBodyId: string | null;
   turn: number;
+  // Body ids whose flavour the viewer has actually seen (fleet visit
+  // or ownership). Undefined = no gating (spectator/dev view).
+  seenFlavourIds?: Set<string>;
 }) {
   const width = 320;
   const height = 140;
@@ -103,7 +107,8 @@ export function SystemScene({
             strokeWidth={isCapital ? 2.4 : 1.4}
           />
         )}
-        {p.body.flavorFlags.length > 0 && (
+        {p.body.flavorFlags.length > 0 &&
+          (!seenFlavourIds || seenFlavourIds.has(p.body.id)) && (
           <circle
             cx={p.cx}
             cy={p.cy}

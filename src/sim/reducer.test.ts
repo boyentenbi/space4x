@@ -83,8 +83,11 @@ function makeEmpire(overrides: LegacyEmpireOverrides): Empire {
     completedProjects: overrides.completedProjects ?? [],
     adoptedPolicies: overrides.adoptedPolicies ?? [],
     flags: overrides.flags ?? [],
-    discovered: overrides.discovered ?? [],
-    snapshots: overrides.snapshots ?? {},
+    perception: overrides.perception ?? {
+      discovered: [],
+      snapshots: {},
+      seenFlavour: [],
+    },
   };
 }
 
@@ -122,7 +125,7 @@ function makeState(overrides: {
   const fleetsRec: Record<string, Fleet> = {};
   for (const f of overrides.fleets ?? []) fleetsRec[f.id] = f;
   const raw: GameState = {
-    schemaVersion: 23,
+    schemaVersion: 24,
     turn: overrides.turn ?? 1,
     rngSeed: 1,
     galaxy: {
@@ -1795,10 +1798,10 @@ describe("fog of war: updateVisibility", () => {
       turn: 7,
     });
     const next = produce(state, (draft) => updateVisibility(draft));
-    expect([...next.empire.discovered].sort()).toEqual(["s_home", "s_mid"]);
-    expect(next.empire.snapshots["s_home"]).toBeDefined();
-    expect(next.empire.snapshots["s_mid"]).toBeDefined();
-    expect(next.empire.snapshots["s_home"].turn).toBe(7);
+    expect([...next.empire.perception.discovered].sort()).toEqual(["s_home", "s_mid"]);
+    expect(next.empire.perception.snapshots["s_home"]).toBeDefined();
+    expect(next.empire.perception.snapshots["s_mid"]).toBeDefined();
+    expect(next.empire.perception.snapshots["s_home"].turn).toBe(7);
   });
 
   it("snapshots an in-sensor enemy fleet by empire and ship count", () => {
@@ -1824,7 +1827,7 @@ describe("fog of war: updateVisibility", () => {
       fleets: [enemyFleet],
     });
     const next = produce(state, (draft) => updateVisibility(draft));
-    const snap = next.empire.snapshots["s_n"];
+    const snap = next.empire.perception.snapshots["s_n"];
     expect(snap).toBeDefined();
     expect(snap.ownerId).toBe("e_ai");
     expect(snap.fleets).toEqual([{ empireId: "e_ai", shipCount: 5 }]);
@@ -1853,8 +1856,8 @@ describe("fog of war: updateVisibility", () => {
       fleets: [hiddenFleet],
     });
     const next = produce(state, (draft) => updateVisibility(draft));
-    expect(next.empire.discovered).not.toContain("s_far");
-    expect(next.empire.snapshots["s_far"]).toBeUndefined();
+    expect(next.empire.perception.discovered).not.toContain("s_far");
+    expect(next.empire.perception.snapshots["s_far"]).toBeUndefined();
   });
 
   it("keeps a stale snapshot once a system leaves sensor range", () => {
@@ -1886,8 +1889,8 @@ describe("fog of war: updateVisibility", () => {
       turn: 1,
     });
     const seen = produce(turn1State, (draft) => updateVisibility(draft));
-    expect(seen.empire.snapshots["s_target"]?.turn).toBe(1);
-    expect(seen.empire.snapshots["s_target"]?.ownerId).toBeNull();
+    expect(seen.empire.perception.snapshots["s_target"]?.turn).toBe(1);
+    expect(seen.empire.perception.snapshots["s_target"]?.ownerId).toBeNull();
 
     // Turn 2: scout moves away to s_else; AI takes s_target and parks
     // a fleet there; updateVisibility runs again.
@@ -1906,10 +1909,364 @@ describe("fog of war: updateVisibility", () => {
     });
     // The stale snapshot from turn 1 must NOT have been overwritten —
     // s_target is no longer in the player's sensor.
-    const stale = turn2State.empire.snapshots["s_target"];
+    const stale = turn2State.empire.perception.snapshots["s_target"];
     expect(stale.turn).toBe(1);
     expect(stale.ownerId).toBeNull();
     expect(stale.fleets).toEqual([]);
+  });
+});
+
+describe("fog of war: AI info-leak invariants", () => {
+  function runAiMoves(state: GameState, empireId: string): GameState {
+    return produce(state, (d) => {
+      const emp = empireById(d, empireId);
+      if (emp) aiPlanMoves(d, emp);
+    });
+  }
+
+  it("attacks a visible weak enemy even when a hidden reinforcement fleet is 2 jumps away", () => {
+    // Conqueror at war with e_enemy. Enemy keeps 1 ship at the
+    // adjacent border system (s_target) and a huge 30-ship reserve
+    // at s_hidden (2 jumps away, outside AI's discovered). If the
+    // value function peeked at the reserve through the projection's
+    // expanded sensor, it would see a 31-ship threat and decline to
+    // attack. Under fog-correct scoring the AI only sees the 1
+    // border defender and should attack s_target.
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const target = makeSystem({ id: "s_target", bodyIds: ["b_target"], ownerId: "e_enemy" });
+    const hidden = makeSystem({ id: "s_hidden", bodyIds: ["b_hidden"], ownerId: "e_enemy" });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const targetBody = makeBody({ id: "b_target", systemId: "s_target", pops: 20 });
+    const hiddenBody = makeBody({ id: "b_hidden", systemId: "s_hidden", pops: 20 });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_ai",
+      systemIds: ["s_ai"],
+      expansionism: "conqueror",
+    });
+    const enemy = makeEmpire({
+      id: "e_enemy",
+      capitalBodyId: "b_target",
+      systemIds: ["s_target", "s_hidden"],
+    });
+    const attackerFleet: Fleet = {
+      id: "f_attacker",
+      empireId: "e_ai",
+      systemId: "s_ai",
+      shipCount: 6,
+    };
+    const visibleDefender: Fleet = {
+      id: "f_defender",
+      empireId: "e_enemy",
+      systemId: "s_target",
+      shipCount: 1,
+    };
+    const hiddenReserve: Fleet = {
+      id: "f_reserve",
+      empireId: "e_enemy",
+      systemId: "s_hidden",
+      shipCount: 30,
+    };
+    const state = makeState({
+      systems: [aiHome, target, hidden],
+      bodies: [aiBody, targetBody, hiddenBody],
+      // s_ai — s_target — s_hidden. s_hidden sits 2 jumps away and
+      // is NOT in the AI's 1-jump sensor ring.
+      hyperlanes: [["s_ai", "s_target"], ["s_target", "s_hidden"]],
+      empire: makeEmpire({ id: "e_player", systemIds: [] }),
+      aiEmpires: [ai, enemy],
+      fleets: [attackerFleet, visibleDefender, hiddenReserve],
+      wars: [["e_ai", "e_enemy"].sort() as [string, string]],
+    });
+    // Sanity: the reserve's system is NOT in the AI's discovered.
+    expect(state.aiEmpires[0].perception.discovered).not.toContain("s_hidden");
+
+    const decided = runAiMoves(state, "e_ai");
+    expect(decided.fleets["f_attacker"]?.destinationSystemId).toBe("s_target");
+  });
+
+  it("makes the same movement decision whether or not a hidden enemy stack exists", () => {
+    // Twin states, one with a 30-ship hidden reserve outside the
+    // AI's discovered, one without. A fog-correct AI must pick the
+    // same destination in both — if it doesn't, the hidden stack
+    // was leaking through the projection somehow.
+    const baseSystems = (): StarSystem[] => [
+      makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" }),
+      makeSystem({ id: "s_target", bodyIds: ["b_target"], ownerId: "e_enemy" }),
+      makeSystem({ id: "s_hidden", bodyIds: ["b_hidden"], ownerId: "e_enemy" }),
+    ];
+    const baseBodies = (): Body[] => [
+      makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 }),
+      makeBody({ id: "b_target", systemId: "s_target", pops: 20 }),
+      makeBody({ id: "b_hidden", systemId: "s_hidden", pops: 20 }),
+    ];
+    const baseEmpires = () => ({
+      ai: makeEmpire({
+        id: "e_ai",
+        capitalBodyId: "b_ai",
+        systemIds: ["s_ai"],
+        expansionism: "conqueror",
+      }),
+      enemy: makeEmpire({
+        id: "e_enemy",
+        capitalBodyId: "b_target",
+        systemIds: ["s_target", "s_hidden"],
+      }),
+    });
+    const visibleDefender: Fleet = {
+      id: "f_def",
+      empireId: "e_enemy",
+      systemId: "s_target",
+      shipCount: 1,
+    };
+    const attacker = (): Fleet => ({
+      id: "f_attack",
+      empireId: "e_ai",
+      systemId: "s_ai",
+      shipCount: 6,
+    });
+
+    const withReserve = makeState({
+      systems: baseSystems(),
+      bodies: baseBodies(),
+      hyperlanes: [["s_ai", "s_target"], ["s_target", "s_hidden"]],
+      empire: makeEmpire({ id: "e_player", systemIds: [] }),
+      ...(() => {
+        const { ai, enemy } = baseEmpires();
+        return { aiEmpires: [ai, enemy] };
+      })(),
+      fleets: [
+        attacker(),
+        visibleDefender,
+        { id: "f_res", empireId: "e_enemy", systemId: "s_hidden", shipCount: 30 },
+      ],
+      wars: [["e_ai", "e_enemy"].sort() as [string, string]],
+    });
+    const withoutReserve = makeState({
+      systems: baseSystems(),
+      bodies: baseBodies(),
+      hyperlanes: [["s_ai", "s_target"], ["s_target", "s_hidden"]],
+      empire: makeEmpire({ id: "e_player", systemIds: [] }),
+      ...(() => {
+        const { ai, enemy } = baseEmpires();
+        return { aiEmpires: [ai, enemy] };
+      })(),
+      fleets: [attacker(), visibleDefender],
+      wars: [["e_ai", "e_enemy"].sort() as [string, string]],
+    });
+    const withReserveDest = runAiMoves(withReserve, "e_ai").fleets["f_attack"]?.destinationSystemId;
+    const withoutReserveDest = runAiMoves(withoutReserve, "e_ai").fleets["f_attack"]?.destinationSystemId;
+    expect(withReserveDest).toBe(withoutReserveDest);
+  });
+
+  it("uses stale snapshot fleet counts for a threat estimate after the enemy leaves sensor", () => {
+    // At turn 1 the AI sees e_enemy with 5 ships at s_border and
+    // snapshots it. Turn 2: the AI pulls its scout back home so
+    // s_border drops out of sensor; meanwhile e_enemy's actual
+    // fleet balloons to 30 ships there. The AI's threat estimate
+    // must still read off the stale snapshot (5), not peek at the
+    // live 30.
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const scout = makeSystem({ id: "s_scout", bodyIds: [], ownerId: null });
+    const border = makeSystem({ id: "s_border", bodyIds: ["b_border"], ownerId: "e_enemy" });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const borderBody = makeBody({ id: "b_border", systemId: "s_border", pops: 20 });
+    const ai = makeEmpire({ id: "e_ai", capitalBodyId: "b_ai", systemIds: ["s_ai"] });
+    const enemy = makeEmpire({
+      id: "e_enemy",
+      capitalBodyId: "b_border",
+      systemIds: ["s_border"],
+    });
+    const scoutFleet: Fleet = {
+      id: "f_scout",
+      empireId: "e_ai",
+      systemId: "s_scout",
+      shipCount: 1,
+    };
+    const enemyFleet: Fleet = {
+      id: "f_enemy",
+      empireId: "e_enemy",
+      systemId: "s_border",
+      shipCount: 5,
+    };
+    // s_ai — s_scout — s_border.
+    const turn1 = makeState({
+      systems: [aiHome, scout, border],
+      bodies: [aiBody, borderBody],
+      hyperlanes: [["s_ai", "s_scout"], ["s_scout", "s_border"]],
+      empire: makeEmpire({ id: "e_player", systemIds: [] }),
+      aiEmpires: [ai, enemy],
+      fleets: [scoutFleet, enemyFleet],
+      wars: [["e_ai", "e_enemy"].sort() as [string, string]],
+      turn: 1,
+    });
+    // Confirm the scout's adjacency covers s_border and the
+    // snapshot records the 5-ship fleet.
+    const snap1 = turn1.aiEmpires[0].perception.snapshots["s_border"];
+    expect(snap1).toBeDefined();
+    expect(snap1.fleets).toEqual([{ empireId: "e_enemy", shipCount: 5 }]);
+
+    // Turn 2: scout pulls back to home, enemy quadruples to 30
+    // ships. Run updateVisibility to refresh sensor.
+    const turn2 = produce(turn1, (draft) => {
+      draft.turn = 2;
+      draft.fleets["f_scout"].systemId = "s_ai";
+      draft.fleets["f_enemy"].shipCount = 30;
+      updateVisibility(draft);
+    });
+    expect(turn2.aiEmpires[0].perception.snapshots["s_border"].fleets).toEqual([
+      { empireId: "e_enemy", shipCount: 5 },
+    ]);
+
+    // Threat estimate: scoreState should reflect 5 (stale), not 30 (live).
+    // Compute the scores for two states differing only in the live count
+    // at s_border, and verify they match — AI can't tell the difference.
+    const livened30 = turn2;
+    const livened3 = produce(turn2, (draft) => {
+      draft.fleets["f_enemy"].shipCount = 3;
+    });
+    expect(scoreState(livened30, "e_ai")).toBe(scoreState(livened3, "e_ai"));
+  });
+
+  it("does not discover fleets reachable only through a lookahead sensor expansion", () => {
+    // AI at s_ai considers moving to s_mid (discovered, 1 jump
+    // away). In the projection, AI's sensor would expand to cover
+    // s_mid's neighbour s_enemy. A leaky value function would pick
+    // up a huge enemy fleet at s_enemy and refuse the move. A
+    // fog-correct one reads perception frozen at plan-time and
+    // doesn't see it — so the threat contribution from s_enemy is
+    // identical between "huge hidden stack" and "no hidden stack."
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const mid = makeSystem({ id: "s_mid", bodyIds: [], ownerId: null });
+    const enemyHome = makeSystem({ id: "s_enemy", bodyIds: ["b_enemy"], ownerId: "e_enemy" });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const enemyBody = makeBody({ id: "b_enemy", systemId: "s_enemy", pops: 20 });
+    const ai = makeEmpire({ id: "e_ai", capitalBodyId: "b_ai", systemIds: ["s_ai"] });
+    const enemy = makeEmpire({
+      id: "e_enemy",
+      capitalBodyId: "b_enemy",
+      systemIds: ["s_enemy"],
+    });
+    const makeStateFor = (hiddenShips: number): GameState =>
+      makeState({
+        systems: [aiHome, mid, enemyHome],
+        bodies: [aiBody, enemyBody],
+        // s_ai — s_mid — s_enemy. s_enemy is 2 jumps out; outside
+        // the AI's sensor ring at planning time.
+        hyperlanes: [["s_ai", "s_mid"], ["s_mid", "s_enemy"]],
+        empire: makeEmpire({ id: "e_player", systemIds: [] }),
+        aiEmpires: [ai, enemy],
+        fleets: [
+          { id: "f_our", empireId: "e_ai", systemId: "s_ai", shipCount: 3 },
+          { id: "f_hidden", empireId: "e_enemy", systemId: "s_enemy", shipCount: hiddenShips },
+        ],
+        wars: [["e_ai", "e_enemy"].sort() as [string, string]],
+      });
+    const bigHidden = makeStateFor(30);
+    const noHidden = makeStateFor(0);
+    expect(bigHidden.aiEmpires[0].perception.discovered).not.toContain("s_enemy");
+    expect(noHidden.aiEmpires[0].perception.discovered).not.toContain("s_enemy");
+
+    const bigDecision = runAiMoves(bigHidden, "e_ai").fleets["f_our"]?.destinationSystemId;
+    const smallDecision = runAiMoves(noHidden, "e_ai").fleets["f_our"]?.destinationSystemId;
+    expect(bigDecision).toBe(smallDecision);
+  });
+
+  it("sets a destination that lies on the fog boundary even though neighbours beyond are unknown", () => {
+    // s_ai — s_border — s_beyond. AI owns s_ai, enemy owns s_border
+    // (1 jump from home, discovered). s_beyond is 2 jumps away and
+    // NOT discovered. The AI-at-war has a big fleet and a weak
+    // defender is at s_border. The AI should choose s_border as
+    // destination despite the fact that s_border sits on the edge
+    // of known space with undiscovered hyperlane beyond.
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const borderSys = makeSystem({ id: "s_border", bodyIds: ["b_border"], ownerId: "e_enemy" });
+    const beyondSys = makeSystem({ id: "s_beyond", bodyIds: ["b_beyond"], ownerId: null });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const borderBody = makeBody({ id: "b_border", systemId: "s_border", pops: 20 });
+    const beyondBody = makeBody({ id: "b_beyond", systemId: "s_beyond", pops: 0 });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_ai",
+      systemIds: ["s_ai"],
+      expansionism: "conqueror",
+    });
+    const enemy = makeEmpire({
+      id: "e_enemy",
+      capitalBodyId: "b_border",
+      systemIds: ["s_border"],
+    });
+    const state = makeState({
+      systems: [aiHome, borderSys, beyondSys],
+      bodies: [aiBody, borderBody, beyondBody],
+      hyperlanes: [["s_ai", "s_border"], ["s_border", "s_beyond"]],
+      empire: makeEmpire({ id: "e_player", systemIds: [] }),
+      aiEmpires: [ai, enemy],
+      fleets: [
+        { id: "f_attacker", empireId: "e_ai", systemId: "s_ai", shipCount: 6 },
+        { id: "f_weak", empireId: "e_enemy", systemId: "s_border", shipCount: 1 },
+      ],
+      wars: [["e_ai", "e_enemy"].sort() as [string, string]],
+    });
+    // Sanity: s_border is discovered (adjacent to own), s_beyond is not.
+    expect(state.aiEmpires[0].perception.discovered).toContain("s_border");
+    expect(state.aiEmpires[0].perception.discovered).not.toContain("s_beyond");
+
+    const decided = runAiMoves(state, "e_ai");
+    expect(decided.fleets["f_attacker"]?.destinationSystemId).toBe("s_border");
+  });
+});
+
+describe("fog of war: seenFlavour", () => {
+  it("adds a flavour body to seenFlavour when the empire owns its system", () => {
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_home"], ownerId: "e_player" });
+    const homeBody = makeBody({
+      id: "b_home",
+      systemId: "s_home",
+      flavorFlags: ["precursor_ruins"],
+    });
+    const player = makeEmpire({ id: "e_player", capitalBodyId: "b_home", systemIds: ["s_home"] });
+    const state = makeState({
+      systems: [home],
+      bodies: [homeBody],
+      empire: player,
+    });
+    // makeState runs updateVisibility; owning the system should
+    // be enough to mark its flavour body as seen.
+    expect(state.empire.perception.seenFlavour).toContain("b_home");
+  });
+
+  it("adds a flavour body to seenFlavour once a fleet enters the system", () => {
+    // s_home (AI owned, no flavour) — s_dig (neutral, flavour body).
+    // Before the scout arrives, flavour is NOT in seenFlavour.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_home"], ownerId: "e_ai" });
+    const dig = makeSystem({ id: "s_dig", bodyIds: ["b_dig"], ownerId: null });
+    const homeBody = makeBody({ id: "b_home", systemId: "s_home", pops: 10 });
+    const digBody = makeBody({
+      id: "b_dig",
+      systemId: "s_dig",
+      flavorFlags: ["rare_crystals"],
+    });
+    const ai = makeEmpire({ id: "e_ai", capitalBodyId: "b_home", systemIds: ["s_home"] });
+    const state = makeState({
+      systems: [home, dig],
+      bodies: [homeBody, digBody],
+      hyperlanes: [["s_home", "s_dig"]],
+      empire: makeEmpire({ id: "e_player", systemIds: [] }),
+      aiEmpires: [ai],
+      fleets: [
+        { id: "f_scout", empireId: "e_ai", systemId: "s_home", shipCount: 1 },
+      ],
+    });
+    // Scout at home; flavour should NOT be seen yet — sensor
+    // reveals s_dig exists but flavour is visit-only.
+    expect(state.aiEmpires[0].perception.seenFlavour).not.toContain("b_dig");
+    // Move the scout into s_dig and re-update visibility.
+    const visited = produce(state, (draft) => {
+      draft.fleets["f_scout"].systemId = "s_dig";
+      updateVisibility(draft);
+    });
+    expect(visited.aiEmpires[0].perception.seenFlavour).toContain("b_dig");
   });
 });
 
@@ -1962,7 +2319,7 @@ describe("fog of war: AI decisions", () => {
       fleets: [fleet],
     });
     // Sanity check the seeding: s_far is NOT in the AI's discovered.
-    expect(state.aiEmpires[0].discovered).not.toContain("s_far");
+    expect(state.aiEmpires[0].perception.discovered).not.toContain("s_far");
 
     const decided = runAiMoves(state, "e_ai");
     // Whatever destination the AI picks, it mustn't be s_far — that
@@ -2010,9 +2367,9 @@ describe("fog of war: AI decisions", () => {
     // it by moving s_mid out of the AI's systemIds after updateVisibility.
     const hidden = produce(state, (draft) => {
       const aiDraft = draft.aiEmpires[0];
-      aiDraft.discovered = aiDraft.discovered.filter((sid) => sid !== "s_far");
+      aiDraft.perception.discovered = aiDraft.perception.discovered.filter((sid) => sid !== "s_far");
     });
-    expect(hidden.aiEmpires[0].discovered).not.toContain("s_far");
+    expect(hidden.aiEmpires[0].perception.discovered).not.toContain("s_far");
 
     const after = produce(hidden, (draft) => {
       const emp = empireById(draft, "e_ai");
@@ -2059,7 +2416,7 @@ describe("fog of war: AI decisions", () => {
     // the enemy-ship cost for empires in enemiesOf(), which comes
     // from state.wars.
     const stateAtWar = { ...stateAtPeace, wars: [["e_ai", "e_enemy"] as [string, string]] };
-    expect(stateAtWar.aiEmpires[0].discovered).not.toContain("s_far");
+    expect(stateAtWar.aiEmpires[0].perception.discovered).not.toContain("s_far");
 
     // Baseline score with the hidden stack in place.
     const scoreHidden = scoreState(stateAtWar, "e_ai");
