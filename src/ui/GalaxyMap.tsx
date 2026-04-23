@@ -305,10 +305,11 @@ export function GalaxyMap({
     return displayBySystem.get(s.id)?.ownerId ?? null;
   }
 
-  // Bounds for viewBox. Use only visibleSystems so early-game (when we
-  // have ~7 systems discovered) the viewport actually fits what we've
-  // found, rather than zooming out over a vast empty galaxy.
-  const pts = (visibleSystems.length > 0 ? visibleSystems : systems).map((s) => hexToPixel(s.q, s.r));
+  // Bounds for viewBox. Use every system so the viewport is stable —
+  // positions of systems you've discovered don't shift as you explore
+  // more of the galaxy. Undiscovered systems simply don't render
+  // inside the fixed frame.
+  const pts = systems.map((s) => hexToPixel(s.q, s.r));
   const pad = HEX_SIZE + 4;
   const minX = Math.min(...pts.map((p) => p.x)) - pad;
   const maxX = Math.max(...pts.map((p) => p.x)) + pad;
