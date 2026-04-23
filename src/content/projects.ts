@@ -36,6 +36,22 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
     },
   },
   {
+    id: "build_defender",
+    name: "Build Defender",
+    description:
+      "Emplace a stationary defender on this system's station. Can't move, but counts double in combat and blocks enemy occupation while it lives. Stacks with other defenders here.",
+    hammersRequired: 500,
+    scope: "body",
+    bodyRequirement: "any_owned",
+    costs: { political: 2 },
+    repeatable: true,
+    availability: {},
+    onComplete: {
+      spawnDefender: { count: 1 },
+      chronicle: "A new defender emplaces.",
+    },
+  },
+  {
     id: "complete_emancipation",
     name: "Complete Emancipation",
     description:

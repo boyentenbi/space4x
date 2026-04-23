@@ -115,6 +115,14 @@ export interface StarSystem {
   starKind: StarKind;
   bodyIds: string[];
   ownerId: string | null;  // Empire id, null = unclaimed.
+  // Stationary garrison units owned by the system's owner. They don't
+  // participate in fleet movement, stack with themselves (single count),
+  // never stack with frigates. In combat each defender counts for
+  // DEFENDER_SHIPS_EQUIV frigate-ship-equivalents. While any are alive
+  // they block the occupation tick — an attacker must reduce this to 0
+  // before the invader-occupies-my-system counter can advance. Cleared
+  // to 0 on ownership flip.
+  defenders?: number;
   // Ongoing occupation by a foreign at-war fleet when the owner has
   // no defender present. Counts turns; at OCCUPATION_TURNS_TO_FLIP the
   // system transfers to the occupier and this field clears.
@@ -303,6 +311,10 @@ export interface EmpireProject {
     // Spawn N ships at the target body's system (body-scope projects
     // only). Absent for non-ship projects.
     spawnShip?: { count: number };
+    // Spawn N stationary defenders on the target body's system. The
+    // defenders belong to the project-queueing empire (which must own
+    // the system; enforced at completion time).
+    spawnDefender?: { count: number };
     chronicle: string;
   };
 }
@@ -357,6 +369,9 @@ export interface SystemSnapshot {
   // Aggregated by empire — we don't track individual fleet ids in the
   // snapshot, just totals per empire present in the system.
   fleets: Array<{ empireId: string; shipCount: number }>;
+  // Last-seen garrison count (belongs to ownerId). Feeds AI threat
+  // estimation for systems the empire isn't currently present in.
+  defenders?: number;
 }
 
 // Per-empire perception: everything about "what this empire knows",
@@ -399,7 +414,7 @@ export type PerceivedGameState = GameState & {
 };
 
 export interface GameState {
-  schemaVersion: 27;
+  schemaVersion: 28;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;

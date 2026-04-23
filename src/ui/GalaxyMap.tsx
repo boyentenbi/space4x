@@ -149,6 +149,9 @@ interface SystemDisplay {
   kind: DisplayKind;
   ownerId: string | null;
   fleets: DisplayFleet[];
+  // Last-known defender count. Live → current value on the system;
+  // stale → snapshot value at last-sensor.
+  defenders: number;
   // When stale, reads the snapshot turn for UI hints / future "last seen".
   snapshotTurn?: number;
   // Has the viewer ever had a fleet physically inside this system
@@ -239,6 +242,7 @@ export function GalaxyMap({
         kind: "live",
         ownerId: sys.ownerId,
         fleets: liveFleets,
+        defenders: sys.defenders ?? 0,
         surveyed: surveyedFlag,
       });
       continue;
@@ -248,6 +252,7 @@ export function GalaxyMap({
         kind: "hidden",
         ownerId: null,
         fleets: [],
+        defenders: 0,
         surveyed: false,
       });
       continue;
@@ -262,6 +267,7 @@ export function GalaxyMap({
         kind: "live",
         ownerId: sys.ownerId,
         fleets: liveFleets,
+        defenders: sys.defenders ?? 0,
         surveyed: surveyedFlag,
       });
       continue;
@@ -281,6 +287,7 @@ export function GalaxyMap({
       kind: "stale",
       ownerId: sys.ownerId,
       fleets: staleFleets,
+      defenders: snap?.defenders ?? 0,
       snapshotTurn: snap?.turn,
       surveyed: surveyedFlag,
     });
@@ -669,6 +676,33 @@ export function GalaxyMap({
               });
             })()}
 
+            {/* Defender indicator — small shield glyph in the upper-
+                right of the hex, tinted by the owning empire's colour.
+                Number to its right when stack >= 2. Only shown when
+                defenders > 0 (live → current, stale → snapshot). */}
+            {display.defenders > 0 && (() => {
+              const owner = display.ownerId ? empireById.get(display.ownerId) : null;
+              const color = owner?.color ?? "#d5d9e2";
+              const sx = x + HEX_SIZE * 0.55;
+              const sy = y - HEX_SIZE * 0.38;
+              // Shield path: rounded top, tapered point at bottom.
+              const d = `M ${sx - 2.2},${sy - 1.8} L ${sx + 2.2},${sy - 1.8} L ${sx + 2.2},${sy + 0.4} L ${sx},${sy + 2.6} L ${sx - 2.2},${sy + 0.4} Z`;
+              return (
+                <g>
+                  <path d={d} fill={color} opacity={0.95} stroke="#0b0e16" strokeWidth={0.3} />
+                  {display.defenders > 1 && (
+                    <text
+                      x={sx + 3.2}
+                      y={sy + 1.4}
+                      fontSize={3.5}
+                      fill={color}
+                    >
+                      {display.defenders}
+                    </text>
+                  )}
+                </g>
+              );
+            })()}
             {/* Body dots — habitability-colored row under the star.
                 Only temperate for now (habitable planets are the only
                 thing worth previewing). */}

@@ -306,7 +306,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 27,
+    schemaVersion: 28,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -1343,13 +1343,42 @@ function resolveCombat(draft: GameState): void {
   for (const f of Object.values(draft.fleets)) {
     (bySystem[f.systemId] ??= []).push(f);
   }
+  // Synthesize a virtual fleet for each system with stationary
+  // defenders and at least one foreign fleet present. The virtual
+  // fleet has shipCount = defenders × DEFENDER_SHIPS_EQUIV and
+  // participates in combat via the standard fleet math, so no special
+  // case is needed in the Lanchester block. Post-combat its surviving
+  // shipCount is converted back to a defender count.
+  //
+  // Not added to draft.fleets — tracked locally and written back at the
+  // end of resolveCombat.
+  const virtualDefenders: Array<{ sysId: string; fleet: Fleet; before: number }> = [];
+  for (const sys of Object.values(draft.galaxy.systems)) {
+    const d = sys.defenders ?? 0;
+    if (d <= 0 || !sys.ownerId) continue;
+    const fleetsHere = bySystem[sys.id];
+    if (!fleetsHere || fleetsHere.length === 0) continue;
+    if (!fleetsHere.some((f) => f.empireId !== sys.ownerId && f.shipCount > 0)) continue;
+    const virtual: Fleet = {
+      id: `__def_${sys.id}`,
+      empireId: sys.ownerId,
+      systemId: sys.id,
+      shipCount: d * DEFENDER_SHIPS_EQUIV,
+    };
+    fleetsHere.push(virtual);
+    virtualDefenders.push({ sysId: sys.id, fleet: virtual, before: virtual.shipCount });
+  }
   for (const [sysId, fleets] of Object.entries(bySystem)) {
     const empires = Array.from(new Set(fleets.map((f) => f.empireId)));
     if (empires.length < 2) continue;
 
     // Snapshot before-counts for the chronicle entry (BEFORE the loop).
+    // Virtual defender fleets are excluded from the chronicle numbers
+    // (they'd double-count since defenders are reported separately);
+    // they still participate in the combat math above.
     const before: Record<string, number> = {};
     for (const f of fleets) {
+      if (f.id.startsWith("__def_")) continue;
       before[f.empireId] = (before[f.empireId] ?? 0) + f.shipCount;
     }
 
@@ -1472,15 +1501,18 @@ function resolveCombat(draft: GameState): void {
     void belligerents;
     if (!anyFightHappened) continue;
 
-    // After-counts per empire; then drop empty fleets.
+    // After-counts per empire; then drop empty fleets (skip virtuals,
+    // which aren't in draft.fleets to begin with).
     const after: Record<string, number> = {};
     for (const f of fleets) {
+      if (f.id.startsWith("__def_")) continue;
       if (f.shipCount > 0) after[f.empireId] = (after[f.empireId] ?? 0) + f.shipCount;
     }
     for (const empId of empires) {
       if (!(empId in after)) after[empId] = 0;
     }
     for (const f of fleets) {
+      if (f.id.startsWith("__def_")) continue;
       if (f.shipCount <= 0) delete draft.fleets[f.id];
     }
 
@@ -1510,10 +1542,29 @@ function resolveCombat(draft: GameState): void {
       });
     }
   }
+
+  // Post-combat: fold each virtual defender fleet's surviving
+  // shipCount back into sys.defenders (÷ equivalence). If a virtual
+  // fleet never fought (e.g., no at-war attacker in that system),
+  // shipCount is unchanged from `before` and defenders stay put.
+  for (const { sysId, fleet } of virtualDefenders) {
+    const surviving = Math.max(0, Math.round(fleet.shipCount / DEFENDER_SHIPS_EQUIV));
+    const sys = draft.galaxy.systems[sysId];
+    if (!sys) continue;
+    if (surviving > 0) sys.defenders = surviving;
+    else delete sys.defenders;
+  }
 }
 
 // Turns an unopposed enemy presence must hold before a system flips.
 export const OCCUPATION_TURNS_TO_FLIP = 3;
+
+// A stationary defender counts this many frigate-equivalents in
+// combat. 2 means a defender is twice as effective as a frigate per
+// hammer spent (since both cost build_frigate's hammers in content);
+// slightly stronger than the 1.5× floated during design, traded for
+// integer-clean math (no HP/fractional-ship rules).
+export const DEFENDER_SHIPS_EQUIV = 2;
 
 // How many turns of accumulated travel before a fleet jumps to its
 // next hop. With TURNS_PER_HOP = 3, even a single-hop journey is a
@@ -1560,7 +1611,11 @@ function processOccupation(draft: GameState): void {
     if (!ownerId) continue;
     const fleetsHere = fleetsBySystem.get(sys.id) ?? [];
     const defenderPresent = fleetsHere.some((f) => f.empireId === ownerId);
-    if (defenderPresent) {
+    // Stationary defenders count as "defender present" too — an
+    // invader must reduce them to zero in combat before the occupation
+    // counter can tick.
+    const garrisonPresent = (draft.galaxy.systems[sys.id].defenders ?? 0) > 0;
+    if (defenderPresent || garrisonPresent) {
       if (sys.occupation) draft.galaxy.systems[sys.id].occupation = undefined;
       continue;
     }
@@ -1617,6 +1672,10 @@ function flipSystem(
 
   sys.ownerId = toOwnerId;
   sys.occupation = undefined;
+  // Garrison is tied to the old owner — they fell defending, or were
+  // destroyed in the final assault that enabled the flip. The new
+  // owner starts with a clean system; to defend, they must rebuild.
+  sys.defenders = undefined;
   oldOwner.systemIds = oldOwner.systemIds.filter((id) => id !== systemId);
   if (!newOwner.systemIds.includes(systemId)) newOwner.systemIds.push(systemId);
 
@@ -1720,6 +1779,7 @@ function snapshotSystem(
     turn: state.turn,
     ownerId: sys?.ownerId ?? null,
     fleets,
+    defenders: sys?.defenders,
   };
 }
 
@@ -2297,6 +2357,19 @@ function completeOrder(
         );
       }
     }
+    // Defenders land directly on the system (scalar counter, no fleet
+    // entity). Guarded by owner-check — you can only emplace defenders
+    // on systems you still own. If ownership flipped while the project
+    // was in-flight, drop the spawn silently.
+    if (proj.onComplete.spawnDefender && order.targetBodyId) {
+      const targetBody = draft.galaxy.bodies[order.targetBodyId];
+      if (targetBody) {
+        const sys = draft.galaxy.systems[targetBody.systemId];
+        if (sys && sys.ownerId === empire.id) {
+          sys.defenders = (sys.defenders ?? 0) + proj.onComplete.spawnDefender.count;
+        }
+      }
+    }
     // Build Outpost — claims the star's system for the empire. Any
     // project with bodyRequirement "star" gets this treatment so
     // future flavour outposts don't need bespoke wiring.
@@ -2788,6 +2861,16 @@ export function scoreState(
       enemyShipTotals[f.empireId] += f.shipCount;
       liveFleetsByEnemyAtSystem[f.empireId] = (liveFleetsByEnemyAtSystem[f.empireId] ?? 0) + 1;
     }
+    // Live-read stationary defenders on enemy systems we can see.
+    for (const sysId of ownPresence) {
+      const sys = state.galaxy.systems[sysId];
+      if (!sys) continue;
+      const d = sys.defenders ?? 0;
+      if (d <= 0) continue;
+      const ownerId = sys.ownerId;
+      if (!ownerId || enemyShipTotals[ownerId] === undefined) continue;
+      enemyShipTotals[ownerId] += d * DEFENDER_SHIPS_EQUIV;
+    }
     for (const sid of empire.perception.discovered) {
       if (ownPresence.has(sid)) continue;
       const snap = empire.perception.snapshots[sid];
@@ -2795,6 +2878,11 @@ export function scoreState(
       for (const sf of snap.fleets) {
         if (enemyShipTotals[sf.empireId] === undefined) continue;
         enemyShipTotals[sf.empireId] += sf.shipCount;
+      }
+      // Snapshotted defenders belong to the snapshot's ownerId.
+      const snapDef = snap.defenders ?? 0;
+      if (snapDef > 0 && snap.ownerId && enemyShipTotals[snap.ownerId] !== undefined) {
+        enemyShipTotals[snap.ownerId] += snapDef * DEFENDER_SHIPS_EQUIV;
       }
     }
     let maxEnemyShips = 0;

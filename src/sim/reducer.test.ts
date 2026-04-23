@@ -3148,6 +3148,134 @@ describe("randomRollout", () => {
   });
 });
 
+describe("stationary defenders", () => {
+  // Shared wartime setup: e_player owns s_home and has N defenders.
+  // e_ai is at war; its fleet sits at s_home (no defending fleet).
+  function defenderSetup(opts: { defenders: number; invaderShips: number }): GameState {
+    const home = makeSystem({
+      id: "s_home",
+      bodyIds: ["b_cap"],
+      ownerId: "e_player",
+      defenders: opts.defenders,
+    });
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: [home.id],
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      capitalBodyId: "b_ai",
+      systemIds: [aiHome.id],
+    });
+    const invader: Fleet = {
+      id: "f_invader",
+      empireId: "e_ai",
+      systemId: "s_home",
+      shipCount: opts.invaderShips,
+    };
+    return makeState({
+      systems: [home, aiHome],
+      bodies: [cap, aiBody],
+      hyperlanes: [["s_home", "s_ai"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [invader],
+      wars: [["e_ai", "e_player"].sort() as [string, string]],
+    });
+  }
+
+  it("block occupation tick while alive", () => {
+    // 3 defenders vs 1 weak attacker — attacker can't break through.
+    // Without defenders the single attacker would be enough to occupy
+    // (s_home defence = 1 outpost + ceil(30/20) = 3; attacker has 1).
+    // But defenders aren't gated by the traditional defence check;
+    // they live on the system scalar and block occupation purely by
+    // being > 0. Combat will happen (atWar + invader present), so we
+    // also expect the 3 defenders (6 ship-equiv) to wipe the 1-ship
+    // invader outright.
+    const state = defenderSetup({ defenders: 3, invaderShips: 1 });
+    const t1 = reduce(state, { type: "endTurn" });
+    // Combat: 6 vs 1 → attacker wiped, defenders take ~0 losses
+    // (sqrt(36-1) ≈ 5.9 ship-equiv survive → 3 defenders still).
+    expect(t1.fleets["f_invader"]).toBeUndefined();
+    expect(t1.galaxy.systems["s_home"]?.defenders).toBe(3);
+    expect(t1.galaxy.systems["s_home"]?.occupation).toBeUndefined();
+    expect(t1.galaxy.systems["s_home"]?.ownerId).toBe("e_player");
+  });
+
+  it("defender beats a lone frigate 1v1 but takes no casualties (K=2)", () => {
+    // 1 defender (2 ship-equiv) vs 1 frigate. Lanchester: sqrt(4-1)
+    // ≈ 1.73 ship-equiv survive → round(1.73/2) = 1 defender alive.
+    const state = defenderSetup({ defenders: 1, invaderShips: 1 });
+    const t1 = reduce(state, { type: "endTurn" });
+    expect(t1.fleets["f_invader"]).toBeUndefined();
+    expect(t1.galaxy.systems["s_home"]?.defenders).toBe(1);
+  });
+
+  it("big attacker crushes defenders and can then occupy", () => {
+    // 2 defenders (4 ship-equiv) vs 10 frigates. Attacker wins with
+    // sqrt(100-16) ≈ 9.2 ships; defenders wiped to 0. Occupation
+    // starts on the same turn via processOccupation (after combat).
+    const state = defenderSetup({ defenders: 2, invaderShips: 10 });
+    const t1 = reduce(state, { type: "endTurn" });
+    expect(t1.galaxy.systems["s_home"]?.defenders).toBeUndefined();
+    // Occupation counter ticking now.
+    expect(t1.galaxy.systems["s_home"]?.occupation?.empireId).toBe("e_ai");
+    expect(t1.galaxy.systems["s_home"]?.occupation?.turns).toBe(1);
+  });
+
+  it("cleared to 0 on ownership flip", () => {
+    // Attacker big enough to cleave defenders AND survive the flip
+    // countdown. After 1 combat + 3 occupation turns, system flips;
+    // post-flip defenders gone (they belonged to the ousted owner).
+    let s = defenderSetup({ defenders: 1, invaderShips: 20 });
+    for (let i = 0; i < 4; i++) s = reduce(s, { type: "endTurn" });
+    expect(s.galaxy.systems["s_home"]?.ownerId).toBe("e_ai");
+    expect(s.galaxy.systems["s_home"]?.defenders).toBeUndefined();
+  });
+
+  it("no combat when no war — defenders sit, foreign fleet can loiter", () => {
+    // Peacetime friction: foreign fleet parked on your system without
+    // a war declaration shouldn't trigger combat. Defenders remain
+    // intact; foreign fleet stays intact; occupation doesn't tick
+    // (not at war).
+    const home = makeSystem({
+      id: "s_home",
+      bodyIds: ["b_cap"],
+      ownerId: "e_player",
+      defenders: 2,
+    });
+    const aiHome = makeSystem({ id: "s_ai", bodyIds: ["b_ai"], ownerId: "e_ai" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const aiBody = makeBody({ id: "b_ai", systemId: "s_ai", pops: 30 });
+    const player = makeEmpire({ id: "e_player", capitalBodyId: "b_cap", systemIds: [home.id] });
+    const ai = makeEmpire({ id: "e_ai", capitalBodyId: "b_ai", systemIds: [aiHome.id] });
+    const visitor: Fleet = {
+      id: "f_visitor",
+      empireId: "e_ai",
+      systemId: "s_home",
+      shipCount: 5,
+    };
+    // No wars — scenario set up pre-first-contact.
+    const state = makeState({
+      systems: [home, aiHome],
+      bodies: [cap, aiBody],
+      hyperlanes: [["s_home", "s_ai"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [visitor],
+    });
+    const t1 = reduce(state, { type: "endTurn" });
+    expect(t1.fleets["f_visitor"]?.shipCount).toBe(5);
+    expect(t1.galaxy.systems["s_home"]?.defenders).toBe(2);
+    expect(t1.galaxy.systems["s_home"]?.occupation).toBeUndefined();
+  });
+});
+
 // =====================================================================
 // Performance benchmark. Runs the full game loop (endTurn) across a
 // realistic-size galaxy for several turns and reports the per-turn
