@@ -7,6 +7,7 @@ import {
   atWar,
   autoDiscoveryDestination,
   availableBodyProjectsFor,
+  shortestPathFor,
   BENCH,
   canEnterSystem,
   empireById,
@@ -2424,6 +2425,60 @@ describe("fog of war: scouting reward", () => {
     const a = runAiMoves(withBig, "e_ai").fleets["f_scout"]?.destinationSystemId;
     const b = runAiMoves(withNone, "e_ai").fleets["f_scout"]?.destinationSystemId;
     expect(a).toBe(b);
+  });
+});
+
+describe("shortestPathFor: peaceful transit rules", () => {
+  it("returns null rather than routing through a third party's peaceful territory", () => {
+    // s_us — s_peaceful — s_goal. s_peaceful is owned by a third
+    // empire we're not at war with; walking our fleet through would
+    // auto-declare war. Path should come back null so
+    // processFleetOrders strands the fleet instead of starting a war.
+    const us = makeSystem({ id: "s_us", bodyIds: ["b_us"], ownerId: "e_me" });
+    const middle = makeSystem({ id: "s_peaceful", bodyIds: ["b_m"], ownerId: "e_third" });
+    const goal = makeSystem({ id: "s_goal", bodyIds: [], ownerId: null });
+    const usBody = makeBody({ id: "b_us", systemId: "s_us", pops: 5 });
+    const mBody = makeBody({ id: "b_m", systemId: "s_peaceful", pops: 5 });
+    const me = makeEmpire({ id: "e_me", capitalBodyId: "b_us", systemIds: ["s_us"] });
+    const third = makeEmpire({
+      id: "e_third",
+      capitalBodyId: "b_m",
+      systemIds: ["s_peaceful"],
+    });
+    const state = makeState({
+      systems: [us, middle, goal],
+      bodies: [usBody, mBody],
+      hyperlanes: [["s_us", "s_peaceful"], ["s_peaceful", "s_goal"]],
+      empire: me,
+      aiEmpires: [third],
+    });
+    const path = shortestPathFor(state, "e_me", "s_us", "s_goal");
+    expect(path).toBeNull();
+  });
+
+  it("does allow the destination itself to be foreign (that's how war declarations via movement happen)", () => {
+    // s_us — s_enemy. shortestPathFor should include s_enemy as the
+    // path's final hop even when peaceful — the caller's
+    // maybeAutoDeclareWar handles the consequences.
+    const us = makeSystem({ id: "s_us", bodyIds: ["b_us"], ownerId: "e_me" });
+    const enemy = makeSystem({ id: "s_enemy", bodyIds: ["b_enemy"], ownerId: "e_foe" });
+    const usBody = makeBody({ id: "b_us", systemId: "s_us", pops: 5 });
+    const enemyBody = makeBody({ id: "b_enemy", systemId: "s_enemy", pops: 5 });
+    const me = makeEmpire({ id: "e_me", capitalBodyId: "b_us", systemIds: ["s_us"] });
+    const foe = makeEmpire({
+      id: "e_foe",
+      capitalBodyId: "b_enemy",
+      systemIds: ["s_enemy"],
+    });
+    const state = makeState({
+      systems: [us, enemy],
+      bodies: [usBody, enemyBody],
+      hyperlanes: [["s_us", "s_enemy"]],
+      empire: me,
+      aiEmpires: [foe],
+    });
+    const path = shortestPathFor(state, "e_me", "s_us", "s_enemy");
+    expect(path).toEqual(["s_enemy"]);
   });
 });
 

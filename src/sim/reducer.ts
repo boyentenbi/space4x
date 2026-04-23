@@ -2232,6 +2232,21 @@ export function shortestPathFor(
     adj.get(a)!.push(b);
     adj.get(b)!.push(a);
   }
+  // Path-traversal rule: a system is valid as an intermediate hop
+  // if it's unowned, owned by us, or owned by someone we're already
+  // at war with. The DESTINATION itself is always allowed — that's
+  // how movement-triggered war declarations work (a fleet crossing
+  // into peaceful foreign territory declares war on arrival). This
+  // keeps fleets from accidentally stumbling through a third party's
+  // space just because it happened to lie on the shortest route.
+  const isTraversable = (sysId: string): boolean => {
+    if (sysId === toSystemId) return true;
+    const sys = state.galaxy.systems[sysId];
+    if (!sys) return false;
+    if (!sys.ownerId) return true;
+    if (sys.ownerId === empireId) return true;
+    return atWar(state, empireId, sys.ownerId);
+  };
   const prev = new Map<string, string>();
   const visited = new Set<string>([fromSystemId]);
   const queue: string[] = [fromSystemId];
@@ -2241,6 +2256,7 @@ export function shortestPathFor(
     if (id === toSystemId) { found = true; break; }
     for (const n of adj.get(id) ?? []) {
       if (visited.has(n)) continue;
+      if (!isTraversable(n)) continue;
       if (!canEnterSystem(state, empireId, n)) continue;
       visited.add(n);
       prev.set(n, id);
@@ -3265,6 +3281,16 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
       const visited = new Set<string>([fleet.systemId]);
       const queue: string[] = [fleet.systemId];
       let head = 0; // array-as-queue with head pointer; shift() is O(n).
+      // Same path-traversal rule as shortestPathFor: fleets won't
+      // transit through a peaceful third party. Foreign systems are
+      // still legal destinations (entering one declares war — and
+      // the scoreCandidate projection will price that consequence
+      // via AT_WAR_COST / threat terms), but they can't be used as
+      // stepping stones. Without this, the AI might target some
+      // unclaimed far system whose shortest path runs through a
+      // neighbour's territory; the real processFleetOrders walk
+      // would then auto-declare war mid-route — a consequence
+      // scoreCandidate's teleport approximation never saw.
       while (head < queue.length) {
         const id = queue[head++];
         for (const n of adj.get(id) ?? []) {
@@ -3272,8 +3298,15 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
           if (!discovered.has(n)) continue;
           if (!canEnterSystem(baseline, empire.id, n)) continue;
           visited.add(n);
-          queue.push(n);
           reachable.push(n);
+          // Only traverse through n if it's peacefully passable —
+          // our own, unowned, or an empire we're already at war with.
+          const sys = baseline.galaxy.systems[n];
+          const peacefulTransit =
+            !sys?.ownerId ||
+            sys.ownerId === empire.id ||
+            atWar(baseline, empire.id, sys.ownerId);
+          if (peacefulTransit) queue.push(n);
         }
       }
       reachableBySource.set(fleet.systemId, reachable);
