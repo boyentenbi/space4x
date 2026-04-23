@@ -1057,7 +1057,7 @@ export function needsPlayerAttention(state: GameState): boolean {
   if (state.eventQueue.length > 0) return true;
   if (state.pendingFirstContacts.length > 0) return true;
   if (state.projectCompletions.length > 0) return true;
-  if (hostileFleetsInSensor(state, state.empire).length > 0) return true;
+  if (foreignFleetsInSensor(state, state.empire).length > 0) return true;
   // Player-driven decision points: nothing being built, or any of
   // our fleets is idling and hasn't been marked "sleeping."
   const player = state.empire;
@@ -1881,14 +1881,19 @@ export function updateVisibility(draft: GameState): void {
   }
 }
 
-// Pure derivation: at-war enemy fleets currently in this empire's
-// sensor. Fully stateless — the "autoplay pause on hostile sensor"
-// is just "while this returns non-empty, needsPlayerAttention is
-// true." Dealing with the situation (destroying, making peace,
-// moving out of sensor, or them leaving) clears the alert
-// automatically. `visible` is optional — caller can pass in a
-// precomputed sensor set to skip re-deriving it.
-export function hostileFleetsInSensor(
+// Pure derivation: any foreign fleet (own != empireId) currently in
+// this empire's sensor. Used to pause autoplay so the player can
+// react before an unfamiliar fleet does anything — including
+// peace-time fleets parked at the border, which can declare war on
+// us by stepping in. The at-war gate that used to be here meant
+// the alert only fired AFTER war was declared (i.e. once the fleet
+// was already in our territory), which defeated the point. Fully
+// stateless; clearing the alert just means the fleet leaving sensor
+// or being destroyed.
+//
+// `visible` is optional — caller can pass in a precomputed sensor
+// set to skip re-deriving it.
+export function foreignFleetsInSensor(
   state: GameState,
   empire: Empire,
   visible?: Set<string>,
@@ -1899,7 +1904,6 @@ export function hostileFleetsInSensor(
     if (f.shipCount <= 0) continue;
     if (f.empireId === empire.id) continue;
     if (!v.has(f.systemId)) continue;
-    if (!atWar(state, empire.id, f.empireId)) continue;
     out.push(f);
   }
   return out;

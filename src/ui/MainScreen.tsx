@@ -5,7 +5,7 @@ import {
   allEmpires,
   allOrdersOf,
   atWar,
-  hostileFleetsInSensor,
+  foreignFleetsInSensor,
   availableBodyProjectsFor,
   availableProjectsFor,
   bodyComputeOutput,
@@ -90,11 +90,14 @@ function attentionFocus(state: GameState): AttentionFocus {
   if (state.gameOver) return { kind: "gameOver" };
   if (state.pendingFirstContacts.length > 0) return { kind: "firstContact" };
   if (state.eventQueue.length > 0) return { kind: "event" };
-  // Any at-war enemy fleet visible in player sensor pauses autoplay
-  // until the situation resolves (fleet leaves, gets killed, peace).
-  const hostile = hostileFleetsInSensor(state, state.empire);
-  if (hostile.length > 0) {
-    return { kind: "hostileFleet", fleetId: hostile[0].id, systemId: hostile[0].systemId };
+  // Any foreign fleet visible in player sensor pauses autoplay so
+  // the player can react before something they don't recognise
+  // (potentially about to declare war by stepping into territory)
+  // does anything. Resolves when the fleet leaves sensor or is
+  // destroyed.
+  const foreign = foreignFleetsInSensor(state, state.empire);
+  if (foreign.length > 0) {
+    return { kind: "hostileFleet", fleetId: foreign[0].id, systemId: foreign[0].systemId };
   }
   for (const f of Object.values(state.fleets)) {
     if (f.empireId !== state.empire.id) continue;

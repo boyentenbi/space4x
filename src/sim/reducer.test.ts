@@ -12,6 +12,8 @@ import {
   canEnterSystem,
   empireById,
   filterStateFor,
+  foreignFleetsInSensor,
+  needsPlayerAttention,
   reduce,
   scoreState,
   sensorSet,
@@ -2123,6 +2125,49 @@ describe("fog of war: updateVisibility", () => {
     expect(stale.turn).toBe(1);
     expect(stale.ownerId).toBeNull();
     expect(stale.fleets).toEqual([]);
+  });
+});
+
+describe("autoplay attention: foreign fleet in sensor", () => {
+  it("triggers as soon as a foreign fleet is observable, not just when it's in our territory", () => {
+    // Player owns s_home. Adjacent system s_border is unowned. The
+    // AI parks a fleet at s_border. s_border is in the player's
+    // 1-jump sensor ring even though no war exists yet.
+    // needsPlayerAttention must return true (autoplay should
+    // pause), and foreignFleetsInSensor should include the parked
+    // fleet. The earlier at-war-only rule wouldn't fire here
+    // because no war has been declared.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_home"], ownerId: "e_player" });
+    const border = makeSystem({ id: "s_border", bodyIds: [], ownerId: null });
+    const homeBody = makeBody({ id: "b_home", systemId: "s_home", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_home",
+      systemIds: ["s_home"],
+    });
+    const ai = makeEmpire({
+      id: "e_ai",
+      systemIds: [],
+    });
+    const enemyFleet: Fleet = {
+      id: "f_observer",
+      empireId: "e_ai",
+      systemId: "s_border",
+      shipCount: 3,
+    };
+    const state = makeState({
+      systems: [home, border],
+      bodies: [homeBody],
+      hyperlanes: [["s_home", "s_border"]],
+      empire: player,
+      aiEmpires: [ai],
+      fleets: [enemyFleet],
+      // Crucially: no wars. Pre-fix this case wouldn't alert.
+    });
+    expect(atWar(state, "e_player", "e_ai")).toBe(false);
+    const visible = foreignFleetsInSensor(state, state.empire);
+    expect(visible.map((f) => f.id)).toContain("f_observer");
+    expect(needsPlayerAttention(state)).toBe(true);
   });
 });
 
