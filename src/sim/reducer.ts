@@ -2587,7 +2587,20 @@ export const BENCH = {
 // perception fields live inside `empire.perception` and aren't
 // touched by the lookahead mutations, they remain pinned at plan
 // time by Immer's structural sharing.
-export function scoreState(state: PerceivedGameState, empireId: string): number {
+export function scoreState(
+  state: PerceivedGameState,
+  empireId: string,
+  // Pre-lookahead war baseline. When aiPlanMoves / aiPlanProject
+  // compare a baseline score to a projected one, we want ship
+  // valuations to be consistent across both — otherwise simply
+  // declaring a new war (e.g. by moving into foreign territory)
+  // would inflate every ship by the at-war premium and make war-
+  // starting artificially attractive. Callers pass the baseline
+  // enemy count; that's what gates the premium in both branches.
+  // Omitted → fall through to the live war count (fine for
+  // standalone snapshot scores, e.g. tests).
+  basePreview?: { enemyCount: number },
+): number {
   const __t0 = performance.now();
   const empire = empireById(state, empireId);
   if (!empire) {
@@ -2629,8 +2642,18 @@ export function scoreState(state: PerceivedGameState, empireId: string): number 
   // you can't move in a single turn are mostly dead weight).
   const totalShips = totalFleetShipsFor(state, empire);
   if (totalShips > 0) {
-    const atWar = enemiesOf(state, empire.id).length > 0;
-    const shipBase = shipValueFor(empire) * (atWar ? 1.2 : 1.0);
+    // At-war ships are worth more because they're doing something.
+    // Gate the premium on the BASELINE war count so the lookahead
+    // doesn't unlock a free +20% just by imagining a new war — if
+    // the AI was already at war pre-move, the premium applies in
+    // both baseline and projection (no differential); if it was at
+    // peace, the projected war gets its consequences via
+    // AT_WAR_COST and the threat term but doesn't re-price our
+    // existing fleet.
+    const baselineAtWar = basePreview
+      ? basePreview.enemyCount > 0
+      : enemiesOf(state, empire.id).length > 0;
+    const shipBase = shipValueFor(empire) * (baselineAtWar ? 1.2 : 1.0);
     const cap = computeCapOf(state, empire);
     const mobileShips = Math.min(totalShips, cap);
     const stuckShips = Math.max(0, totalShips - cap);
@@ -2737,8 +2760,11 @@ export function scoreState(state: PerceivedGameState, empireId: string): number 
       order.kind === "empire_project" &&
       order.projectId === "build_frigate"
     ) {
-      const atWar = enemiesOf(state, empire.id).length > 0;
-      const shipBase = shipValueFor(empire) * (atWar ? 1.2 : 1.0);
+      // Same baseline-war gating as the fleet-value term above.
+      const baselineAtWar = basePreview
+        ? basePreview.enemyCount > 0
+        : enemiesOf(state, empire.id).length > 0;
+      const shipBase = shipValueFor(empire) * (baselineAtWar ? 1.2 : 1.0);
       score += shipBase * progressWeight;
     } else if (
       order.kind === "empire_project" &&
@@ -2890,7 +2916,13 @@ export function aiPlanProject(draft: GameState, empire: Empire): void {
   // draft; scoring and action enumeration see only what this empire
   // legitimately knows.
   const baseline = filterStateFor(current(draft), empire.id);
-  const baselineScore = scoreState(baseline, empire.id);
+  // Freeze the pre-projection enemy count. Passed into every
+  // scoreState call so ship-value premiums gate on the baseline
+  // war state, not whatever the projection might have declared —
+  // starting a war in lookahead shouldn't spuriously inflate our
+  // existing fleet.
+  const basePreview = { enemyCount: enemiesOf(baseline, empire.id).length };
+  const baselineScore = scoreState(baseline, empire.id, basePreview);
   const actingInBaseline = empireById(baseline, empire.id) ?? empire;
   const candidates = aiEnumerateProjectActions(baseline, actingInBaseline);
 
@@ -2900,7 +2932,7 @@ export function aiPlanProject(draft: GameState, empire: Empire): void {
     const projected = produce(baseline, (d) => {
       applyActionToDraft(d, action);
     });
-    const score = scoreState(projected, empire.id);
+    const score = scoreState(projected, empire.id, basePreview);
     if (score > bestScore) {
       bestScore = score;
       bestAction = action;
@@ -3044,6 +3076,12 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
     lb.push(a);
   }
 
+  // Pre-projection enemy count. Gates the ship-value premium in
+  // scoreState so a move that declares war in-projection doesn't
+  // retroactively inflate every ship in our fleet — the premium
+  // only applies if we were ALREADY at war before this move.
+  const basePreview = { enemyCount: enemiesOf(baseline, empire.id).length };
+
   // Fog gate: the AI only considers systems it has discovered.
   // Fleets moving around inside discovered space still push the
   // boundary outward via sensor next turn, so exploration emerges
@@ -3106,7 +3144,7 @@ export function aiPlanMoves(draft: GameState, empire: Empire): void {
         __tOccupation = __c2 - __c1;
       });
       const __t1 = performance.now();
-      const score = scoreState(projected, empire.id);
+      const score = scoreState(projected, empire.id, basePreview);
       BENCH.moveCandidateCalls += 1;
       BENCH.moveCandidateTimeMs += performance.now() - __t0;
       // produce() wraps the mutate/combat/occupation closure — its
