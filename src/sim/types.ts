@@ -365,7 +365,27 @@ export interface Perception {
   // once — precursor ruins and rare crystals aren't detectable from
   // orbit).
   seenFlavour: string[];
+  // System ids this empire has ever physically touched (owned OR
+  // had a fleet inside). Distinct from `discovered` — this is a
+  // *presence* record, not a *sensor* record. The scouting term in
+  // scoreState reads from surveyed because it's leak-free under
+  // lookahead: the projection can't silently expand it the way
+  // sensor does (updateVisibility doesn't run inside produce()).
+  surveyed: string[];
 }
+
+// Brand type for the output of `filterStateFor`. Runtime shape is
+// identical to GameState (same field layout; redaction zeroes other
+// empires' private fields for defense-in-depth), but the compiler
+// treats it as a distinct type. Callers of scoreState /
+// aiEnumerateProjectActions cannot pass a raw GameState — they must
+// go through `filterStateFor`, which is where all fog gating lives.
+// The brand carries the empire id it was filtered for so we can
+// assert matching context when needed.
+declare const __perceivedBrand: unique symbol;
+export type PerceivedGameState = GameState & {
+  readonly [__perceivedBrand]: { readonly empireId: string };
+};
 
 export interface GameState {
   schemaVersion: 24;

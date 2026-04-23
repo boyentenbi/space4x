@@ -15,6 +15,7 @@ import type {
   HabitabilityTier,
   Leader,
   Modifier,
+  PerceivedGameState,
   Politic,
   Resources,
   ResourceKey,
@@ -405,7 +406,7 @@ function makeEmpire(spec: {
     completedProjects: [],
     adoptedPolicies: [],
     flags: [],
-    perception: { discovered: [], snapshots: {}, seenFlavour: [] },
+    perception: { discovered: [], snapshots: {}, seenFlavour: [], surveyed: [] },
   };
 }
 
@@ -432,7 +433,7 @@ export function initialState(): GameState {
       completedProjects: [],
       adoptedPolicies: [],
       flags: [],
-      perception: { discovered: [], snapshots: {}, seenFlavour: [] },
+      perception: { discovered: [], snapshots: {}, seenFlavour: [], surveyed: [] },
     },
     aiEmpires: [],
     fleets: {},
@@ -1781,6 +1782,130 @@ function snapshotSystem(
 //
 // Also updates `seenFlavour`: when the empire has a fleet physically
 // inside a system, every body in that system with flavour flags gets
+// Produce a PerceivedGameState for `empireId`: a GameState whose
+// contents reflect only what this empire legitimately knows.
+//
+// What's redacted:
+//   - galaxy.systems  → keep only the empire's discovered set.
+//   - galaxy.bodies   → keep only bodies in kept systems.
+//   - galaxy.hyperlanes → keep only lanes with both endpoints kept.
+//   - fleets (at in-sensor systems) → pass through live.
+//   - fleets (at stale-discovered systems) → replace with synthetic
+//       fleets reconstructed from the empire's snapshot (aggregated
+//       per-empire counts).
+//   - fleets (at undiscovered systems) → dropped entirely.
+//   - other empires' private fields (political, componentPools,
+//       storyModifiers, completedProjects, adoptedPolicies, flags,
+//       compute, perception) → zeroed.
+//   - other empires' systemIds → intersected with the acting
+//       empire's discovered set.
+//
+// Returned value carries a nominal brand so the compiler can enforce
+// that scoreState / aiEnumerateProjectActions are only called with a
+// filtered view. Downstream code still sees `empire`/`aiEmpires`
+// structurally (same shape as GameState) so resolveCombat,
+// processOccupation, and the various apply* handlers work on the
+// filtered state without modification — they just operate on the
+// redacted / synthesized contents.
+export function filterStateFor(
+  state: GameState,
+  empireId: string,
+): PerceivedGameState {
+  const acting = empireById(state, empireId);
+  if (!acting) {
+    // Defensive: if the empire doesn't exist we still return a
+    // branded state, but the result is whatever was passed in.
+    return state as PerceivedGameState;
+  }
+  const discoveredSet = new Set(acting.perception.discovered);
+  const sensorSetForActing = sensorSet(state, empireId);
+
+  // Filter systems + bodies.
+  const filteredSystems: Record<string, StarSystem> = {};
+  for (const sid of discoveredSet) {
+    const sys = state.galaxy.systems[sid];
+    if (sys) filteredSystems[sid] = sys;
+  }
+  const filteredBodies: Record<string, Body> = {};
+  for (const [bid, body] of Object.entries(state.galaxy.bodies)) {
+    if (discoveredSet.has(body.systemId)) filteredBodies[bid] = body;
+  }
+  const filteredLanes = state.galaxy.hyperlanes.filter(
+    ([a, b]) => discoveredSet.has(a) && discoveredSet.has(b),
+  );
+
+  // Filter fleets: live for in-sensor, synthetic-from-snapshot for
+  // stale-but-discovered, dropped otherwise. Own fleets are always
+  // in-sensor (the sensor ring contains our fleet positions), so
+  // live-path covers them trivially.
+  const filteredFleets: Record<string, Fleet> = {};
+  for (const [fid, f] of Object.entries(state.fleets)) {
+    if (sensorSetForActing.has(f.systemId)) filteredFleets[fid] = f;
+  }
+  let syntheticCounter = 0;
+  for (const sid of discoveredSet) {
+    if (sensorSetForActing.has(sid)) continue;
+    const snap = acting.perception.snapshots[sid];
+    if (!snap) continue;
+    for (const sf of snap.fleets) {
+      if (sf.shipCount <= 0) continue;
+      // Don't synthesise our own stale fleets — we always know where
+      // our own fleets are (they're inherently in our sensor ring).
+      if (sf.empireId === empireId) continue;
+      const sfid = `__snap_${sid}_${sf.empireId}_${syntheticCounter++}`;
+      filteredFleets[sfid] = {
+        id: sfid,
+        empireId: sf.empireId,
+        systemId: sid,
+        shipCount: sf.shipCount,
+      };
+    }
+  }
+
+  // Redact other empires: keep identity (id, name, color, species,
+  // archetype, portrait) so we can attribute fleets/territory in the
+  // UI and AI scoring, but zero everything private. systemIds is
+  // intersected with discovered so only visible territory remains.
+  const redact = (e: Empire): Empire => {
+    if (e.id === empireId) return e;
+    return {
+      id: e.id,
+      name: e.name,
+      speciesId: e.speciesId,
+      originId: e.originId,
+      color: e.color,
+      political: 0,
+      componentPools: {},
+      compute: { cap: 0, used: 0 },
+      portraitArt: e.portraitArt,
+      expansionism: e.expansionism,
+      politic: e.politic,
+      leaderId: e.leaderId,
+      capitalBodyId: null,
+      systemIds: e.systemIds.filter((sid) => discoveredSet.has(sid)),
+      storyModifiers: {},
+      completedProjects: [],
+      adoptedPolicies: [],
+      flags: [],
+      perception: { discovered: [], snapshots: {}, seenFlavour: [], surveyed: [] },
+    };
+  };
+
+  const filtered: GameState = {
+    ...state,
+    galaxy: {
+      ...state.galaxy,
+      systems: filteredSystems,
+      bodies: filteredBodies,
+      hyperlanes: filteredLanes,
+    },
+    empire: state.empire.id === empireId ? state.empire : redact(state.empire),
+    aiEmpires: state.aiEmpires.map(redact),
+    fleets: filteredFleets,
+  };
+  return filtered as PerceivedGameState;
+}
+
 // added to the seen set. Flavour (precursor ruins, rare crystals) is
 // not sensor-detectable — you have to actually be there.
 export function updateVisibility(draft: GameState): void {
@@ -1804,17 +1929,21 @@ export function updateVisibility(draft: GameState): void {
     if (discoveredSet.size !== empire.perception.discovered.length) {
       empire.perception.discovered = [...discoveredSet];
     }
-    // seenFlavour: expand for every system the empire owns OR has
-    // a fleet inside right now. Flavour (precursor ruins, rare
-    // crystals) isn't detectable from orbit — you have to be there.
-    // Owned systems qualify too: once settled, the surface is ours
-    // to examine. seenFlavour ids stay in the set once added.
+    // seenFlavour + surveyed: both expand for every system the empire
+    // owns OR has a fleet inside right now. Presence, not sensor.
+    //   - surveyed: the system id itself (monotonic). Feeds the
+    //     scouting reward term in scoreState.
+    //   - seenFlavour: body ids in those systems that carry flavour
+    //     flags (precursor ruins, rare crystals). Flavour isn't
+    //     detectable from orbit — you have to be there.
     const seenSet = new Set(empire.perception.seenFlavour);
+    const surveyedSet = new Set(empire.perception.surveyed);
     const visitSystems = new Set<string>(empire.systemIds);
     for (const [sysId, fs] of fleetsBySystem) {
       if (fs.some((f) => f.empireId === empire.id)) visitSystems.add(sysId);
     }
     for (const sysId of visitSystems) {
+      surveyedSet.add(sysId);
       const sys = draft.galaxy.systems[sysId];
       if (!sys) continue;
       for (const bid of sys.bodyIds) {
@@ -1826,6 +1955,9 @@ export function updateVisibility(draft: GameState): void {
     }
     if (seenSet.size !== empire.perception.seenFlavour.length) {
       empire.perception.seenFlavour = [...seenSet];
+    }
+    if (surveyedSet.size !== empire.perception.surveyed.length) {
+      empire.perception.surveyed = [...surveyedSet];
     }
   }
 }
@@ -2479,6 +2611,29 @@ const SHIP_VALUE_MULT: Record<Expansionism, number> = {
   pragmatist: 1.0,
   isolationist: 1.25,
 };
+
+// Scouting reward: per-archetype value of each system the empire has
+// physically visited (owned OR had a fleet in). Reads from
+// `perception.surveyed` (monotonic, updated only by updateVisibility
+// during real turns) PLUS current own-presence (systems the empire
+// owns or has a fleet in right now). Together these encode
+// "everywhere I've ever been or am planning to be."
+//
+// Why this specific shape is leak-free: under lookahead produce()
+// doesn't call updateVisibility, so perception.surveyed is pinned
+// at plan-time via Immer structural sharing. Current own-presence
+// DOES move in a projection — that's the intended effect: moving a
+// fleet to a new system adds that system to the computed set and
+// awards the scouting delta. No sensor-range or enemy-info leaks
+// because the term only reads MY positions, nothing about them.
+//
+// Conquerors gain the most from spreading out; isolationists
+// barely care.
+const SCOUT_VALUE: Record<Expansionism, number> = {
+  conqueror: 100,
+  pragmatist: 50,
+  isolationist: 10,
+};
 function shipValueFor(empire: Empire): number {
   const frigate = projectById("build_frigate");
   const cost = frigate?.hammersRequired ?? COLONIZE_HAMMERS;
@@ -2549,7 +2704,16 @@ export const BENCH = {
   },
 };
 
-export function scoreState(state: GameState, empireId: string): number {
+// Scores a filtered game state from an empire's perspective. The
+// input type is PerceivedGameState — the compiler forces callers to
+// go through `filterStateFor` first, so no raw state (with all
+// empires' private fields intact) can accidentally be scored. In
+// lookahead contexts, produce() on a PerceivedGameState preserves
+// the brand and passes the projected state back here; because
+// perception fields live inside `empire.perception` and aren't
+// touched by the lookahead mutations, they remain pinned at plan
+// time by Immer's structural sharing.
+export function scoreState(state: PerceivedGameState, empireId: string): number {
   const __t0 = performance.now();
   const empire = empireById(state, empireId);
   if (!empire) {
@@ -2601,6 +2765,23 @@ export function scoreState(state: GameState, empireId: string): number {
   }
   // Political stockpile: empire-wide, expensive to regenerate.
   score += empire.political * 15;
+  // Scouting / reach: monotonic reward for each distinct system the
+  // empire has either visited historically (perception.surveyed,
+  // frozen under lookahead) or currently occupies (own systems +
+  // own fleet positions). A projected move that parks a fleet in a
+  // never-visited system expands the union and pays the archetype's
+  // SCOUT_VALUE — that's what pulls fleets outward during lookahead.
+  // Leak-free: this term reads only MY positions, nothing about
+  // enemies or what my expanded sensor would show me.
+  {
+    const reachSet = new Set(empire.perception.surveyed);
+    for (const sid of empire.systemIds) reachSet.add(sid);
+    for (const f of Object.values(state.fleets)) {
+      if (f.empireId !== empireId || f.shipCount <= 0) continue;
+      reachSet.add(f.systemId);
+    }
+    score += reachSet.size * SCOUT_VALUE[empire.expansionism];
+  }
   // Archetype-weighted cost of being at war. Entering foreign space
   // auto-declares war; this term is how we price that consequence
   // into the value function.
@@ -2831,9 +3012,13 @@ export function aiPlanProject(draft: GameState, empire: Empire): void {
   // Keeps the AI's per-turn decision to "queue one more thing".
   if (allOrdersOf(draft, empire).length > 0) return;
 
-  const baseline = current(draft);
+  // Plan against the filtered view. Decisions apply to the real
+  // draft; scoring and action enumeration see only what this empire
+  // legitimately knows.
+  const baseline = filterStateFor(current(draft), empire.id);
   const baselineScore = scoreState(baseline, empire.id);
-  const candidates = aiEnumerateProjectActions(baseline, empire);
+  const actingInBaseline = empireById(baseline, empire.id) ?? empire;
+  const candidates = aiEnumerateProjectActions(baseline, actingInBaseline);
 
   let bestAction: Action | null = null;
   let bestScore = baselineScore;
@@ -2953,7 +3138,15 @@ function processFleetOrders(draft: GameState, onlyEmpireId?: string): void {
 // "press the attack", etc. all emerge from scoreState via this search,
 // not from hand-coded rules.
 export function aiPlanMoves(draft: GameState, empire: Empire): void {
-  const baseline = current(draft);
+  // Plan against a filtered view of the world. The real draft is what
+  // we ultimately mutate (via applySetFleetDestination), but every
+  // scoring / reachability / action-enumeration decision reads only
+  // from `baseline`, which has undiscovered systems and fleets stripped
+  // out. Immer's produce() in scoreCandidate preserves the brand:
+  // `projected` is also a PerceivedGameState, and `empire.perception`
+  // is structurally shared with baseline so it stays plan-time-frozen
+  // even as combat / occupation mutate the projected world.
+  const baseline = filterStateFor(current(draft), empire.id);
   const ourFleets = Object.values(baseline.fleets).filter(
     (f) => f.empireId === empire.id && f.shipCount > 0,
   );
