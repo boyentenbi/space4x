@@ -136,7 +136,7 @@ function makeState(overrides: {
   for (const f of overrides.fleets ?? []) fleetsRec[f.id] = f;
   const ais = overrides.aiEmpires ?? [];
   const raw: GameState = {
-    schemaVersion: 26,
+    schemaVersion: 28,
     turn: overrides.turn ?? 1,
     rngSeed: 1,
     galaxy: {
