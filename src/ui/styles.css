@@ -337,6 +337,43 @@ button.res-cell:hover:not(:disabled) {
   touch-action: manipulation;
 }
 
+/* Mobile back button: visible only when the responsive breakpoint
+   fires (hidden on desktop below). Used to swap from the system pane
+   back to the galaxy pane in single-pane mobile mode. */
+.mobile-back-btn {
+  display: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  margin-right: 8px;
+  cursor: pointer;
+}
+
+.mobile-back-btn:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+/* Responsive: below 768px, the main column becomes single-pane.
+   .mobile-view-galaxy hides the system panel; .mobile-view-system
+   hides the galaxy (right) column. Both default to flex 1 so the
+   surviving pane fills the width. Above the breakpoint these rules
+   don't fire and the normal side-by-side layout stands. */
+@media (max-width: 768px) {
+  .mobile-back-btn {
+    display: inline-block;
+  }
+  .main-column.mobile-view-galaxy .system-panel {
+    display: none;
+  }
+  .main-column.mobile-view-system .right-column {
+    display: none;
+  }
+}
+
 .galaxy-panel .panel-label {
   position: absolute;
   top: 8px;

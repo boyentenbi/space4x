@@ -599,6 +599,13 @@ export function MainScreen() {
     (!state.currentPhaseEmpireId && state.eventQueue.length === 0 && !state.gameOver);
 
   const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
+  // Mobile drill-down: narrow screens show ONE main pane at a time —
+  // either the galaxy map or the focused system's panel. Desktop
+  // shows both side-by-side and this state is effectively ignored
+  // (see the .mobile-view-* CSS — no hiding rules fire above the
+  // breakpoint). Tapping a system swaps to "system"; tapping the
+  // "Galaxy" back button (or entering move mode) swaps to "galaxy".
+  const [mobileView, setMobileView] = useState<"galaxy" | "system">("galaxy");
   const [menuOpen, setMenuOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
   const [policiesOpen, setPoliciesOpen] = useState(false);
@@ -732,6 +739,12 @@ export function MainScreen() {
   useEffect(() => {
     if (moveFleetStale) setMoveMode(null);
   }, [moveFleetStale]);
+  // Mobile drill-down: entering move mode from the system pane needs
+  // to swap back to the galaxy view since that's where the target is
+  // picked. Desktop shows both panes so this is a no-op visually.
+  useEffect(() => {
+    if (moveMode) setMobileView("galaxy");
+  }, [moveMode]);
   const moveOwnerEmpire = moveFleet ? empireById(state, moveFleet.empireId) : null;
   const moveHighlight = moveOwnerEmpire?.color ?? "#ffd580";
 
@@ -823,6 +836,10 @@ export function MainScreen() {
     // and behave normally.
     if (moveMode) setMoveMode(null);
     setSelectedSystemId(id);
+    // Mobile drill-down: picking a system takes you to the system pane
+    // (desktop shows both panes anyway, so this state is inert there).
+    // Empty-space taps (id === null) keep you on galaxy view.
+    if (id) setMobileView("system");
   }
 
   // Fog layer: compute once, share between the galaxy map prop and the
@@ -927,11 +944,14 @@ export function MainScreen() {
                   // actually handled (gone from sensor, peace, etc.).
                   // Click just jumps the map to the threat.
                   setSelectedSystemId(focus.systemId);
+                  setMobileView("galaxy");
                 } else if (focus.kind === "idleFleet") {
                   setSelectedSystemId(focus.systemId);
                   setMoveMode({ fleetId: focus.fleetId, split: null });
+                  // setMoveMode effect flips us to galaxy already.
                 } else if (focus.kind === "emptyQueue" && focus.systemId) {
                   setSelectedSystemId(focus.systemId);
+                  setMobileView("system");
                 }
               }}
               title={label}
@@ -1016,10 +1036,17 @@ export function MainScreen() {
       </div>
 
       {/* ===== Main ===== */}
-      <div className="main-column">
+      <div className={`main-column mobile-view-${mobileView}`}>
         <div className="system-panel">
           <div className="scene-wrap">
             <div className="panel-label">
+              <button
+                className="mobile-back-btn"
+                onClick={() => setMobileView("galaxy")}
+                title="Back to galaxy"
+              >
+                ← Galaxy
+              </button>
               <span className="panel-title-left">
                 {focusOwnerEmpire && (focusOwnerEmpire.portraitArt || focusOwnerSpecies?.art) && (
                   <button
