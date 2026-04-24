@@ -1278,6 +1278,39 @@ export function bodyProjectOrderFor(state: GameState, bodyId: string) {
   return null;
 }
 
+// All build orders (colonize + empire_project) whose target body is
+// `bodyId`, regardless of which body's queue actually hosts the
+// order. Outposts on adjacent unowned stars for example are hosted
+// on the capital (which has hammers) but target the star — they
+// show up in the star's list here so the UI can display "what's
+// being built for this body" coherently.
+//
+// Returned in host-body → queue order, so orders draining first
+// appear first across the empire (stable enough for display).
+export function ordersTargetingBody(state: GameState, bodyId: string): Array<{
+  order: BuildOrder;
+  hostBodyId: string;
+  hostEmpireId: string;
+}> {
+  const out: Array<{ order: BuildOrder; hostBodyId: string; hostEmpireId: string }> = [];
+  for (const empire of allEmpires(state)) {
+    for (const host of ownedBodiesOf(state, empire)) {
+      for (const order of host.queue) {
+        if (order.kind === "colonize") {
+          if (order.targetBodyId === bodyId) {
+            out.push({ order, hostBodyId: host.id, hostEmpireId: empire.id });
+          }
+        } else if (order.kind === "empire_project") {
+          if (order.targetBodyId === bodyId) {
+            out.push({ order, hostBodyId: host.id, hostEmpireId: empire.id });
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
 // Hyperlane diameter of an empire's owned-systems subgraph. 0 for
 // single-system empires, Infinity for empires whose systems aren't
 // connected through their own hyperlane graph (rare — disconnected

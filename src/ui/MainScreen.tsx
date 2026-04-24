@@ -8,12 +8,10 @@ import {
   hostileFleetsInSensor,
   availableBodyProjectsFor,
   ownedBodiesOf,
-  availableProjectsFor,
   bodyComputeOutput,
   bodyIncome,
-  bodyProjectOrderFor,
   canColonize,
-  colonizeOrderForTarget,
+  ordersTargetingBody,
   computeBreakdownFor,
   COLONIZE_POP_COST,
   projectedFleetCompute,
@@ -156,144 +154,68 @@ function ResCell({
   );
 }
 
-// Full build queue: every order in empire.projects in FIFO drain order,
-// plus any empire-scope projects still available to start. Body-scope
-// orders (colonize, outpost, frigate on a specific body) also appear
-// on their own body row, but showing them here makes the "what finishes
-// next, what's queued behind it" cadence legible.
-function BuildQueueCard({
-  state,
-  player,
-  empireProjectsAvailable,
-  onQueueEmpireProject,
+
+// Build order + display metadata: where it's hosted (hammers come
+// from that body), the name of the host body if it's different from
+// the target (so the UI can show "building at Capital" on a distant
+// outpost target), and the estimated turns to completion based on
+// the HOST body's rate.
+interface BodyOrderEntry {
+  order: BuildOrder;
+  hostBodyId: string;
+  hostBodyName: string;
+  hostRate: number;
+  // True when the order is hosted somewhere other than the target
+  // body — e.g., outposts on unowned stars are hosted on the
+  // player's capital.
+  isRemote: boolean;
+}
+
+function orderLabel(order: BuildOrder, state: GameState): { name: string; art?: string } {
+  if (order.kind === "colonize") {
+    const body = state.galaxy.bodies[order.targetBodyId];
+    return { name: `Colonize ${body?.name ?? "?"}` };
+  }
+  const proj = projectById(order.projectId);
+  if (!proj) return { name: "?" };
+  return { name: proj.name, art: proj.art };
+}
+
+function BodyQueueItem({
+  entry,
   onCancel,
 }: {
-  state: import("../sim/types").GameState;
-  player: import("../sim/types").Empire;
-  empireProjectsAvailable: ReturnType<typeof availableProjectsFor>;
-  onQueueEmpireProject: (projectId: string) => void;
+  entry: BodyOrderEntry;
   onCancel: (orderId: string) => void;
 }) {
-  // Hammers are body-local — each body drains its own hammers into
-  // its own FIFO queue. Render the "build queue" as one section per
-  // body with a non-empty queue, so the player can see which body is
-  // working on what and how long it'll take at THAT body's output
-  // rate (not a misleading empire-total rate).
-  //
-  // Empire-scope offers (the Start-a-project buttons) get attached to
-  // the capital's section, because queueEmpireProject hosts on the
-  // capital unless a body target was chosen.
-  const capitalBodyId = player.capitalBodyId;
-
-  // Bodies that either have something queued or are the capital with
-  // empire-scope offers to show. Skip pops-less bodies (stars) —
-  // their queue stays empty because they can't produce hammers.
-  const bodies = ownedBodiesOf(state, player)
-    .filter(
-      (b) =>
-        b.queue.length > 0 ||
-        (b.id === capitalBodyId && empireProjectsAvailable.length > 0),
-    )
-    .filter((b) => b.pops > 0 || b.queue.length > 0);
-
-  if (bodies.length === 0) return null;
-
-  function renderLabel(order: import("../sim/types").BuildOrder): {
-    name: string;
-    desc: string;
-    art?: string;
-  } {
-    if (order.kind === "colonize") {
-      const body = state.galaxy.bodies[order.targetBodyId];
-      return {
-        name: `Colonize ${body?.name ?? "?"}`,
-        desc: body ? `${body.habitability} body — grant starter pops on completion.` : "",
-      };
-    }
-    const proj = projectById(order.projectId);
-    if (!proj) return { name: "?", desc: "" };
-    const suffix = order.targetBodyId
-      ? ` · ${state.galaxy.bodies[order.targetBodyId]?.name ?? ""}`
-      : "";
-    return {
-      name: `${proj.name}${suffix}`,
-      desc: proj.description,
-      art: proj.art,
-    };
-  }
-
+  const state = useGame((s) => s.state);
+  const { order, hostBodyName, hostRate, isRemote } = entry;
+  const { name, art } = orderLabel(order, state);
+  const pct = Math.min(100, (order.hammersPaid / order.hammersRequired) * 100);
+  const remaining = Math.max(0, order.hammersRequired - order.hammersPaid);
+  const turns = hostRate > 0 ? Math.ceil(remaining / hostRate) : "—";
   return (
-    <div className="empire-projects">
-      <div className="projects-label">Build Queue</div>
-      {bodies.map((body) => {
-        // Forward-looking rate — matches what will actually drain
-        // into this body's queue next tick. Reading body.hammers
-        // would give the already-ticked value, but it's reset-and-
-        // recomputed each turn from the same formula.
-        const bodyRate = Math.floor(body.pops * hammersPerPopFor(player, body));
-        // Cumulative remaining across THIS body's queue only, so
-        // turns-to-completion is meaningful per position.
-        let cumulative = 0;
-        const isCapital = body.id === capitalBodyId;
-        return (
-          <div key={body.id} className="build-queue-body">
-            <div className="build-queue-body-head">
-              <span className="build-queue-body-name">{body.name}</span>
-              <span className="build-queue-body-rate">
-                <img className="stat-icon" src={HAMMERS_ICON} alt="" />
-                {bodyRate}/T
-              </span>
-            </div>
-            {body.queue.map((order) => {
-              const { name, desc, art } = renderLabel(order);
-              const pct = Math.min(100, (order.hammersPaid / order.hammersRequired) * 100);
-              const selfRemaining = Math.max(0, order.hammersRequired - order.hammersPaid);
-              cumulative += selfRemaining;
-              const turns = bodyRate > 0 ? Math.ceil(cumulative / bodyRate) : "—";
-              return (
-                <div key={order.id} className="project-card in-flight">
-                  {art && <img className="project-art" src={art} alt="" />}
-                  <div className="project-card-body">
-                    <div className="project-card-head">
-                      <span className="project-name">{name}</span>
-                      <button className="project-cancel" onClick={() => onCancel(order.id)} title="Cancel">×</button>
-                    </div>
-                    <div className="project-card-desc">{desc}</div>
-                    <div className="project-bar">
-                      <div className="project-bar-fill" style={{ width: `${pct}%` }} />
-                    </div>
-                    <div className="project-stats">
-                      {order.hammersPaid}/{order.hammersRequired} · ~{turns}T
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-            {isCapital &&
-              empireProjectsAvailable.map((proj) => {
-                const turns = bodyRate > 0 ? Math.ceil(proj.hammersRequired / bodyRate) : "—";
-                return (
-                  <div key={proj.id} className="project-card available">
-                    {proj.art && <img className="project-art" src={proj.art} alt="" />}
-                    <div className="project-card-body">
-                      <div className="project-card-head">
-                        <span className="project-name">{proj.name}</span>
-                        <button className="project-start" onClick={() => onQueueEmpireProject(proj.id)}>Start</button>
-                      </div>
-                      <div className="project-card-desc">{proj.description}</div>
-                      <div className="project-stats">
-                        {proj.hammersRequired} hammers · ~{turns}T
-                        {proj.costs && Object.entries(proj.costs).map(([k, v]) =>
-                          v ? <span key={k}> · {v} {k}</span> : null
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-        );
-      })}
+    <div className="body-queue-item">
+      {art && <img className="body-queue-art" src={art} alt="" />}
+      <div className="body-queue-item-main">
+        <div className="body-queue-item-head">
+          <span className="body-queue-item-name">{name}</span>
+          <button
+            className="project-cancel"
+            onClick={() => onCancel(order.id)}
+            title="Cancel"
+          >×</button>
+        </div>
+        {isRemote && (
+          <div className="body-queue-item-host">building at {hostBodyName}</div>
+        )}
+        <div className="project-bar">
+          <div className="project-bar-fill" style={{ width: `${pct}%` }} />
+        </div>
+        <div className="project-stats">
+          {order.hammersPaid}/{order.hammersRequired} · ~{turns}T
+        </div>
+      </div>
     </div>
   );
 }
@@ -304,13 +226,12 @@ function BodyRow({
   isCapital,
   owned,
   colonizable,
-  activeOrder,
+  orders,
   colonizeTurns,
   colonizeHammers,
   colonizePolitical,
   growth,
   bodyProjects,
-  bodyProjectOrder,
   hammerRate,
   onColonize,
   onQueueBodyProject,
@@ -323,13 +244,14 @@ function BodyRow({
   isCapital: boolean;
   owned: boolean;
   colonizable: boolean;
-  activeOrder: { id: string; hammersPaid: number; hammersRequired: number } | null;
+  // All orders targeting this body, whether hosted here or elsewhere.
+  // Replaces the old activeOrder / bodyProjectOrder single-slot props.
+  orders: BodyOrderEntry[];
   colonizeTurns: number;
   colonizeHammers: number;
   colonizePolitical: number;
   growth: ReturnType<typeof growthEstimate> | null;
   bodyProjects: ReturnType<typeof availableBodyProjectsFor>;
-  bodyProjectOrder: ReturnType<typeof bodyProjectOrderFor>;
   hammerRate: number;
   onColonize: () => void;
   onQueueBodyProject: (projectId: string) => void;
@@ -345,7 +267,8 @@ function BodyRow({
   highlighted?: boolean;
 }) {
   // Star bodies get a simplified row — no pops/hab/income, just the
-  // star thumb + any outpost-related project.
+  // star thumb + any orders targeting the star (build_outpost on
+  // unowned stars, build_defender on owned stars).
   if (body.kind === "star") {
     return (
       <div className={`body-row star-row${highlighted ? " highlighted" : ""}`}>
@@ -367,9 +290,15 @@ function BodyRow({
           <span className="hab stellar">star</span>
         </div>
 
-        {/* Offer Build Outpost when available. In-flight progress is
-            shown in the empire-wide Build Queue card, not here. */}
-        {!bodyProjectOrder && bodyProjects.map((proj) => {
+        {orders.length > 0 && (
+          <div className="body-queue">
+            {orders.map((o) => (
+              <BodyQueueItem key={o.order.id} entry={o} onCancel={onCancelOrder} />
+            ))}
+          </div>
+        )}
+
+        {bodyProjects.map((proj) => {
           const turns = hammerRate > 0 ? Math.ceil(proj.hammersRequired / hammerRate) : "—";
           return (
             <button
@@ -514,29 +443,15 @@ function BodyRow({
         </div>
       )}
 
-      {activeOrder ? (
-        <div className="project-progress">
-          <div className="project-head">
-            <span>Colonizing</span>
-            <button
-              className="project-cancel"
-              onClick={() => onCancelOrder(activeOrder.id)}
-              title="Cancel"
-            >
-              ×
-            </button>
-          </div>
-          <div className="project-bar">
-            <div
-              className="project-bar-fill"
-              style={{ width: `${Math.min(100, (activeOrder.hammersPaid / activeOrder.hammersRequired) * 100)}%` }}
-            />
-          </div>
-          <div className="project-stats">
-            {activeOrder.hammersPaid}/{activeOrder.hammersRequired}
-          </div>
+      {orders.length > 0 && (
+        <div className="body-queue">
+          {orders.map((o) => (
+            <BodyQueueItem key={o.order.id} entry={o} onCancel={onCancelOrder} />
+          ))}
         </div>
-      ) : colonizable ? (
+      )}
+
+      {orders.length === 0 && colonizable && (
         <button className="project-btn colonize-btn" onClick={onColonize}>
           <span>+ Colonize</span>
           <span className="colonize-cost">
@@ -549,7 +464,7 @@ function BodyRow({
             <span className="colonize-turns">· {colonizeTurns}T</span>
           </span>
         </button>
-      ) : null}
+      )}
 
       {/* Offer any body projects canQueueProjectFor says are legal.
           For repeatable projects (e.g. build_frigate) the button keeps
@@ -1240,10 +1155,27 @@ export function MainScreen() {
               </div>
             ) : focusSystem
               ? focusBodies.map((body) => {
-                  const order = colonizeOrderForTarget(state, body.id);
-                  // Body-scope projects are always queryable — canQueueProjectFor
-                  // already enforces whether the target is legal. This is what
-                  // lets the star row show "Build Outpost" in unclaimed systems.
+                  // All orders (colonize + empire_project) whose target
+                  // is this body, regardless of which body's queue
+                  // hosts them. Decorates each with its host body's
+                  // forward-looking hammer rate so turns-to-complete
+                  // reflects where hammers actually come from (e.g.
+                  // outposts on adjacent stars are hosted on capital).
+                  const orders: BodyOrderEntry[] = ordersTargetingBody(state, body.id)
+                    .filter((o) => o.hostEmpireId === player.id)
+                    .map(({ order, hostBodyId }) => {
+                      const hostBody = state.galaxy.bodies[hostBodyId];
+                      const hostRate = hostBody
+                        ? Math.floor(hostBody.pops * hammersPerPopFor(player, hostBody))
+                        : 0;
+                      return {
+                        order,
+                        hostBodyId,
+                        hostBodyName: hostBody?.name ?? "?",
+                        hostRate,
+                        isRemote: hostBodyId !== body.id,
+                      };
+                    });
                   const bodyProjects = availableBodyProjectsFor(state, player, body.id);
                   return (
                     <BodyRow
@@ -1253,13 +1185,12 @@ export function MainScreen() {
                       isCapital={body.id === player.capitalBodyId}
                       owned={focusIsOurs}
                       colonizable={canColonize(state, body.id)}
-                      activeOrder={order}
+                      orders={orders}
                       colonizeTurns={colonizeTurnEstimate}
                       colonizeHammers={colonizeHammerCost}
                       colonizePolitical={colonizePoliticalCost}
                       growth={focusIsOurs ? growthEstimate(state, player, body) : null}
                       bodyProjects={bodyProjects}
-                      bodyProjectOrder={bodyProjectOrderFor(state, body.id)}
                       hammerRate={totalHammers}
                       flavourSeen={player.perception.seenFlavour.includes(body.id)}
                       highlighted={highlightBodyId === body.id}
@@ -1296,27 +1227,6 @@ export function MainScreen() {
                 </div>
               )}
 
-            {/* Build queue grouped by body — each body has its own
-                hammers pool and FIFO queue; no cross-body pooling. */}
-            <BuildQueueCard
-              state={state}
-              player={player}
-              empireProjectsAvailable={availableProjectsFor(state, player)}
-              onQueueEmpireProject={(pid) =>
-                dispatch({
-                  type: "queueEmpireProject",
-                  byEmpireId: player.id,
-                  projectId: pid,
-                })
-              }
-              onCancel={(oid) =>
-                dispatch({
-                  type: "cancelOrder",
-                  byEmpireId: player.id,
-                  orderId: oid,
-                })
-              }
-            />
           </div>
         </div>
 
