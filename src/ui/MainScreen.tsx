@@ -238,6 +238,8 @@ function BodyRow({
   onCancelOrder,
   flavourSeen,
   highlighted,
+  expanded,
+  onToggle,
 }: {
   body: Body;
   income: Partial<Record<ResourceKey, number>>;
@@ -265,15 +267,32 @@ function BodyRow({
   // specific body — draw an outline so the player can see which of
   // several bodies in the system is wasting hammers this turn.
   highlighted?: boolean;
+  // Expand/collapse state for the body's build queue + offer buttons.
+  // Collapsed by default (via empty Set in parent); click the body
+  // header to toggle. "Queue Build" attention auto-expands the target.
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   // Star bodies get a simplified row — no pops/hab/income, just the
   // star thumb + any orders targeting the star (build_outpost on
-  // unowned stars, build_defender on owned stars).
+  // unowned stars, build_defender on owned stars). Queue + offer
+  // buttons live inside the expand toggle.
   if (body.kind === "star") {
+    const hasContent = orders.length > 0 || bodyProjects.length > 0;
     return (
-      <div className={`body-row star-row${highlighted ? " highlighted" : ""}`}>
-        <div className="body-head">
+      <div
+        className={`body-row star-row${highlighted ? " highlighted" : ""}`}
+        data-body-id={body.id}
+      >
+        <div
+          className={`body-head${hasContent ? " clickable" : ""}`}
+          onClick={hasContent ? onToggle : undefined}
+          role={hasContent ? "button" : undefined}
+        >
           <span className="body-name">
+            {hasContent && (
+              <span className="body-expand-caret">{expanded ? "▾" : "▸"}</span>
+            )}
             <span
               className="body-thumb-wrap"
               style={{ width: BODY_THUMB_BASE, height: BODY_THUMB_BASE }}
@@ -286,52 +305,75 @@ function BodyRow({
               />
             </span>
             {body.name}
+            {orders.length > 0 && (
+              <span className="body-queue-count">{orders.length}</span>
+            )}
           </span>
           <span className="hab stellar">star</span>
         </div>
 
-        {orders.length > 0 && (
-          <div className="body-queue">
-            {orders.map((o) => (
-              <BodyQueueItem key={o.order.id} entry={o} onCancel={onCancelOrder} />
-            ))}
-          </div>
+        {expanded && (
+          <>
+            {/* Offer buttons ABOVE the queue so repeat-clicking doesn't
+                shift the button as new orders pile up below it. */}
+            {bodyProjects.map((proj) => {
+              const turns = hammerRate > 0 ? Math.ceil(proj.hammersRequired / hammerRate) : "—";
+              return (
+                <button
+                  key={proj.id}
+                  className="project-btn body-project-btn"
+                  onClick={() => onQueueBodyProject(proj.id)}
+                  title={proj.description}
+                >
+                  <span>+ {proj.name}</span>
+                  <span className="colonize-cost">
+                    <img className="stat-icon" src={HAMMERS_ICON} alt="" />
+                    {proj.hammersRequired}
+                    {proj.costs?.political !== undefined && (
+                      <>
+                        <img className="stat-icon" src={RESOURCE_ICON.political} alt="" />
+                        {proj.costs.political}
+                      </>
+                    )}
+                    <span className="colonize-turns">· {turns}T</span>
+                  </span>
+                </button>
+              );
+            })}
+            {orders.length > 0 && (
+              <div className="body-queue">
+                {orders.map((o) => (
+                  <BodyQueueItem key={o.order.id} entry={o} onCancel={onCancelOrder} />
+                ))}
+              </div>
+            )}
+          </>
         )}
-
-        {bodyProjects.map((proj) => {
-          const turns = hammerRate > 0 ? Math.ceil(proj.hammersRequired / hammerRate) : "—";
-          return (
-            <button
-              key={proj.id}
-              className="project-btn body-project-btn"
-              onClick={() => onQueueBodyProject(proj.id)}
-              title={proj.description}
-            >
-              <span>+ {proj.name}</span>
-              <span className="colonize-cost">
-                <img className="stat-icon" src={HAMMERS_ICON} alt="" />
-                {proj.hammersRequired}
-                {proj.costs?.political !== undefined && (
-                  <>
-                    <img className="stat-icon" src={RESOURCE_ICON.political} alt="" />
-                    {proj.costs.political}
-                  </>
-                )}
-                <span className="colonize-turns">· {turns}T</span>
-              </span>
-            </button>
-          );
-        })}
       </div>
     );
   }
 
   const thumbSize =
     body.kind === "moon" ? BODY_THUMB_BASE * BODY_THUMB_MOON_RATIO : BODY_THUMB_BASE;
+  const hasQueueContent =
+    orders.length > 0 ||
+    (colonizable && owned) ||
+    (owned && bodyProjects.length > 0) ||
+    (!owned && colonizable);
   return (
-    <div className={`body-row ${isCapital ? "capital" : ""}${highlighted ? " highlighted" : ""}`}>
-      <div className="body-head">
+    <div
+      className={`body-row ${isCapital ? "capital" : ""}${highlighted ? " highlighted" : ""}`}
+      data-body-id={body.id}
+    >
+      <div
+        className={`body-head${hasQueueContent ? " clickable" : ""}`}
+        onClick={hasQueueContent ? onToggle : undefined}
+        role={hasQueueContent ? "button" : undefined}
+      >
         <span className="body-name">
+          {hasQueueContent && (
+            <span className="body-expand-caret">{expanded ? "▾" : "▸"}</span>
+          )}
           <span
             className="body-thumb-wrap"
             style={{ width: BODY_THUMB_BASE, height: BODY_THUMB_BASE }}
@@ -344,6 +386,9 @@ function BodyRow({
             />
           </span>
           {body.name}
+          {orders.length > 0 && (
+            <span className="body-queue-count">{orders.length}</span>
+          )}
         </span>
         <span className={`hab ${body.habitability}`}>{body.habitability}</span>
       </div>
@@ -443,62 +488,65 @@ function BodyRow({
         </div>
       )}
 
-      {orders.length > 0 && (
-        <div className="body-queue">
-          {orders.map((o) => (
-            <BodyQueueItem key={o.order.id} entry={o} onCancel={onCancelOrder} />
-          ))}
-        </div>
-      )}
+      {expanded && (
+        <>
+          {/* Offer buttons above the queue so repeat-clicking them
+              doesn't shift the button down as orders accumulate. */}
+          {orders.length === 0 && colonizable && (
+            <button className="project-btn colonize-btn" onClick={onColonize}>
+              <span>+ Colonize</span>
+              <span className="colonize-cost">
+                <img className="stat-icon" src={HAMMERS_ICON} alt="" />
+                {colonizeHammers}
+                <img className="stat-icon" src={RESOURCE_ICON.political} alt="" />
+                {colonizePolitical}
+                <img className="stat-icon" src={POPS_ICON} alt="" />
+                {COLONIZE_POP_COST}
+                <span className="colonize-turns">· {colonizeTurns}T</span>
+              </span>
+            </button>
+          )}
 
-      {orders.length === 0 && colonizable && (
-        <button className="project-btn colonize-btn" onClick={onColonize}>
-          <span>+ Colonize</span>
-          <span className="colonize-cost">
-            <img className="stat-icon" src={HAMMERS_ICON} alt="" />
-            {colonizeHammers}
-            <img className="stat-icon" src={RESOURCE_ICON.political} alt="" />
-            {colonizePolitical}
-            <img className="stat-icon" src={POPS_ICON} alt="" />
-            {COLONIZE_POP_COST}
-            <span className="colonize-turns">· {colonizeTurns}T</span>
-          </span>
-        </button>
-      )}
+          {owned && bodyProjects.map((proj) => {
+            const turns = hammerRate > 0 ? Math.ceil(proj.hammersRequired / hammerRate) : "—";
+            return (
+              <button
+                key={proj.id}
+                className="project-btn body-project-btn"
+                onClick={() => onQueueBodyProject(proj.id)}
+                title={proj.description}
+              >
+                <span>+ {proj.name}</span>
+                <span className="colonize-cost">
+                  <img className="stat-icon" src={HAMMERS_ICON} alt="" />
+                  {proj.hammersRequired}
+                  {proj.costs?.food !== undefined && (
+                    <>
+                      <img className="stat-icon" src={RESOURCE_ICON.food} alt="" />
+                      {proj.costs.food}
+                    </>
+                  )}
+                  {proj.costs?.political !== undefined && (
+                    <>
+                      <img className="stat-icon" src={RESOURCE_ICON.political} alt="" />
+                      {proj.costs.political}
+                    </>
+                  )}
+                  <span className="colonize-turns">· {turns}T</span>
+                </span>
+              </button>
+            );
+          })}
 
-      {/* Offer any body projects canQueueProjectFor says are legal.
-          For repeatable projects (e.g. build_frigate) the button keeps
-          showing even while another of the same is in flight. */}
-      {owned && bodyProjects.map((proj) => {
-        const turns = hammerRate > 0 ? Math.ceil(proj.hammersRequired / hammerRate) : "—";
-        return (
-          <button
-            key={proj.id}
-            className="project-btn body-project-btn"
-            onClick={() => onQueueBodyProject(proj.id)}
-            title={proj.description}
-          >
-            <span>+ {proj.name}</span>
-            <span className="colonize-cost">
-              <img className="stat-icon" src={HAMMERS_ICON} alt="" />
-              {proj.hammersRequired}
-              {proj.costs?.food !== undefined && (
-                <>
-                  <img className="stat-icon" src={RESOURCE_ICON.food} alt="" />
-                  {proj.costs.food}
-                </>
-              )}
-              {proj.costs?.political !== undefined && (
-                <>
-                  <img className="stat-icon" src={RESOURCE_ICON.political} alt="" />
-                  {proj.costs.political}
-                </>
-              )}
-              <span className="colonize-turns">· {turns}T</span>
-            </span>
-          </button>
-        );
-      })}
+          {orders.length > 0 && (
+            <div className="body-queue">
+              {orders.map((o) => (
+                <BodyQueueItem key={o.order.id} entry={o} onCancel={onCancelOrder} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -531,6 +579,11 @@ export function MainScreen() {
   // Cleared when the focus target changes (useEffect below) or when
   // the user queues something on any body.
   const [highlightBodyId, setHighlightBodyId] = useState<string | null>(null);
+  // Per-body build queue expand/collapse state. Bodies default to
+  // collapsed — clicking the body header toggles. The "Queue Build"
+  // attention flow adds the target body to this set so the queue +
+  // offer buttons are already visible when the player arrives.
+  const [expandedBodyIds, setExpandedBodyIds] = useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
   const [policiesOpen, setPoliciesOpen] = useState(false);
@@ -678,6 +731,20 @@ export function MainScreen() {
     const body = state.galaxy.bodies[highlightBodyId];
     if (!body || body.queue.length > 0) setHighlightBodyId(null);
   }, [highlightBodyId, state]);
+  // Scroll the highlighted body into view whenever the highlight
+  // changes. The body-row carries a data-body-id attribute; we just
+  // find and call scrollIntoView on it. Runs in a rAF to give React
+  // a frame to render the expanded queue first so the scroll target
+  // has its final size.
+  useEffect(() => {
+    if (!highlightBodyId) return;
+    const id = highlightBodyId;
+    const raf = requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-body-id="${id}"]`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [highlightBodyId]);
   const moveOwnerEmpire = moveFleet ? empireById(state, moveFleet.empireId) : null;
   const moveHighlight = moveOwnerEmpire?.color ?? "#ffd580";
 
@@ -886,6 +953,18 @@ export function MainScreen() {
                   setSelectedSystemId(focus.systemId);
                   setHighlightBodyId(focus.bodyId);
                   setMobileView("system");
+                  if (focus.bodyId) {
+                    // Open that body's queue section so the offer
+                    // buttons are visible right away; the scroll
+                    // effect below handles positioning.
+                    const bid = focus.bodyId;
+                    setExpandedBodyIds((s) => {
+                      if (s.has(bid)) return s;
+                      const next = new Set(s);
+                      next.add(bid);
+                      return next;
+                    });
+                  }
                 }
               }}
               title={label}
@@ -1194,6 +1273,15 @@ export function MainScreen() {
                       hammerRate={totalHammers}
                       flavourSeen={player.perception.seenFlavour.includes(body.id)}
                       highlighted={highlightBodyId === body.id}
+                      expanded={expandedBodyIds.has(body.id)}
+                      onToggle={() => {
+                        setExpandedBodyIds((s) => {
+                          const next = new Set(s);
+                          if (next.has(body.id)) next.delete(body.id);
+                          else next.add(body.id);
+                          return next;
+                        });
+                      }}
                       onColonize={() =>
                         dispatch({
                           type: "queueColonize",

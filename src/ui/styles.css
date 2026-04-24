@@ -860,6 +860,46 @@ button.res-cell:hover:not(:disabled) {
   padding: 0 2px;
 }
 
+/* Clickable body header — the whole .body-head toggles its row's
+   queue/offer section when there's content to show. Muted hover
+   feedback so the row doesn't compete with the more important
+   highlighted/capital states for attention. */
+.body-head.clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.body-head.clickable:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.body-expand-caret {
+  display: inline-block;
+  width: 12px;
+  color: var(--text-dim);
+  margin-right: 2px;
+  font-size: 10px;
+}
+
+/* Count badge showing the number of queued orders when the row is
+   collapsed — gives a glanceable hint of "something's building here"
+   without needing to open the row. */
+.body-queue-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  margin-left: 6px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--accent);
+  border-radius: 7px;
+  line-height: 1;
+}
+
 /* Per-body build queue — inline under each body row, showing every
    order whose target is this body (whether hosted here or remotely).
    Outposts on adjacent unowned stars for example show up on the star
