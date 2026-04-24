@@ -176,9 +176,9 @@ describe("deterministic pop growth", () => {
   it("applies the hard-cap growth formula exactly in one tick", () => {
     // Formula (hard cap, no logistic damping):
     //   ΔPops = BASE_ORGANIC_GROWTH_RATE × mult × pops + additive
-    // where BASE_ORGANIC_GROWTH_RATE = 2^(1/60) − 1 ≈ 0.011619.
+    // where BASE_ORGANIC_GROWTH_RATE = 2^(1/200) − 1 ≈ 0.003472.
     // Test empire has no origin modifiers → mult = 1, additive = 0.
-    // For pops = 20: 0.011619 × 1 × 20 ≈ 0.232388 → 20.232388.
+    // For pops = 20: 0.003472 × 1 × 20 ≈ 0.069435 → 20.069435.
     const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
     const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 20, maxPops: 40 });
     const player = makeEmpire({
@@ -189,7 +189,7 @@ describe("deterministic pop growth", () => {
     });
     const state = makeState({ systems: [home], bodies: [cap], empire: player });
     const ticked = runOnePhase(state, "e_player");
-    expect(ticked.galaxy.bodies["b_cap"].pops).toBeCloseTo(20.23239, 4);
+    expect(ticked.galaxy.bodies["b_cap"].pops).toBeCloseTo(20.06943, 4);
   });
 
   it("Matriarchal-Hive-style modifiers: zero organic, positive additive", () => {

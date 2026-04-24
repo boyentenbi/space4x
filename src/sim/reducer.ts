@@ -154,7 +154,7 @@ export const POP_GROWTH_FOOD_COST = 50;
 // patient or explosive the whole game feels. 60 turns ≈ mid-game
 // colonies meaningfully gain pops over a dozen rounds without
 // racing to cap.
-export const ORGANIC_DOUBLING_TURNS = 60;
+export const ORGANIC_DOUBLING_TURNS = 200;
 export const BASE_ORGANIC_GROWTH_RATE = Math.pow(2, 1 / ORGANIC_DOUBLING_TURNS) - 1;
 
 // Deterministic per-turn pop delta for one body given an empire's
