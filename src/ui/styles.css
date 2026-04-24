@@ -1888,6 +1888,125 @@ button.res-cell:hover:not(:disabled) {
   z-index: 50;
 }
 
+/* "Big event" variant: near-fullscreen art fills the viewport,
+   title + text + choices overlay the bottom third. Triggered when
+   an event carries `art` (see EventModal.tsx). Used for the
+   climactic moments (rival hatches, sacrifice, etc.) so those beats
+   have visual weight that matches their narrative. */
+.big-event-scrim {
+  padding: 0;
+  background: rgba(3, 5, 9, 0.92);
+}
+
+.big-event-modal {
+  position: relative;
+  width: 100vw;
+  height: 100svh;
+  max-width: 1400px;
+  max-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.big-event-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+
+/* Gradient fade under the overlay so the bottom quarter stays
+   readable over arbitrary art. Sits between the art and the
+   text layer. */
+.big-event-modal::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    transparent 40%,
+    rgba(3, 5, 9, 0.5) 60%,
+    rgba(3, 5, 9, 0.95) 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+.big-event-overlay {
+  position: relative;
+  z-index: 2;
+  margin-top: auto;
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 780px;
+  width: 100%;
+  align-self: center;
+}
+
+.big-event-title {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: 0.03em;
+  color: var(--text);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+.big-event-text {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.6;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.big-event-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.big-event-choice {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  background: rgba(20, 24, 34, 0.82);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+
+.big-event-choice:hover {
+  background: rgba(30, 36, 50, 0.92);
+  border-color: var(--text-dim);
+}
+
+.big-event-choice-text {
+  font-size: 14px;
+}
+
+/* On narrow screens (mobile drill-down) remove the inner padding
+   and lean harder on the gradient. Title/text/choices become the
+   full width of the viewport. */
+@media (max-width: 768px) {
+  .big-event-overlay {
+    padding: 16px 14px 20px;
+  }
+  .big-event-title {
+    font-size: 20px;
+  }
+}
+
 .modal {
   width: 100%;
   max-width: 680px;

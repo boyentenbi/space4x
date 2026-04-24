@@ -479,6 +479,13 @@ export interface GameEvent {
   weight?: number;
   requires?: Condition[];
   choices: EventChoice[];
+  // Optional near-fullscreen art shown at the top of the modal.
+  // When set, EventModal renders its "big" variant — art fills most
+  // of the screen with text + choices overlaid at the bottom, for
+  // climactic moments (rival hatches, the sacrifice, first contact-
+  // grade events). When absent, the standard compact modal layout
+  // is used.
+  art?: string;
 }
 
 export type Condition =

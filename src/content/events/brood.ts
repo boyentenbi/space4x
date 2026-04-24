@@ -1,4 +1,4 @@
-import type { GameEvent } from "../sim/types";
+import type { GameEvent } from "../../sim/types";
 
 // ============================================================
 // Brood Mother origin events
@@ -16,7 +16,7 @@ import type { GameEvent } from "../sim/types";
 
 const BROOD_ORIGIN = "matriarchal_hive";
 
-const BROOD_EVENTS: GameEvent[] = [
+export const BROOD_EVENTS: GameEvent[] = [
   // 1. The First Hatch — early reward, lets the player pick how
   //    the hive specializes its opening turns. Fires any time after
   //    turn 15 as a random-event roll.
@@ -31,6 +31,7 @@ const BROOD_EVENTS: GameEvent[] = [
       { kind: "lacksFlag", flag: "brood_first_hatch_done" },
     ],
     weight: 3,
+    art: "/events/brood/first_hatch.png",
     choices: [
       {
         id: "workers",
@@ -75,6 +76,7 @@ const BROOD_EVENTS: GameEvent[] = [
       { kind: "lacksFlag", flag: "brood_drought_done" },
     ],
     weight: 4,
+    art: "/events/brood/drought.png",
     choices: [
       {
         id: "feed",
@@ -114,6 +116,7 @@ const BROOD_EVENTS: GameEvent[] = [
       { kind: "lacksFlag", flag: "brood_rival_done" },
     ],
     weight: 3,
+    art: "/events/brood/rival.png",
     choices: [
       {
         id: "kill",
@@ -171,6 +174,7 @@ const BROOD_EVENTS: GameEvent[] = [
       { kind: "lacksFlag", flag: "brood_warrior_flush_done" },
     ],
     weight: 3,
+    art: "/events/brood/warrior_flush.png",
     choices: [
       {
         id: "garrison",
@@ -208,6 +212,7 @@ const BROOD_EVENTS: GameEvent[] = [
       { kind: "lacksFlag", flag: "brood_pheromone_bloom_done" },
     ],
     weight: 2,
+    art: "/events/brood/pheromone_bloom.png",
     choices: [
       {
         id: "accept",
@@ -260,6 +265,7 @@ const BROOD_EVENTS: GameEvent[] = [
       { kind: "lacksFlag", flag: "brood_sacrifice_done" },
     ],
     weight: 5,
+    art: "/events/brood/sacrifice.png",
     choices: [
       {
         id: "merge",
@@ -309,5 +315,3 @@ const BROOD_EVENTS: GameEvent[] = [
     ],
   },
 ];
-
-export const EVENTS: GameEvent[] = [...BROOD_EVENTS];
