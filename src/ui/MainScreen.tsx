@@ -90,7 +90,7 @@ type AttentionFocus =
   | { kind: "event" }
   | { kind: "hostileFleet"; fleetId: string; systemId: string }
   | { kind: "idleFleet"; fleetId: string; systemId: string }
-  | { kind: "emptyQueue"; systemId: string | null };
+  | { kind: "emptyQueue"; systemId: string | null; bodyId: string | null };
 
 function attentionFocus(state: GameState): AttentionFocus {
   if (state.gameOver) return { kind: "gameOver" };
@@ -116,23 +116,14 @@ function attentionFocus(state: GameState): AttentionFocus {
     if (f.autoDiscover) continue;
     return { kind: "idleFleet", fleetId: f.id, systemId: f.systemId };
   }
-  // Per-system idle: same rule as needsPlayerAttention. Focus on
-  // the first owned system that has populated bodies but NO queued
-  // orders anywhere in the system — player sees the nag at system
-  // level, so a sibling body's queue-entry counts as "this system
-  // is busy."
-  for (const sid of player.systemIds) {
-    const sys = state.galaxy.systems[sid];
-    if (!sys) continue;
-    let hasPopulated = false;
-    let hasAnyQueue = false;
-    for (const bid of sys.bodyIds) {
-      const b = state.galaxy.bodies[bid];
-      if (!b) continue;
-      if (b.pops > 0) hasPopulated = true;
-      if (b.queue.length > 0) { hasAnyQueue = true; break; }
-    }
-    if (hasPopulated && !hasAnyQueue) return { kind: "emptyQueue", systemId: sid };
+  // Per-body idle — mirrors needsPlayerAttention. Return the specific
+  // body so the UI can highlight it in the body list; otherwise the
+  // player has to hunt for which body is wasting hammers when a
+  // sibling in the same system is visibly building something.
+  for (const body of ownedBodiesOf(state, player)) {
+    if (body.pops <= 0) continue;
+    if (body.queue.length > 0) continue;
+    return { kind: "emptyQueue", systemId: body.systemId, bodyId: body.id };
   }
   return { kind: "none" };
 }
@@ -325,6 +316,7 @@ function BodyRow({
   onQueueBodyProject,
   onCancelOrder,
   flavourSeen,
+  highlighted,
 }: {
   body: Body;
   income: Partial<Record<ResourceKey, number>>;
@@ -347,12 +339,16 @@ function BodyRow({
   // and not detectable from orbit — requires a fleet visit or
   // ownership. When false, flavour chips are suppressed.
   flavourSeen: boolean;
+  // When true, the "Queue Build" attention focus has targeted this
+  // specific body — draw an outline so the player can see which of
+  // several bodies in the system is wasting hammers this turn.
+  highlighted?: boolean;
 }) {
   // Star bodies get a simplified row — no pops/hab/income, just the
   // star thumb + any outpost-related project.
   if (body.kind === "star") {
     return (
-      <div className="body-row star-row">
+      <div className={`body-row star-row${highlighted ? " highlighted" : ""}`}>
         <div className="body-head">
           <span className="body-name">
             <span
@@ -404,7 +400,7 @@ function BodyRow({
   const thumbSize =
     body.kind === "moon" ? BODY_THUMB_BASE * BODY_THUMB_MOON_RATIO : BODY_THUMB_BASE;
   return (
-    <div className={`body-row ${isCapital ? "capital" : ""}`}>
+    <div className={`body-row ${isCapital ? "capital" : ""}${highlighted ? " highlighted" : ""}`}>
       <div className="body-head">
         <span className="body-name">
           <span
@@ -615,6 +611,11 @@ export function MainScreen() {
   // breakpoint). Tapping a system swaps to "system"; tapping the
   // "Galaxy" back button (or entering move mode) swaps to "galaxy".
   const [mobileView, setMobileView] = useState<"galaxy" | "system">("galaxy");
+  // Body id to highlight in the body list — used by the "Queue Build"
+  // attention focus to point the player at the specific idle body.
+  // Cleared when the focus target changes (useEffect below) or when
+  // the user queues something on any body.
+  const [highlightBodyId, setHighlightBodyId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
   const [policiesOpen, setPoliciesOpen] = useState(false);
@@ -754,6 +755,14 @@ export function MainScreen() {
   useEffect(() => {
     if (moveMode) setMobileView("galaxy");
   }, [moveMode]);
+  // Clear the "Queue Build" body highlight once the player has
+  // actually queued something on it (its queue goes non-empty).
+  // Also clear if the body vanishes or flips owners.
+  useEffect(() => {
+    if (!highlightBodyId) return;
+    const body = state.galaxy.bodies[highlightBodyId];
+    if (!body || body.queue.length > 0) setHighlightBodyId(null);
+  }, [highlightBodyId, state]);
   const moveOwnerEmpire = moveFleet ? empireById(state, moveFleet.empireId) : null;
   const moveHighlight = moveOwnerEmpire?.color ?? "#ffd580";
 
@@ -960,6 +969,7 @@ export function MainScreen() {
                   // setMoveMode effect flips us to galaxy already.
                 } else if (focus.kind === "emptyQueue" && focus.systemId) {
                   setSelectedSystemId(focus.systemId);
+                  setHighlightBodyId(focus.bodyId);
                   setMobileView("system");
                 }
               }}
@@ -1252,6 +1262,7 @@ export function MainScreen() {
                       bodyProjectOrder={bodyProjectOrderFor(state, body.id)}
                       hammerRate={totalHammers}
                       flavourSeen={player.perception.seenFlavour.includes(body.id)}
+                      highlighted={highlightBodyId === body.id}
                       onColonize={() =>
                         dispatch({
                           type: "queueColonize",

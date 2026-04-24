@@ -579,6 +579,21 @@ button.res-cell:hover:not(:disabled) {
   background: rgba(126, 200, 255, 0.06);
 }
 
+/* "Queue Build" attention: flag the specific body whose queue is
+   empty. Outline pulses briefly to draw the eye when the player
+   clicks through attention focus from the top bar. Clears as soon
+   as they queue something on it. */
+.body-row.highlighted {
+  outline: 2px solid var(--warn);
+  outline-offset: -1px;
+  animation: body-row-nag-pulse 1.2s ease-in-out 2;
+}
+
+@keyframes body-row-nag-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 200, 80, 0.0); }
+  50%      { box-shadow: 0 0 0 4px rgba(255, 200, 80, 0.35); }
+}
+
 .body-row .body-head {
   display: flex;
   justify-content: space-between;

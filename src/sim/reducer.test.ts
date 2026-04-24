@@ -2369,23 +2369,17 @@ describe("autoplay attention: hostile fleet in sensor", () => {
   });
 });
 
-describe("autoplay attention: idle-system nag scopes to system-level", () => {
-  // Reproduces a real-game bug: "Queue Build" was focusing on a
-  // system where an outpost was already queued (on the capital body
-  // targeting an adjacent star), because a SIBLING populated body
-  // in that same system happened to have an empty queue. The nag
-  // should be per-system, not per-body — if the system has any
-  // queued work anywhere, it's not idle.
-  it("a system with ANY queued order doesn't need attention, even if some bodies have empty queues", () => {
+describe("autoplay attention: per-body idle nag", () => {
+  // Any colonised body with an empty queue wastes its hammers this
+  // turn — hammers are body-local, so a sibling's in-flight project
+  // doesn't help. The attention target keeps bodyId so the UI can
+  // highlight the specific idle body.
+  it("a sibling body with an empty queue still triggers the nag even when capital is busy", () => {
     const home = makeSystem({
       id: "s_home",
       bodyIds: ["b_cap", "b_mine"],
       ownerId: "e_player",
     });
-    // Capital has an outpost order (hosted here because outpost
-    // targets an unowned star). Sibling body on same system is
-    // populated but empty-queued — under the old per-body rule this
-    // would have flagged "s_home needs attention".
     const cap = makeBody({
       id: "b_cap",
       systemId: "s_home",
@@ -2412,17 +2406,32 @@ describe("autoplay attention: idle-system nag scopes to system-level", () => {
       bodies: [cap, mine],
       empire: player,
     });
-    expect(needsPlayerAttention(state)).toBe(false);
+    // The sibling (b_mine) has 10 pops producing hammers and nothing
+    // queued — those hammers go nowhere. The UI will highlight it.
+    expect(needsPlayerAttention(state)).toBe(true);
   });
 
-  it("a truly-idle owned system still triggers the nag", () => {
-    // Owned system with a populated body, zero queued work. Nag.
+  it("no nag when every populated body has something queued", () => {
     const home = makeSystem({
       id: "s_home",
       bodyIds: ["b_cap"],
       ownerId: "e_player",
     });
-    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const cap = makeBody({
+      id: "b_cap",
+      systemId: "s_home",
+      pops: 30,
+      queue: [
+        {
+          kind: "empire_project",
+          id: "o1",
+          projectId: "build_frigate",
+          hammersRequired: 5000,
+          hammersPaid: 0,
+          targetBodyId: "b_cap",
+        },
+      ],
+    });
     const player = makeEmpire({
       id: "e_player",
       capitalBodyId: "b_cap",
@@ -2433,7 +2442,7 @@ describe("autoplay attention: idle-system nag scopes to system-level", () => {
       bodies: [cap],
       empire: player,
     });
-    expect(needsPlayerAttention(state)).toBe(true);
+    expect(needsPlayerAttention(state)).toBe(false);
   });
 });
 
