@@ -65,7 +65,8 @@ export type Action =
   | { type: "dismissProjectCompletion" }
   | { type: "dismissFirstContact" }
   | { type: "dismissWarDeclaration" }
-  | { type: "dismissVictory" };
+  | { type: "dismissVictory" }
+  | { type: "dismissElimination" };
 
 // Colonization tunables. Pop counts + space caps are now on a 10x
 // scale (so a starter temperate world runs ~40 pops instead of 4),
@@ -311,7 +312,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 31,
+    schemaVersion: 32,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -324,6 +325,7 @@ export function initialState(): GameState {
     projectCompletions: [],
     pendingFirstContacts: [],
     pendingWarDeclarations: [],
+    pendingEliminations: [],
     gameOver: false,
     victory: false,
     victoryAcknowledged: false,
@@ -1094,6 +1096,7 @@ export function needsPlayerAttention(state: GameState): boolean {
   if (state.eventQueue.length > 0) return true;
   if (state.pendingFirstContacts.length > 0) return true;
   if (state.pendingWarDeclarations.length > 0) return true;
+  if (state.pendingEliminations.length > 0) return true;
   if (state.projectCompletions.length > 0) return true;
   // Headless: no human → there's nothing the human needs. Skip the
   // rest of the gates.
@@ -2168,7 +2171,8 @@ function checkEliminations(draft: GameState): void {
       for (const fid of Object.keys(draft.fleets)) {
         if (draft.fleets[fid].empireId === e.id) delete draft.fleets[fid];
       }
-      if (e.id === draft.humanEmpireId) {
+      const wasPlayer = e.id === draft.humanEmpireId;
+      if (wasPlayer) {
         if (!draft.gameOver) {
           draft.gameOver = true;
           draft.eventLog.push({
@@ -2184,6 +2188,19 @@ function checkEliminations(draft: GameState): void {
           eventId: "empire_eliminated",
           choiceId: null,
           text: `${e.name} has fallen.`,
+        });
+      }
+      // Snapshot display fields into the UI queue. Only push when
+      // there's a human to see the modal (headless rollouts skip).
+      if (draft.humanEmpireId) {
+        const portraitArt = e.portraitArt || speciesById(e.speciesId)?.art;
+        draft.pendingEliminations.push({
+          empireId: e.id,
+          empireName: e.name,
+          empireColor: e.color,
+          portraitArt,
+          turn: draft.turn,
+          wasPlayer,
         });
       }
     }
@@ -4229,6 +4246,11 @@ export function reduce(
         draft.victoryAcknowledged = true;
       });
 
+    case "dismissElimination":
+      return produce(state, (draft) => {
+        draft.pendingEliminations.shift();
+      });
+
     case "declareWar":
       return produce(state, (draft) => applyDeclareWar(draft, action));
 
@@ -4239,14 +4261,19 @@ export function reduce(
       // Player-dispatched route changes count as taking manual
       // control of the fleet — clear any auto-discover flag so the
       // chooser doesn't immediately overwrite the new route (or
-      // re-pick one after the player cancelled). The auto-discover
-      // chooser itself calls applySetFleetDestination directly,
-      // bypassing this case, so it doesn't disable itself.
+      // re-pick one after the player cancelled), and clear any
+      // sleeping flag so the idle-fleet alert fires again when the
+      // moved fleet arrives at its destination. Without waking, a
+      // fleet the player deliberately redirected would sit silently
+      // idle on arrival. The auto-discover chooser itself calls
+      // applySetFleetDestination directly, bypassing this case, so
+      // it doesn't disable itself.
       return produce(state, (draft) => {
         applySetFleetDestination(draft, action);
         const f = draft.fleets[action.fleetId];
-        if (f && f.empireId === action.byEmpireId && f.autoDiscover) {
-          delete f.autoDiscover;
+        if (f && f.empireId === action.byEmpireId) {
+          if (f.autoDiscover) delete f.autoDiscover;
+          if (f.sleeping) delete f.sleeping;
         }
       });
 

@@ -12,14 +12,19 @@ import type { GameEvent } from "../../sim/types";
 // dependencies: "brood_rival_resolved" in particular must be set
 // (via the Exile branch of the Rival event) before The Sacrifice's
 // split-vs-merge endgame becomes available.
+//
+// Turn beats match the standard origin-arc pacing:
+//   Early   ≥ T100   (First Hatch)
+//   Mid     ≥ T250   (Rival)
+//   Late    ≥ T375   (Pheromone Bloom)
+//   Climax  ≥ T500   (Sacrifice)
 // ============================================================
 
 const BROOD_ORIGIN = "matriarchal_hive";
 
 export const BROOD_EVENTS: GameEvent[] = [
   // 1. The First Hatch — early reward, lets the player pick how
-  //    the hive specializes its opening turns. Fires any time after
-  //    turn 15 as a random-event roll.
+  //    the hive specializes its opening turns. Early beat at T100+.
   {
     id: "brood_first_hatch",
     title: "The First Hatch",
@@ -27,7 +32,7 @@ export const BROOD_EVENTS: GameEvent[] = [
       "Beneath the capital's spires, the Brood Mother's first full cycle crests. Egg cases crack in their thousands — wet, raw, staring at a world they've never seen. The caste they mature into depends on which pheromone the hive releases in the next hour.",
     requires: [
       { kind: "originIs", originId: BROOD_ORIGIN },
-      { kind: "turnAtLeast", value: 15 },
+      { kind: "turnAtLeast", value: 100 },
       { kind: "lacksFlag", flag: "brood_first_hatch_done" },
     ],
     weight: 3,
@@ -75,7 +80,7 @@ export const BROOD_EVENTS: GameEvent[] = [
       "Deep in the capital's warren, a second reproductive form has pupated. She is smaller than the Matriarch, but fertile — and the attendants who found her did not kill her on sight. They are waiting for your word.",
     requires: [
       { kind: "originIs", originId: BROOD_ORIGIN },
-      { kind: "turnAtLeast", value: 50 },
+      { kind: "turnAtLeast", value: 250 },
       { kind: "popsAtCapitalAtLeast", value: 100 },
       { kind: "lacksFlag", flag: "brood_rival_done" },
     ],
@@ -134,7 +139,7 @@ export const BROOD_EVENTS: GameEvent[] = [
       "Something in the atmosphere has changed. Workers on every owned world are, impossibly, laying. The Matriarch's attendants call it heresy and demand you suppress it. The laying workers call it the future.",
     requires: [
       { kind: "originIs", originId: BROOD_ORIGIN },
-      { kind: "turnAtLeast", value: 60 },
+      { kind: "turnAtLeast", value: 375 },
       { kind: "lacksFlag", flag: "brood_pheromone_bloom_done" },
     ],
     weight: 2,
@@ -185,7 +190,7 @@ export const BROOD_EVENTS: GameEvent[] = [
       "The two queens cannot share a galaxy forever. One must be folded into the other — or both must give themselves up so every hive can breed on its own. The swarm is waiting to hear which future you will choose.",
     requires: [
       { kind: "originIs", originId: BROOD_ORIGIN },
-      { kind: "turnAtLeast", value: 150 },
+      { kind: "turnAtLeast", value: 500 },
       { kind: "hasFlag", flag: "brood_rival_resolved" },
       { kind: "featureCountAtLeast", featureId: "brood_mother", value: 2 },
       { kind: "lacksFlag", flag: "brood_sacrifice_done" },

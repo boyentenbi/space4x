@@ -431,8 +431,23 @@ export type PerceivedGameState = GameState & {
   readonly [__perceivedBrand]: { readonly empireId: string };
 };
 
+// Snapshot of an eliminated empire, queued for the UI to surface.
+// We capture display fields at elimination time because the empire
+// itself is removed from `empires[]` on the same tick — looking it
+// up by id after dismissal would fail.
+export interface PendingElimination {
+  empireId: string;
+  empireName: string;
+  empireColor: string;
+  portraitArt?: string;
+  turn: number;
+  // True when the fallen empire is the human player's. Drives the
+  // defeat framing in the modal (vs. a neutral "X has fallen" note).
+  wasPlayer: boolean;
+}
+
 export interface GameState {
-  schemaVersion: 31;
+  schemaVersion: 32;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;
@@ -469,6 +484,11 @@ export interface GameState {
   // the aggressor they already know — they just clicked the button).
   // aggressorEmpireId is the empire that declared war on us.
   pendingWarDeclarations: Array<{ aggressorEmpireId: string; turn: number }>;
+  // Empires (including possibly the player's own) that have just
+  // been eliminated and whose fall hasn't been acknowledged by the
+  // UI yet. Only populated in human-driven games; headless rollouts
+  // leave this empty to avoid unbounded growth.
+  pendingEliminations: PendingElimination[];
   // True once the human empire has lost its last system. In headless
   // mode (no human), use external termination criteria instead
   // (e.g. last empire standing).

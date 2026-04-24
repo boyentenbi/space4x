@@ -52,6 +52,7 @@ import { EmpireRosterModal } from "./EmpireRosterModal";
 import { FirstContactModal } from "./FirstContactModal";
 import { WarDeclaredModal } from "./WarDeclaredModal";
 import { VictoryModal } from "./VictoryModal";
+import { EliminationModal } from "./EliminationModal";
 import { FleetModal } from "./FleetModal";
 import { ModifierChip } from "./modifierUi";
 import { PoliciesModal } from "./PoliciesModal";
@@ -1678,26 +1679,37 @@ export function MainScreen() {
         </div>
       </div>
 
-      {state.victory && !state.victoryAcknowledged && <VictoryModal />}
-      {!(state.victory && !state.victoryAcknowledged) &&
-        state.pendingFirstContacts.length > 0 && (
-          <FirstContactModal
-            otherEmpireId={state.pendingFirstContacts[0].otherEmpireId}
-            onDismiss={() => dispatch({ type: "dismissFirstContact" })}
-          />
-        )}
-      {!(state.victory && !state.victoryAcknowledged) &&
-        state.pendingFirstContacts.length === 0 &&
-        state.pendingWarDeclarations.length > 0 && (
-          <WarDeclaredModal
-            aggressorEmpireId={state.pendingWarDeclarations[0].aggressorEmpireId}
-            onDismiss={() => dispatch({ type: "dismissWarDeclaration" })}
-          />
-        )}
-      {!(state.victory && !state.victoryAcknowledged) &&
-        state.pendingFirstContacts.length === 0 &&
-        state.pendingWarDeclarations.length === 0 &&
-        pendingEvent && <EventModal eventId={pendingEvent.eventId} />}
+      {/* Modal priority: drain eliminations first so each fall is
+          acknowledged, then show victory as the capstone, then
+          diplomatic modals (first contact / war) and finally events. */}
+      {(() => {
+        if (state.pendingEliminations.length > 0) {
+          return <EliminationModal elimination={state.pendingEliminations[0]} />;
+        }
+        if (state.victory && !state.victoryAcknowledged) {
+          return <VictoryModal />;
+        }
+        if (state.pendingFirstContacts.length > 0) {
+          return (
+            <FirstContactModal
+              otherEmpireId={state.pendingFirstContacts[0].otherEmpireId}
+              onDismiss={() => dispatch({ type: "dismissFirstContact" })}
+            />
+          );
+        }
+        if (state.pendingWarDeclarations.length > 0) {
+          return (
+            <WarDeclaredModal
+              aggressorEmpireId={state.pendingWarDeclarations[0].aggressorEmpireId}
+              onDismiss={() => dispatch({ type: "dismissWarDeclaration" })}
+            />
+          );
+        }
+        if (pendingEvent) {
+          return <EventModal eventId={pendingEvent.eventId} />;
+        }
+        return null;
+      })()}
       {breakdown && (
         <StatBreakdownModal breakdown={breakdown} onClose={() => setBreakdown(null)} />
       )}

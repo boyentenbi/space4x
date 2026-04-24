@@ -1227,16 +1227,19 @@ button.res-cell:hover:not(:disabled) {
 }
 
 /* =======================================================
-   Empire profile modal — reached from system-panel portrait
-   or from the sidebar roster.
+   Profile-style modals — empire profile, first contact,
+   war declaration, elimination. Share a portrait + title +
+   archetype-tags header layout so every "empire card" modal
+   looks consistent. Sections below the header only appear
+   in the full empire-profile modal and stay scoped to it.
    ======================================================= */
-.empire-profile .profile-head {
+.profile-head {
   display: flex;
   gap: 12px;
   align-items: flex-start;
 }
 
-.empire-profile .profile-portrait {
+.profile-portrait {
   width: 108px;
   height: 108px;
   object-fit: cover;
@@ -1246,19 +1249,19 @@ button.res-cell:hover:not(:disabled) {
   flex: 0 0 auto;
 }
 
-.empire-profile .profile-title h2 {
+.profile-title h2 {
   margin: 2px 0 6px;
   font-size: 18px;
 }
 
-.empire-profile .profile-sub {
+.profile-sub {
   font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-dim);
 }
 
-.empire-profile .profile-archetype {
+.profile-archetype {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
@@ -1275,7 +1278,7 @@ button.res-cell:hover:not(:disabled) {
   color: var(--text);
 }
 
-.empire-profile .profile-manifesto {
+.profile-manifesto {
   margin: 4px 0;
   padding: 10px 12px;
   border-left: 2px solid var(--accent-dim);

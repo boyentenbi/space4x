@@ -139,7 +139,7 @@ function makeState(overrides: {
   for (const f of overrides.fleets ?? []) fleetsRec[f.id] = f;
   const ais = overrides.aiEmpires ?? [];
   const raw: GameState = {
-    schemaVersion: 31,
+    schemaVersion: 32,
     turn: overrides.turn ?? 1,
     rngSeed: 1,
     galaxy: {
@@ -158,6 +158,7 @@ function makeState(overrides: {
     projectCompletions: [],
     pendingFirstContacts: [],
     pendingWarDeclarations: [],
+    pendingEliminations: [],
     gameOver: false,
     victory: false,
     victoryAcknowledged: false,
@@ -3657,24 +3658,24 @@ describe("brood mother events", () => {
   }
 
   it("first_hatch gates on turn and lacks_flag", async () => {
-    expect((await broodPool(broodState({ turn: 10 }))).map((e) => e.id)).not.toContain("brood_first_hatch");
-    expect((await broodPool(broodState({ turn: 20 }))).map((e) => e.id)).toContain("brood_first_hatch");
+    expect((await broodPool(broodState({ turn: 90 }))).map((e) => e.id)).not.toContain("brood_first_hatch");
+    expect((await broodPool(broodState({ turn: 120 }))).map((e) => e.id)).toContain("brood_first_hatch");
     expect(
-      (await broodPool(broodState({ turn: 20, flags: ["brood_first_hatch_done"] }))).map((e) => e.id),
+      (await broodPool(broodState({ turn: 120, flags: ["brood_first_hatch_done"] }))).map((e) => e.id),
     ).not.toContain("brood_first_hatch");
   });
 
-  it("rival needs turn 50+ and 100+ pops at capital", async () => {
-    expect((await broodPool(broodState({ turn: 40, pops: 150 }))).map((e) => e.id)).not.toContain("brood_rival");
-    expect((await broodPool(broodState({ turn: 60, pops: 50 }))).map((e) => e.id)).not.toContain("brood_rival");
-    expect((await broodPool(broodState({ turn: 60, pops: 150 }))).map((e) => e.id)).toContain("brood_rival");
+  it("rival needs turn 250+ and 100+ pops at capital", async () => {
+    expect((await broodPool(broodState({ turn: 240, pops: 150 }))).map((e) => e.id)).not.toContain("brood_rival");
+    expect((await broodPool(broodState({ turn: 260, pops: 50 }))).map((e) => e.id)).not.toContain("brood_rival");
+    expect((await broodPool(broodState({ turn: 260, pops: 150 }))).map((e) => e.id)).toContain("brood_rival");
   });
 
   it("the_sacrifice requires two brood_mother features AND the resolved flag", async () => {
     // Turn, flag, and pops set but only one feature — not eligible.
     expect(
       (await broodPool(broodState({
-        turn: 200,
+        turn: 520,
         pops: 200,
         flags: ["brood_rival_resolved"],
         secondBodyWithMother: false,
@@ -3683,7 +3684,7 @@ describe("brood mother events", () => {
     // Two features but no flag — not eligible.
     expect(
       (await broodPool(broodState({
-        turn: 200,
+        turn: 520,
         pops: 200,
         secondBodyWithMother: true,
       }))).map((e) => e.id),
@@ -3691,7 +3692,7 @@ describe("brood mother events", () => {
     // Everything set — eligible.
     expect(
       (await broodPool(broodState({
-        turn: 200,
+        turn: 520,
         pops: 200,
         flags: ["brood_rival_resolved"],
         secondBodyWithMother: true,

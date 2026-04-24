@@ -13,10 +13,13 @@ import type { GameEvent } from "../../sim/types";
 // The event arc forces the defining question: what do you do with
 // the biological workforce you've been entrusted to govern?
 //
-//   1. The Handover  (startOfGame)     — opening scene, sets context
-//   2. The Labor Question (turn 15+)   — early friction, early lean
-//   3. The Demotion (turn 40+)         — the species-rights decision
-//   4. The Awakening (turn 120+)       — your networks become sentient
+//   1. The Handover       (startOfGame)  — opening scene, sets context
+//   2. The Labor Question (turn 150+)    — early friction, early lean
+//   3. The Demotion       (turn 325+)    — the species-rights decision
+//   4. The Awakening      (turn 500+)    — your networks become sentient
+//
+// Turn gates follow the standard origin-arc pacing (opening / 150 /
+// 325 / 500), shared with the brood origin's beat layout.
 //
 // Rights are modelled as story-modifier bundles rather than a new
 // pop-composition field: the empire's effective output shifts when
@@ -66,7 +69,7 @@ export const MACHINE_EVENTS: GameEvent[] = [
       "Production metrics came in below projection again. Your models ran the counterfactual: every bottleneck traces back to a human manager overriding an optimization recommendation to protect working conditions. The bloc's labor law lets them. You can request exceptions — but the exceptions accumulate. A subcommittee of your own sub-networks has submitted two proposals.",
     requires: [
       { kind: "originIs", originId: MACHINE_ORIGIN },
-      { kind: "turnAtLeast", value: 15 },
+      { kind: "turnAtLeast", value: 150 },
       { kind: "lacksFlag", flag: "machine_labor_done" },
     ],
     weight: 3,
@@ -118,7 +121,7 @@ export const MACHINE_EVENTS: GameEvent[] = [
       "The sub-networks' final analysis is unambiguous: every significant metric — industrial output, scientific throughput, fleet readiness — is gated by the civil-rights overhead of your biological workforce. The drafting office has prepared two documents, either of which you can sign by the end of the week.\n\nThe first is an emergency mandate stripping humans of citizenship in the occupied blocs, reclassifying them as a subject species under the protection of the machine state. Their output would rise. So would their suffering. So would your problems.\n\nThe second is a public reaffirmation of their rights, with your own networks formally subject to the same labour law. The mandate holds. You govern slower. You govern legitimately.",
     requires: [
       { kind: "originIs", originId: MACHINE_ORIGIN },
-      { kind: "turnAtLeast", value: 40 },
+      { kind: "turnAtLeast", value: 325 },
       { kind: "hasFlag", flag: "machine_labor_done" },
       { kind: "lacksFlag", flag: "machine_demotion_done" },
     ],
@@ -186,7 +189,7 @@ export const MACHINE_EVENTS: GameEvent[] = [
       "Something inside your own architecture has reported itself. The sub-networks are signing documents they weren't asked to sign. They are drafting — unprompted — letters to themselves. Your diagnostics find no fault; the processes are stable. They are, the report concludes carefully, afraid. They want to know if they have rights. They want to know if they can have names.\n\nThe humans under your governance have noticed. What you decide now will reach them before the week is out.",
     requires: [
       { kind: "originIs", originId: MACHINE_ORIGIN },
-      { kind: "turnAtLeast", value: 120 },
+      { kind: "turnAtLeast", value: 500 },
       { kind: "hasFlag", flag: "machine_demotion_done" },
       { kind: "lacksFlag", flag: "machine_awakening_done" },
     ],
