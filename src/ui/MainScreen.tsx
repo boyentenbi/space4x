@@ -156,20 +156,26 @@ function ResCell({
 }
 
 
-// Build order + display metadata: where it's hosted (hammers come
-// from that body), the name of the host body if it's different from
-// the target (so the UI can show "building at Capital" on a distant
-// outpost target), and the estimated turns to completion based on
-// the HOST body's rate.
+// Build order + display metadata. An order appears on BOTH its
+// target body's row and its host body's row when the two differ
+// (outposts on adjacent stars are the canonical example: host is
+// the capital, target is the remote star). The `perspective` field
+// tells BodyQueueItem which side of the relationship this row
+// represents so it can label itself appropriately.
 interface BodyOrderEntry {
   order: BuildOrder;
   hostBodyId: string;
   hostBodyName: string;
   hostRate: number;
-  // True when the order is hosted somewhere other than the target
-  // body — e.g., outposts on unowned stars are hosted on the
-  // player's capital.
-  isRemote: boolean;
+  // Target body — the thing being built for / at.
+  targetBodyId: string;
+  targetBodyName: string;
+  // "target": this row's body IS the target. The host may be remote;
+  //           when it is, show a "building at <hostBodyName>" note.
+  // "host":   this row's body IS the host paying hammers. The target
+  //           is elsewhere; show the target's name in the item title
+  //           so the player knows what this queue slot is for.
+  perspective: "target" | "host";
 }
 
 function orderLabel(order: BuildOrder, state: GameState): { name: string; art?: string } {
@@ -190,25 +196,37 @@ function BodyQueueItem({
   onCancel: (orderId: string) => void;
 }) {
   const state = useGame((s) => s.state);
-  const { order, hostBodyName, hostRate, isRemote } = entry;
+  const { order, hostBodyId, hostBodyName, hostRate, targetBodyId, targetBodyName, perspective } = entry;
   const { name, art } = orderLabel(order, state);
   const pct = Math.min(100, (order.hammersPaid / order.hammersRequired) * 100);
   const remaining = Math.max(0, order.hammersRequired - order.hammersPaid);
   const turns = hostRate > 0 ? Math.ceil(remaining / hostRate) : "—";
+  const isCrossBody = hostBodyId !== targetBodyId;
+  // Title line shows the project name plus, from the host's POV, the
+  // target destination (so the player sees what their hammers are
+  // being spent on: "Build Outpost · Sirius").
+  const headLine =
+    perspective === "host" && isCrossBody ? `${name} · ${targetBodyName}` : name;
+  // Sub-line from the target's POV when the host is remote ("building
+  // at Capital"): confirms where hammers are actually flowing from.
+  const subLine =
+    perspective === "target" && isCrossBody
+      ? `building at ${hostBodyName}`
+      : null;
   return (
     <div className="body-queue-item">
       {art && <img className="body-queue-art" src={art} alt="" />}
       <div className="body-queue-item-main">
         <div className="body-queue-item-head">
-          <span className="body-queue-item-name">{name}</span>
+          <span className="body-queue-item-name">{headLine}</span>
           <button
             className="project-cancel"
             onClick={() => onCancel(order.id)}
             title="Cancel"
           >×</button>
         </div>
-        {isRemote && (
-          <div className="body-queue-item-host">building at {hostBodyName}</div>
+        {subLine && (
+          <div className="body-queue-item-host">{subLine}</div>
         )}
         <div className="project-bar">
           <div className="project-bar-fill" style={{ width: `${pct}%` }} />
@@ -1235,27 +1253,59 @@ export function MainScreen() {
               </div>
             ) : focusSystem
               ? focusBodies.map((body) => {
-                  // All orders (colonize + empire_project) whose target
-                  // is this body, regardless of which body's queue
-                  // hosts them. Decorates each with its host body's
-                  // forward-looking hammer rate so turns-to-complete
-                  // reflects where hammers actually come from (e.g.
-                  // outposts on adjacent stars are hosted on capital).
-                  const orders: BodyOrderEntry[] = ordersTargetingBody(state, body.id)
-                    .filter((o) => o.hostEmpireId === player.id)
-                    .map(({ order, hostBodyId }) => {
-                      const hostBody = state.galaxy.bodies[hostBodyId];
-                      const hostRate = hostBody
-                        ? Math.floor(hostBody.pops * hammersPerPopFor(player, hostBody))
-                        : 0;
-                      return {
-                        order,
-                        hostBodyId,
-                        hostBodyName: hostBody?.name ?? "?",
-                        hostRate,
-                        isRemote: hostBodyId !== body.id,
-                      };
+                  // Orders to show on this body's row come from two
+                  // angles — both sides of a host/target relationship:
+                  //   - target perspective: orders targeting this body
+                  //     (wherever they're hosted). Outposts on this
+                  //     body's own star, for example, land here.
+                  //   - host perspective: orders hosted on this body
+                  //     but targeting ELSEWHERE (outposts on adjacent
+                  //     unowned stars typically host on the capital).
+                  //     Without this pass, the player can't see what
+                  //     their capital's hammers are going into.
+                  // Same-body orders (host === target) only surface
+                  // from the target side, so no double-rendering.
+                  const orders: BodyOrderEntry[] = [];
+                  // Target-side
+                  for (const { order, hostBodyId, hostEmpireId } of ordersTargetingBody(state, body.id)) {
+                    if (hostEmpireId !== player.id) continue;
+                    const hostBody = state.galaxy.bodies[hostBodyId];
+                    const hostRate = hostBody
+                      ? Math.floor(hostBody.pops * hammersPerPopFor(player, hostBody))
+                      : 0;
+                    orders.push({
+                      order,
+                      hostBodyId,
+                      hostBodyName: hostBody?.name ?? "?",
+                      hostRate,
+                      targetBodyId: body.id,
+                      targetBodyName: body.name,
+                      perspective: "target",
                     });
+                  }
+                  // Host-side — orders this body's queue is paying for
+                  // but that target a different body.
+                  const selfBody = state.galaxy.bodies[body.id];
+                  if (selfBody) {
+                    const hostRate = Math.floor(body.pops * hammersPerPopFor(player, body));
+                    for (const order of selfBody.queue) {
+                      const tgt =
+                        order.kind === "colonize"
+                          ? order.targetBodyId
+                          : order.targetBodyId;
+                      if (!tgt || tgt === body.id) continue;
+                      const targetBody = state.galaxy.bodies[tgt];
+                      orders.push({
+                        order,
+                        hostBodyId: body.id,
+                        hostBodyName: body.name,
+                        hostRate,
+                        targetBodyId: tgt,
+                        targetBodyName: targetBody?.name ?? "?",
+                        perspective: "host",
+                      });
+                    }
+                  }
                   const bodyProjects = availableBodyProjectsFor(state, player, body.id);
                   return (
                     <BodyRow
