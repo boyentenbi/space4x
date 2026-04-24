@@ -12,6 +12,14 @@ when you want to remember something later.
   system IDs). Zero runtime cost; a few hundred trivial edits across the
   codebase.
 
+## UI polish
+
+- **Reduce build-queue font size.** Body-queue items (BodyQueueItem)
+  currently inherit fairly large font sizing; the progress bar row
+  and stats feel chunky relative to the surrounding body-row content.
+  Tighten item-name, item-host, and project-stats sizes so the queue
+  reads as secondary info, not primary.
+
 ## Design questions
 
 - **Build ships in units of 10?** Small-battle granularity is weird

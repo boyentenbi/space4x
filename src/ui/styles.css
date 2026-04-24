@@ -1679,11 +1679,11 @@ button.res-cell:hover:not(:disabled) {
    Fleet move mode — floating bar over the galaxy panel +
    destination/lane pulses on the SVG map itself.
    ======================================================= */
+/* Lives in the system pane between the fleet strip and the body
+   list — in-flow now, not an absolute overlay over the galaxy. The
+   left-coloured border matches the selected fleet's empire colour
+   so it reads as "this fleet's controls." */
 .move-bar {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  max-width: 70%;
   padding: 6px 8px;
   background: rgba(10, 12, 18, 0.85);
   border: 1px solid var(--border);
@@ -1693,9 +1693,6 @@ button.res-cell:hover:not(:disabled) {
   flex-direction: column;
   gap: 4px;
   font-size: 11px;
-  z-index: 3;
-  backdrop-filter: blur(4px);
-  pointer-events: auto;
 }
 
 .move-bar-line {
