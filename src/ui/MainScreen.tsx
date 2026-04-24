@@ -1160,6 +1160,125 @@ export function MainScreen() {
             ) : (
               <div className="scene-empty">Tap a star on the galaxy map.</div>
             )}
+            {moveFleet && !moveFleetStale && (() => {
+              const dest = moveFleet.destinationSystemId
+                ? state.galaxy.systems[moveFleet.destinationSystemId] ?? null
+                : null;
+              return (
+                <div className="move-bar" style={{ borderColor: moveHighlight }}>
+                  <div className="move-bar-line">
+                    <span className="move-bar-title">
+                      <svg width="10" height="10" viewBox="0 0 10 10" style={{ marginRight: 4 }}>
+                        <polygon points="5,1 9,9 1,9" fill={moveHighlight} />
+                      </svg>
+                      Moving {moveMode?.split ?? moveFleet.shipCount}/{moveFleet.shipCount}
+                    </span>
+                    <button
+                      className="move-bar-cancel"
+                      onClick={() => setMoveMode(null)}
+                    >
+                      close
+                    </button>
+                  </div>
+                  {moveFleet.shipCount > 1 && (
+                    <div className="move-bar-split">
+                      <button
+                        type="button"
+                        className={`move-seg ${moveMode?.split === null ? "on" : ""}`}
+                        onClick={() =>
+                          setMoveMode((m) => (m ? { ...m, split: null } : m))
+                        }
+                      >
+                        all
+                      </button>
+                      <button
+                        type="button"
+                        className={`move-seg ${moveMode?.split !== null ? "on" : ""}`}
+                        onClick={() =>
+                          setMoveMode((m) =>
+                            m
+                              ? { ...m, split: m.split ?? Math.max(1, Math.floor(moveFleet.shipCount / 2)) }
+                              : m,
+                          )
+                        }
+                      >
+                        split
+                      </button>
+                      {moveMode?.split !== null && moveMode?.split !== undefined && (
+                        <input
+                          className="move-bar-num"
+                          type="number"
+                          min={1}
+                          max={moveFleet.shipCount - 1}
+                          value={moveMode.split}
+                          onChange={(e) => {
+                            const raw = parseInt(e.target.value, 10);
+                            const n = Number.isFinite(raw) ? raw : 1;
+                            const clamped = Math.max(1, Math.min(moveFleet.shipCount - 1, n));
+                            setMoveMode((m) => (m ? { ...m, split: clamped } : m));
+                          }}
+                        />
+                      )}
+                    </div>
+                  )}
+                  {dest && movePath.length > 0 ? (
+                    <div className="move-bar-route">
+                      <span>
+                        → {dest.name} · {movePath.length}T
+                      </span>
+                      <button
+                        type="button"
+                        className="move-bar-clear"
+                        onClick={() =>
+                          dispatch({
+                            type: "setFleetDestination",
+                            byEmpireId: player.id,
+                            fleetId: moveFleet.id,
+                            toSystemId: null,
+                          })
+                        }
+                      >
+                        cancel route
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="move-bar-hint">Tap a system to send the fleet, or sleep it so autoplay skips over it.</div>
+                  )}
+                  <div className="move-bar-route">
+                    <button
+                      type="button"
+                      className="move-bar-clear"
+                      onClick={() => {
+                        dispatch({
+                          type: "setFleetAutoDiscover",
+                          byEmpireId: player.id,
+                          fleetId: moveFleet.id,
+                          autoDiscover: !moveFleet.autoDiscover,
+                        });
+                        setMoveMode(null);
+                      }}
+                    >
+                      {moveFleet.autoDiscover ? "stop auto-discover" : "auto-discover"}
+                    </button>
+                    <button
+                      type="button"
+                      className="move-bar-clear"
+                      onClick={() => {
+                        dispatch({
+                          type: "setFleetSleep",
+                          byEmpireId: player.id,
+                          fleetId: moveFleet.id,
+                          sleeping: !moveFleet.sleeping,
+                        });
+                        setMoveMode(null);
+                      }}
+                    >
+                      {moveFleet.sleeping ? "wake fleet" : "sleep fleet"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
           {/* Fleet strip — lives OUTSIDE the scrollable detail list so
               fleet pills stay visible when the player scrolls through
@@ -1421,125 +1540,6 @@ export function MainScreen() {
                 return s;
               })()}
             />
-            {moveFleet && !moveFleetStale && (() => {
-              const dest = moveFleet.destinationSystemId
-                ? state.galaxy.systems[moveFleet.destinationSystemId] ?? null
-                : null;
-              return (
-                <div className="move-bar" style={{ borderColor: moveHighlight }}>
-                  <div className="move-bar-line">
-                    <span className="move-bar-title">
-                      <svg width="10" height="10" viewBox="0 0 10 10" style={{ marginRight: 4 }}>
-                        <polygon points="5,1 9,9 1,9" fill={moveHighlight} />
-                      </svg>
-                      Moving {moveMode?.split ?? moveFleet.shipCount}/{moveFleet.shipCount}
-                    </span>
-                    <button
-                      className="move-bar-cancel"
-                      onClick={() => setMoveMode(null)}
-                    >
-                      close
-                    </button>
-                  </div>
-                  {moveFleet.shipCount > 1 && (
-                    <div className="move-bar-split">
-                      <button
-                        type="button"
-                        className={`move-seg ${moveMode?.split === null ? "on" : ""}`}
-                        onClick={() =>
-                          setMoveMode((m) => (m ? { ...m, split: null } : m))
-                        }
-                      >
-                        all
-                      </button>
-                      <button
-                        type="button"
-                        className={`move-seg ${moveMode?.split !== null ? "on" : ""}`}
-                        onClick={() =>
-                          setMoveMode((m) =>
-                            m
-                              ? { ...m, split: m.split ?? Math.max(1, Math.floor(moveFleet.shipCount / 2)) }
-                              : m,
-                          )
-                        }
-                      >
-                        split
-                      </button>
-                      {moveMode?.split !== null && moveMode?.split !== undefined && (
-                        <input
-                          className="move-bar-num"
-                          type="number"
-                          min={1}
-                          max={moveFleet.shipCount - 1}
-                          value={moveMode.split}
-                          onChange={(e) => {
-                            const raw = parseInt(e.target.value, 10);
-                            const n = Number.isFinite(raw) ? raw : 1;
-                            const clamped = Math.max(1, Math.min(moveFleet.shipCount - 1, n));
-                            setMoveMode((m) => (m ? { ...m, split: clamped } : m));
-                          }}
-                        />
-                      )}
-                    </div>
-                  )}
-                  {dest && movePath.length > 0 ? (
-                    <div className="move-bar-route">
-                      <span>
-                        → {dest.name} · {movePath.length}T
-                      </span>
-                      <button
-                        type="button"
-                        className="move-bar-clear"
-                        onClick={() =>
-                          dispatch({
-                            type: "setFleetDestination",
-                            byEmpireId: player.id,
-                            fleetId: moveFleet.id,
-                            toSystemId: null,
-                          })
-                        }
-                      >
-                        cancel route
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="move-bar-hint">Tap a system to send the fleet, or sleep it so autoplay skips over it.</div>
-                  )}
-                  <div className="move-bar-route">
-                    <button
-                      type="button"
-                      className="move-bar-clear"
-                      onClick={() => {
-                        dispatch({
-                          type: "setFleetAutoDiscover",
-                          byEmpireId: player.id,
-                          fleetId: moveFleet.id,
-                          autoDiscover: !moveFleet.autoDiscover,
-                        });
-                        setMoveMode(null);
-                      }}
-                    >
-                      {moveFleet.autoDiscover ? "stop auto-discover" : "auto-discover"}
-                    </button>
-                    <button
-                      type="button"
-                      className="move-bar-clear"
-                      onClick={() => {
-                        dispatch({
-                          type: "setFleetSleep",
-                          byEmpireId: player.id,
-                          fleetId: moveFleet.id,
-                          sleeping: !moveFleet.sleeping,
-                        });
-                        setMoveMode(null);
-                      }}
-                    >
-                      {moveFleet.sleeping ? "wake fleet" : "sleep fleet"}
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
             <span className="panel-stats">
               {player.systemIds.length}/{Object.keys(state.galaxy.systems).length} yours
             </span>
