@@ -428,6 +428,24 @@ function BodyRow({
             +{bodyComputeOutput(body)}
           </span>
         )}
+        {/* Food / energy per-turn outputs live on the same body-stats
+            row as hammers / compute. They come from income() which
+            includes fractional per-pop yields, so we round to 1 d.p.
+            and drop the trailing .0 on integer values so the
+            displays don't jitter between "+1" and "+1.0". */}
+        {owned && RESOURCE_KEYS.filter((k) => k !== "political").map((k) => {
+          const v = income[k] ?? 0;
+          if (v === 0) return null;
+          const rounded = Math.round(v * 10) / 10;
+          const display = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+          const sign = rounded > 0 ? "+" : "";
+          return (
+            <span key={k} className="stat-pill" title={`${k} per turn`}>
+              <img className="stat-icon" src={RESOURCE_ICON[k]} alt="" />
+              {sign}{display}
+            </span>
+          );
+        })}
         {owned && growth && growth.kind === "growing" && (
           <span className="stat-pill growth-pill" title="Pops gained per turn (costs 50 food per pop)">
             <img className="stat-icon" src={POPS_ICON} alt="" />
@@ -447,20 +465,11 @@ function BodyRow({
           </span>
         )}
       </div>
-      {owned && (
+      {/* Flavour tags (precursor_ruins, rare_crystals, etc.). Only
+          shown when the viewer has had a fleet physically present. */}
+      {owned && flavourSeen && body.flavorFlags.length > 0 && (
         <div className="chips">
-          {RESOURCE_KEYS.filter((k) => k !== "political").map((k) => {
-            const v = income[k] ?? 0;
-            if (v === 0) return null;
-            const cls = v > 0 ? "pos" : "neg";
-            return (
-              <span key={k} className={`chip ${cls}`}>
-                <img className="chip-icon" src={RESOURCE_ICON[k]} alt="" />
-                {v > 0 ? "+" : ""}{v}
-              </span>
-            );
-          })}
-          {flavourSeen && body.flavorFlags.map((f) => (
+          {body.flavorFlags.map((f) => (
             <span key={f} className="chip flavor">{f.replace(/_/g, " ")}</span>
           ))}
         </div>
