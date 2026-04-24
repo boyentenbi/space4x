@@ -64,7 +64,8 @@ export type Action =
   | { type: "setFleetAutoDiscover"; byEmpireId: string; fleetId: string; autoDiscover: boolean }
   | { type: "dismissProjectCompletion" }
   | { type: "dismissFirstContact" }
-  | { type: "dismissWarDeclaration" };
+  | { type: "dismissWarDeclaration" }
+  | { type: "dismissVictory" };
 
 // Colonization tunables. Pop counts + space caps are now on a 10x
 // scale (so a starter temperate world runs ~40 pops instead of 4),
@@ -310,7 +311,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 30,
+    schemaVersion: 31,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -324,6 +325,8 @@ export function initialState(): GameState {
     pendingFirstContacts: [],
     pendingWarDeclarations: [],
     gameOver: false,
+    victory: false,
+    victoryAcknowledged: false,
   };
 }
 
@@ -1084,6 +1087,7 @@ export function allOrdersOf(state: GameState, empire: Empire): BuildOrder[] {
 export function needsPlayerAttention(state: GameState): boolean {
   // Hard stops.
   if (state.gameOver) return true;
+  if (state.victory && !state.victoryAcknowledged) return true;
   // Modal-backed queues: first contact, random events, finished
   // projects. Any of these showing up means the player has a modal
   // to read or resolve, so autoplay should yield.
@@ -2185,6 +2189,25 @@ function checkEliminations(draft: GameState): void {
     }
   }
   draft.empires = survivors;
+  // Last-empire-standing check. Only fires for the human (headless
+  // games have no winner to surface). One-shot: the modal trigger
+  // (`victory`) is sticky, so subsequent eliminations can't re-fire
+  // it, and we don't push a second chronicle line.
+  if (
+    !draft.victory &&
+    !draft.gameOver &&
+    draft.humanEmpireId &&
+    survivors.length === 1 &&
+    survivors[0].id === draft.humanEmpireId
+  ) {
+    draft.victory = true;
+    draft.eventLog.push({
+      turn: draft.turn,
+      eventId: "victory",
+      choiceId: null,
+      text: `Every rival empire has fallen. The galaxy is yours.`,
+    });
+  }
 }
 
 export function fleetsInSystem(state: GameState, systemId: string): Fleet[] {
@@ -4199,6 +4222,11 @@ export function reduce(
     case "dismissWarDeclaration":
       return produce(state, (draft) => {
         draft.pendingWarDeclarations.shift();
+      });
+
+    case "dismissVictory":
+      return produce(state, (draft) => {
+        draft.victoryAcknowledged = true;
       });
 
     case "declareWar":

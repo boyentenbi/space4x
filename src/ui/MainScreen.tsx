@@ -51,6 +51,7 @@ import { EmpireProfileModal } from "./EmpireProfileModal";
 import { EmpireRosterModal } from "./EmpireRosterModal";
 import { FirstContactModal } from "./FirstContactModal";
 import { WarDeclaredModal } from "./WarDeclaredModal";
+import { VictoryModal } from "./VictoryModal";
 import { FleetModal } from "./FleetModal";
 import { ModifierChip } from "./modifierUi";
 import { PoliciesModal } from "./PoliciesModal";
@@ -85,6 +86,7 @@ function fmtDelta(n: number): string {
 type AttentionFocus =
   | { kind: "none" }
   | { kind: "gameOver" }
+  | { kind: "victory" }
   | { kind: "firstContact" }
   | { kind: "event" }
   | { kind: "hostileFleet"; fleetId: string; systemId: string }
@@ -93,6 +95,7 @@ type AttentionFocus =
 
 function attentionFocus(state: GameState): AttentionFocus {
   if (state.gameOver) return { kind: "gameOver" };
+  if (state.victory && !state.victoryAcknowledged) return { kind: "victory" };
   if (state.pendingFirstContacts.length > 0) return { kind: "firstContact" };
   if (state.eventQueue.length > 0) return { kind: "event" };
   // No human → nothing to focus on. (UI shouldn't render this branch
@@ -953,9 +956,14 @@ export function MainScreen() {
               </button>
             );
           }
-          const modalOwned = focus.kind === "gameOver" || focus.kind === "firstContact" || focus.kind === "event";
+          const modalOwned =
+            focus.kind === "gameOver" ||
+            focus.kind === "victory" ||
+            focus.kind === "firstContact" ||
+            focus.kind === "event";
           const label =
             focus.kind === "gameOver" ? "Game Over" :
+            focus.kind === "victory" ? "Victory" :
             focus.kind === "firstContact" ? "First Contact" :
             focus.kind === "event" ? "Event" :
             focus.kind === "hostileFleet" ? "Hostile Fleet" :
@@ -1547,20 +1555,24 @@ export function MainScreen() {
         </div>
       </div>
 
-      {state.pendingFirstContacts.length > 0 && (
-        <FirstContactModal
-          otherEmpireId={state.pendingFirstContacts[0].otherEmpireId}
-          onDismiss={() => dispatch({ type: "dismissFirstContact" })}
-        />
-      )}
-      {state.pendingFirstContacts.length === 0 &&
+      {state.victory && !state.victoryAcknowledged && <VictoryModal />}
+      {!(state.victory && !state.victoryAcknowledged) &&
+        state.pendingFirstContacts.length > 0 && (
+          <FirstContactModal
+            otherEmpireId={state.pendingFirstContacts[0].otherEmpireId}
+            onDismiss={() => dispatch({ type: "dismissFirstContact" })}
+          />
+        )}
+      {!(state.victory && !state.victoryAcknowledged) &&
+        state.pendingFirstContacts.length === 0 &&
         state.pendingWarDeclarations.length > 0 && (
           <WarDeclaredModal
             aggressorEmpireId={state.pendingWarDeclarations[0].aggressorEmpireId}
             onDismiss={() => dispatch({ type: "dismissWarDeclaration" })}
           />
         )}
-      {state.pendingFirstContacts.length === 0 &&
+      {!(state.victory && !state.victoryAcknowledged) &&
+        state.pendingFirstContacts.length === 0 &&
         state.pendingWarDeclarations.length === 0 &&
         pendingEvent && <EventModal eventId={pendingEvent.eventId} />}
       {breakdown && (

@@ -3,7 +3,7 @@ import { initialState, needsPlayerAttention, reduce, type Action } from "./sim/r
 import { speciesById } from "./sim/content";
 import type { GameState } from "./sim/types";
 
-const STORAGE_KEY = "space4x:save:v30";
+const STORAGE_KEY = "space4x:save:v31";
 
 // Cap on the state history ring. Each end-turn + each dispatched
 // action pushes one entry. Set generously — a GameState is not huge
@@ -15,7 +15,7 @@ function loadSaved(): GameState | null {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as GameState;
-    if (parsed.schemaVersion !== 30) return null;
+    if (parsed.schemaVersion !== 31) return null;
     // Refresh species-derived fields on the human empire so content
     // tweaks (colors, portrait art, etc.) propagate to existing
     // saves without a schema bump.
@@ -106,6 +106,7 @@ export const useGame = create<Store>((set, get) => ({
     if (startState.currentPhaseEmpireId) return;
     if (startState.eventQueue.length > 0) return;
     if (startState.gameOver) return;
+    if (startState.victory) return;
 
     // Begin the round + run every phase in one synchronous burst.
     let s = reduce(startState, { type: "beginRound" });
@@ -150,7 +151,8 @@ export const useGame = create<Store>((set, get) => ({
     return (
       !state.currentPhaseEmpireId &&
       state.eventQueue.length === 0 &&
-      !state.gameOver
+      !state.gameOver &&
+      !state.victory
     );
   },
   setAutoplay: (on) => set({ autoplayOn: on }),

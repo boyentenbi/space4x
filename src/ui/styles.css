@@ -945,6 +945,7 @@ button.res-cell:hover:not(:disabled) {
 }
 
 .body-queue-item-name {
+  font-size: 12px;
   font-weight: 500;
 }
 

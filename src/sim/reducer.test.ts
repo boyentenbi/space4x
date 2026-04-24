@@ -139,7 +139,7 @@ function makeState(overrides: {
   for (const f of overrides.fleets ?? []) fleetsRec[f.id] = f;
   const ais = overrides.aiEmpires ?? [];
   const raw: GameState = {
-    schemaVersion: 30,
+    schemaVersion: 31,
     turn: overrides.turn ?? 1,
     rngSeed: 1,
     galaxy: {
@@ -159,6 +159,8 @@ function makeState(overrides: {
     pendingFirstContacts: [],
     pendingWarDeclarations: [],
     gameOver: false,
+    victory: false,
+    victoryAcknowledged: false,
   };
   // Seed fog the way production does at new-game time — every empire
   // starts knowing its own territory and the 1-jump ring around it.

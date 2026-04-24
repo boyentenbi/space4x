@@ -432,7 +432,7 @@ export type PerceivedGameState = GameState & {
 };
 
 export interface GameState {
-  schemaVersion: 30;
+  schemaVersion: 31;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;
@@ -473,6 +473,13 @@ export interface GameState {
   // mode (no human), use external termination criteria instead
   // (e.g. last empire standing).
   gameOver: boolean;
+  // True once the human empire is the last one standing. Permanent
+  // truth like gameOver — blocks further turns. Headless games never
+  // set this (no human to win).
+  victory: boolean;
+  // Player has dismissed the victory modal. Separate from `victory`
+  // so the modal only fires once even though the win flag is sticky.
+  victoryAcknowledged: boolean;
 }
 
 // =====================================================================

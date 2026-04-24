@@ -229,6 +229,13 @@ export const EVENTS = [
     subject:
       "sacred ritual chamber deep beneath an insectoid hive, two immense brood queens facing each other across a circular pool of bioluminescent amber liquid, attendants in a wide silent ring around them, massive stone pillars carved with generations of hive history, solemn monumental mood, deep indigo palette with amber core highlights, symmetrical centered composition",
   },
+  // --- Endgame ---
+  {
+    id: "victory",
+    path: "public/events/victory.png",
+    subject:
+      "triumphant flagship and allied fleet arrayed in formation above a luminous garden homeworld at dawn, banners and exhaust trails catching golden sunrise light, distant rival wreckage drifting in low orbit, civilian craft rising from the planet to greet them, sweeping cinematic horizon, mood of hard-won peace and the closing of an era, warm gold and deep blue palette, centered heroic composition",
+  },
   // --- Machine Intelligence (graceful_handover) ---
   {
     id: "machine_handover",
