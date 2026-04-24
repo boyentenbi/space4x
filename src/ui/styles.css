@@ -306,6 +306,18 @@ button.res-cell:hover:not(:disabled) {
   min-width: 0;
 }
 
+/* 40:60 split — the system pane is a text/scene card, the galaxy
+   map is where the player actually plans moves and needs the room.
+   Matches the `flex-grow` ratio 2:3 = 40:60. Mobile single-pane
+   mode (below 768px) bypasses this — whichever pane is active
+   fills the width. */
+.main-column > .system-panel {
+  flex: 2 1 0;
+}
+.main-column > .right-column {
+  flex: 3 1 0;
+}
+
 /* Right column: galaxy fills the whole space; chronicle now lives
    in a sidebar-triggered modal instead of an always-on log panel. */
 .right-column {
