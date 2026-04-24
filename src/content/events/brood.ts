@@ -63,43 +63,7 @@ export const BROOD_EVENTS: GameEvent[] = [
     ],
   },
 
-  // 2. The Drought — punishes running food stocks low. Only fires
-  //    when food is critically short so it's a real crisis.
-  {
-    id: "brood_drought",
-    title: "The Drought",
-    text:
-      "The capital's granaries echo. The Brood Mother's attendants murmur of slowed laying — she will not risk offspring the swarm can't feed. The next cycle will be meagre unless you divert supplies to her chambers now.",
-    requires: [
-      { kind: "originIs", originId: BROOD_ORIGIN },
-      { kind: "foodBelow", value: 200 },
-      { kind: "lacksFlag", flag: "brood_drought_done" },
-    ],
-    weight: 4,
-    art: "/events/brood/drought.png",
-    choices: [
-      {
-        id: "feed",
-        text: "Divert 300 food to her chambers.",
-        effects: [
-          { kind: "addResource", resource: "food", value: -300 },
-          { kind: "addFlag", flag: "brood_drought_done" },
-          { kind: "logText", text: "The hive tightens its belt. The Queen is fed; the next cycle will be full." },
-        ],
-      },
-      {
-        id: "starve",
-        text: "Let her thin the brood. The swarm will live.",
-        effects: [
-          { kind: "addPops", value: -5 },
-          { kind: "addFlag", flag: "brood_drought_done" },
-          { kind: "logText", text: "Five pops die in the larval stage. The Queen's chamber is silent for a week." },
-        ],
-      },
-    ],
-  },
-
-  // 3. The Rival — mid-game critical decision point. Exile unlocks
+  // 2. The Rival — mid-game critical decision point. Exile unlocks
   //    the Sacrifice endgame via the brood_rival_resolved flag; the
   //    other branches close that door. popsAtCapital ≥ 100 gates so
   //    the rival only appears after the queen has produced enough
@@ -159,45 +123,7 @@ export const BROOD_EVENTS: GameEvent[] = [
     ],
   },
 
-  // 4. The Warrior Flush — mid-weight event, choice between defensive
-  //    and offensive posture. Requires first-hatch so the hive has
-  //    baseline infrastructure for the cycle to even happen.
-  {
-    id: "brood_warrior_flush",
-    title: "A Warrior Flush",
-    text:
-      "This cycle's pheromones skewed martial. A batch of militant drones pushes up through the ducts — harder-shelled than usual, and itching for something to bite. They won't be civilians no matter what you do with them.",
-    requires: [
-      { kind: "originIs", originId: BROOD_ORIGIN },
-      { kind: "turnAtLeast", value: 40 },
-      { kind: "hasFlag", flag: "brood_first_hatch_done" },
-      { kind: "lacksFlag", flag: "brood_warrior_flush_done" },
-    ],
-    weight: 3,
-    art: "/events/brood/warrior_flush.png",
-    choices: [
-      {
-        id: "garrison",
-        text: "Pen them at the capital. Four defenders.",
-        effects: [
-          { kind: "addDefenders", value: 4 },
-          { kind: "addFlag", flag: "brood_warrior_flush_done" },
-          { kind: "logText", text: "Four warrior-caste defenders take station on the capital." },
-        ],
-      },
-      {
-        id: "launch",
-        text: "Ship them out. Four frigates, hulls still warm.",
-        effects: [
-          { kind: "addShips", value: 4 },
-          { kind: "addFlag", flag: "brood_warrior_flush_done" },
-          { kind: "logText", text: "Four drone-frigates launch from the capital. Hull plating still cooling." },
-        ],
-      },
-    ],
-  },
-
-  // 5. The Pheromone Bloom — temporary relief from the single-queen
+  // 3. The Pheromone Bloom — temporary relief from the single-queen
   //    bottleneck. TTL-decaying modifier means the hive briefly
   //    behaves like an ordinary species. Narrative call whether you
   //    want the hive to change or stay pure.
@@ -248,7 +174,7 @@ export const BROOD_EVENTS: GameEvent[] = [
     ],
   },
 
-  // 6. The Sacrifice — endgame culmination. Only available after
+  // 4. The Sacrifice — endgame culmination. Only available after
   //    the Exile branch of The Rival created a second Brood Mother.
   //    Forces a commitment: concentrate everything on one
   //    super-queen, or dissolve the single-queen model entirely.

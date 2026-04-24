@@ -3661,11 +3661,6 @@ describe("brood mother events", () => {
     ).not.toContain("brood_first_hatch");
   });
 
-  it("drought fires only when food is low", async () => {
-    expect((await broodPool(broodState({ food: 500 }))).map((e) => e.id)).not.toContain("brood_drought");
-    expect((await broodPool(broodState({ food: 100 }))).map((e) => e.id)).toContain("brood_drought");
-  });
-
   it("rival needs turn 50+ and 100+ pops at capital", async () => {
     expect((await broodPool(broodState({ turn: 40, pops: 150 }))).map((e) => e.id)).not.toContain("brood_rival");
     expect((await broodPool(broodState({ turn: 60, pops: 50 }))).map((e) => e.id)).not.toContain("brood_rival");

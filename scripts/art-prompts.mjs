@@ -23,6 +23,14 @@ export const SCENE_TEMPLATE =
 export const PROJECT_TEMPLATE =
   "high-detail pixel art scene, wide cinematic composition, pivotal narrative moment in a science-fiction empire, dramatic lighting";
 
+// Event art — renders fullscreen behind the big-modal variant. Same
+// cinematic framing as PROJECT_TEMPLATE but we anchor the composition
+// to the center so the image survives being `object-fit: cover`-
+// cropped into whatever aspect the modal container has (wide desktop
+// vs tall mobile).
+export const EVENT_TEMPLATE =
+  "high-detail pixel art scene, wide cinematic composition, dramatic atmospheric lighting, important subject centered in frame, strong silhouettes, moody palette, narrative key-art moment";
+
 // Small UI icons — square, crisp edges, transparent-ready.
 // We ask for a flat pure black background so the post-process alpha mask
 // can cleanly knock it out.
@@ -198,6 +206,37 @@ export const STARS = [
   },
 ];
 
+// Event key-art. Each entry is the `art` path from a GameEvent in
+// src/content/events/<origin>.ts — kept in lockstep manually for now.
+// Add a new entry here whenever an event declares `art: "/events/..."`.
+export const EVENTS = [
+  // --- Brood Mother (matriarchal_hive) ---
+  {
+    id: "brood_first_hatch",
+    path: "public/events/brood/first_hatch.png",
+    subject:
+      "vast subterranean insectoid hive nursery chamber, thousands of translucent egg cases cracking open in unison, newborn larvae writhing in shallow bioluminescent amber pools, colossal brood queen silhouette looming in the deep background, vaulted cavern architecture, awe and new life, amber and teal bioluminescence",
+  },
+  {
+    id: "brood_rival",
+    path: "public/events/brood/rival.png",
+    subject:
+      "two insectoid brood queens facing each other across a cavernous throne chamber, elder matriarch massive on elevated dais at the rear, smaller younger pretender queen on the chamber floor ringed by hesitant attendant drones, columns of chitinous carapace architecture, violet and emerald bioluminescence, tension in confrontational staging, deep shadow between the two",
+  },
+  {
+    id: "brood_pheromone_bloom",
+    path: "public/events/brood/pheromone_bloom.png",
+    subject:
+      "planetary horizon saturated with drifting golden pheromone haze, insectoid hive mounds glowing softly on a curving planet surface, worker drones improbably laying eggs in open fields under an ethereal sky, scattered organic domes lit from within, soft gold-green palette, dreamlike ambient mood, wide planetary vista",
+  },
+  {
+    id: "brood_the_sacrifice",
+    path: "public/events/brood/sacrifice.png",
+    subject:
+      "sacred ritual chamber deep beneath an insectoid hive, two immense brood queens facing each other across a circular pool of bioluminescent amber liquid, attendants in a wide silent ring around them, massive stone pillars carved with generations of hive history, solemn monumental mood, deep indigo palette with amber core highlights, symmetrical centered composition",
+  },
+];
+
 export const PROJECTS = [
   {
     id: "brood_mother",
@@ -317,6 +356,13 @@ export function allJobs() {
     ...PROJECTS.map((p) => ({
       path: p.path,
       prompt: buildPrompt(PROJECT_TEMPLATE, p.subject),
+      style: STYLE,
+      size: SCENE_SIZE,
+      transparent: false,
+    })),
+    ...EVENTS.map((e) => ({
+      path: e.path,
+      prompt: buildPrompt(EVENT_TEMPLATE, e.subject),
       style: STYLE,
       size: SCENE_SIZE,
       transparent: false,
