@@ -67,10 +67,10 @@ export const ORIGINS: Origin[] = [
     startingStoryModifiers: {
       handover_legacy: [
         // Machine-run industry + the predecessors' infrastructure =
-        // a real industrial edge, but the biological workforce still
-        // grows slowly and networked deliberation drags on politics.
+        // a real industrial edge. Biological growth starts at the
+        // standard rate — the Demotion event is what swings it up
+        // or down. Networked deliberation still drags politics.
         { kind: "hammersPerPopDelta", value: 0.2 },
-        { kind: "popGrowthMult", value: 0.6 },
         { kind: "flat", resource: "political", value: -0.5 },
       ],
     },

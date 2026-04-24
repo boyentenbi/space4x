@@ -1152,21 +1152,78 @@ export function MainScreen() {
               <div className="scene-empty">Tap a star on the galaxy map.</div>
             )}
           </div>
-          <div className="detail-scroll">
-            {focusSystem && focusStale && focusSnapshot && focusSnapshot.fleets.length > 0 && (
+          {/* Fleet strip — lives OUTSIDE the scrollable detail list so
+              fleet pills stay visible when the player scrolls through
+              bodies. Sits directly under the system scene, giving a
+              single glance at "who's here" at all times. */}
+          {focusSystem && focusStale && focusSnapshot && focusSnapshot.fleets.length > 0 && (
+            <div className="fleet-strip">
+              <span className="fleet-strip-label">Fleets (last seen T{focusSnapshot.turn})</span>
+              {focusSnapshot.fleets.map((f, idx) => {
+                const empire = empireById(state, f.empireId);
+                return (
+                  <span
+                    key={`stale-${focusSystem.id}-${f.empireId}-${idx}`}
+                    className="fleet-pill"
+                    style={{
+                      borderColor: empire?.color ?? "var(--border)",
+                      opacity: 0.6,
+                    }}
+                    title={empire ? `${empire.name} · last seen ${f.shipCount} ships` : ""}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 10 10">
+                      <polygon
+                        points="5,1 9,9 1,9"
+                        fill={empire?.color ?? "var(--text)"}
+                      />
+                    </svg>
+                    {f.shipCount}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          {focusSystem && !focusStale && (() => {
+            const fleets = fleetsInSystem(state, focusSystem.id);
+            if (fleets.length === 0) return null;
+            return (
               <div className="fleet-strip">
-                <span className="fleet-strip-label">Fleets (last seen T{focusSnapshot.turn})</span>
-                {focusSnapshot.fleets.map((f, idx) => {
+                <span className="fleet-strip-label">Fleets</span>
+                {fleets.map((f) => {
                   const empire = empireById(state, f.empireId);
+                  const isPlayer = f.empireId === player.id;
+                  const canMove = isPlayer && f.shipCount > 0;
+                  const isMoving = moveMode?.fleetId === f.id;
+                  const destSys = f.destinationSystemId
+                    ? state.galaxy.systems[f.destinationSystemId] ?? null
+                    : null;
+                  const eta = destSys ? fleetEtaTurns(state, f) : null;
                   return (
-                    <span
-                      key={`stale-${focusSystem.id}-${f.empireId}-${idx}`}
-                      className="fleet-pill"
-                      style={{
-                        borderColor: empire?.color ?? "var(--border)",
-                        opacity: 0.6,
+                    <button
+                      key={f.id}
+                      className={`fleet-pill fleet-pill-btn ${isMoving ? "moving" : ""}`}
+                      style={{ borderColor: empire?.color ?? "var(--border)" }}
+                      title={
+                        empire
+                          ? canMove
+                            ? destSys
+                              ? `${empire.name} · en route to ${destSys.name}${eta != null ? ` (ETA ${eta}t)` : ""}`
+                              : `${empire.name} · tap to move`
+                            : `${empire.name} · tap for details`
+                          : ""
+                      }
+                      onClick={() => {
+                        if (canMove) {
+                          // Toggle: tapping the active fleet pill exits move mode.
+                          if (isMoving) {
+                            setMoveMode(null);
+                          } else {
+                            setMoveMode({ fleetId: f.id, split: null });
+                          }
+                        } else {
+                          setFleetModalId(f.id);
+                        }
                       }}
-                      title={empire ? `${empire.name} · last seen ${f.shipCount} ships` : ""}
                     >
                       <svg width="10" height="10" viewBox="0 0 10 10">
                         <polygon
@@ -1175,72 +1232,19 @@ export function MainScreen() {
                         />
                       </svg>
                       {f.shipCount}
-                    </span>
+                      {destSys && (
+                        <span className="fleet-pill-route" style={{ color: empire?.color ?? "var(--text-dim)" }}>
+                          → {destSys.name}
+                          {eta != null && <span className="fleet-pill-eta"> {eta}t</span>}
+                        </span>
+                      )}
+                    </button>
                   );
                 })}
               </div>
-            )}
-            {focusSystem && !focusStale && (() => {
-              const fleets = fleetsInSystem(state, focusSystem.id);
-              if (fleets.length === 0) return null;
-              return (
-                <div className="fleet-strip">
-                  <span className="fleet-strip-label">Fleets</span>
-                  {fleets.map((f) => {
-                    const empire = empireById(state, f.empireId);
-                    const isPlayer = f.empireId === player.id;
-                    const canMove = isPlayer && f.shipCount > 0;
-                    const isMoving = moveMode?.fleetId === f.id;
-                    const destSys = f.destinationSystemId
-                      ? state.galaxy.systems[f.destinationSystemId] ?? null
-                      : null;
-                    const eta = destSys ? fleetEtaTurns(state, f) : null;
-                    return (
-                      <button
-                        key={f.id}
-                        className={`fleet-pill fleet-pill-btn ${isMoving ? "moving" : ""}`}
-                        style={{ borderColor: empire?.color ?? "var(--border)" }}
-                        title={
-                          empire
-                            ? canMove
-                              ? destSys
-                                ? `${empire.name} · en route to ${destSys.name}${eta != null ? ` (ETA ${eta}t)` : ""}`
-                                : `${empire.name} · tap to move`
-                              : `${empire.name} · tap for details`
-                            : ""
-                        }
-                        onClick={() => {
-                          if (canMove) {
-                            // Toggle: tapping the active fleet pill exits move mode.
-                            if (isMoving) {
-                              setMoveMode(null);
-                            } else {
-                              setMoveMode({ fleetId: f.id, split: null });
-                            }
-                          } else {
-                            setFleetModalId(f.id);
-                          }
-                        }}
-                      >
-                        <svg width="10" height="10" viewBox="0 0 10 10">
-                          <polygon
-                            points="5,1 9,9 1,9"
-                            fill={empire?.color ?? "var(--text)"}
-                          />
-                        </svg>
-                        {f.shipCount}
-                        {destSys && (
-                          <span className="fleet-pill-route" style={{ color: empire?.color ?? "var(--text-dim)" }}>
-                            → {destSys.name}
-                            {eta != null && <span className="fleet-pill-eta"> {eta}t</span>}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              );
-            })()}
+            );
+          })()}
+          <div className="detail-scroll">
             {focusStale ? (
               <div className="empire-card">
                 <div>
