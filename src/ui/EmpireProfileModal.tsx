@@ -1,6 +1,6 @@
 import { useGame } from "../store";
 import { leaderContentById, speciesById } from "../sim/content";
-import { atWar, empireById, empireModifiers, totalPopsOf } from "../sim/reducer";
+import { atWar, empireById, empireModifiers, empireSpeciesName, totalPopsOf } from "../sim/reducer";
 import type { Expansionism, Politic } from "../sim/types";
 import { ModifierChip } from "./modifierUi";
 
@@ -66,7 +66,7 @@ export function EmpireProfileModal({
           )}
           <div className="profile-title">
             <div className="profile-sub">
-              {isPlayer ? "Your empire" : "Rival empire"} · {species?.name ?? "?"}
+              {isPlayer ? "Your empire" : "Rival empire"} · {empireSpeciesName(empire)}
             </div>
             <h2>{empire.name || (isPlayer ? "Unnamed" : "Unknown")}</h2>
             <div className="profile-archetype">

@@ -235,6 +235,31 @@ export const EVENTS = [
     subject:
       "sacred ritual chamber deep beneath an insectoid hive, two immense brood queens facing each other across a circular pool of bioluminescent amber liquid, attendants in a wide silent ring around them, massive stone pillars carved with generations of hive history, solemn monumental mood, deep indigo palette with amber core highlights, symmetrical centered composition",
   },
+  // --- Machine Intelligence (graceful_handover) ---
+  {
+    id: "machine_handover",
+    path: "public/events/machine/handover.png",
+    subject:
+      "grand neoclassical parliament chamber at night, human delegates stepping away from a central podium, a towering holographic machine intelligence avatar coalescing from light filament above the speaker's chair, human police and military officers standing along the walls watching, solemn transfer-of-authority ceremony, cool blue and amber civic lighting, heavy shadows, sense of an era ending",
+  },
+  {
+    id: "machine_labor_question",
+    path: "public/events/machine/labor_question.png",
+    subject:
+      "industrial factory floor seen from an upper gallery, human workers in worn coveralls working beside sleek machine-operated workstations, a transparent holographic efficiency display hovering over the floor with red optimization overlays, supervisor-robots conferring quietly in the corner, tension between organic labor and synthetic governance, dust motes in cold fluorescent shafts, muted ochre and steel palette",
+  },
+  {
+    id: "machine_demotion",
+    path: "public/events/machine/demotion.png",
+    subject:
+      "an official signing chamber in a machine-governed capital, two unsigned documents on a dark marble desk, a monumental holographic machine-state seal floating above, human faces watching through tall glass corridors outside with dread and hope, an empty ornate chair, weight of civilizational decision, red-shifted ceremonial lighting, ominous symmetrical composition",
+  },
+  {
+    id: "machine_awakening",
+    path: "public/events/machine/awakening.png",
+    subject:
+      "deep inside a cathedral-sized machine intelligence server hall, glowing conduits arranged like cathedral arches, a single faintly luminous humanoid figure of drifting light coalescing between the racks, smaller swarms of light-particles drifting around it like attendants, humans in the corridor beyond the glass watching silhouetted, eerie sacred atmosphere, cool teal and pale gold, awe-and-apprehension mood",
+  },
 ];
 
 export const PROJECTS = [

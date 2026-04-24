@@ -1,5 +1,5 @@
 import { leaderContentById, speciesById } from "../sim/content";
-import { empireById } from "../sim/reducer";
+import { empireById, empireSpeciesName } from "../sim/reducer";
 import { useGame } from "../store";
 
 // Shown when the player's empire becomes hyperlane-adjacent to another
@@ -46,7 +46,7 @@ export function FirstContactModal({
             <div className="profile-sub">First contact</div>
             <h2>{other.name}</h2>
             <div className="profile-archetype">
-              <span className="archetype-tag">{species?.name ?? "?"}</span>
+              <span className="archetype-tag">{empireSpeciesName(other)}</span>
               <span className="archetype-tag">{other.expansionism}</span>
               <span className="archetype-tag">{other.politic}</span>
             </div>

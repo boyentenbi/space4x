@@ -1,5 +1,5 @@
 import { leaderContentById, speciesById } from "../sim/content";
-import { empireById } from "../sim/reducer";
+import { empireById, empireSpeciesName } from "../sim/reducer";
 import { useGame } from "../store";
 
 // Shown when another empire declares war on the player — either by
@@ -47,7 +47,7 @@ export function WarDeclaredModal({
             <div className="profile-sub" style={{ color: "var(--bad)" }}>War declared</div>
             <h2>{other.name}</h2>
             <div className="profile-archetype">
-              <span className="archetype-tag">{species?.name ?? "?"}</span>
+              <span className="archetype-tag">{empireSpeciesName(other)}</span>
               <span className="archetype-tag">{other.expansionism}</span>
               <span className="archetype-tag">{other.politic}</span>
             </div>

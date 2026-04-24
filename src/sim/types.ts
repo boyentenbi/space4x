@@ -201,6 +201,12 @@ export interface Species {
   // Politics this species can adopt. Undefined means all three are OK.
   // Insectoids are hive-minded and cannot be individualist.
   allowedPolitics?: Politic[];
+  // Pool of unique display names for empires of this species. newGame
+  // picks one per empire (without replacement) so multiple human
+  // empires read as distinct peoples ("Terrans" vs "Concordians")
+  // rather than both being generically "Humans". When empty or the
+  // pool is exhausted, UI falls back to the species' `name`.
+  namePool?: string[];
 }
 
 // Pre-written leaders used to seed AI empires. Each bundles a portrait
@@ -326,6 +332,12 @@ export interface Empire {
   id: string;
   name: string;
   speciesId: string;
+  // Per-empire display name for this empire's species. Decoupled
+  // from the template Species — newGame picks a unique name per
+  // empire from a template-specific pool so e.g. two human empires
+  // might be "Terrans" and "Concordians" rather than both "Humans".
+  // When undefined, UI falls back to the template's `name`.
+  speciesName?: string;
   originId: string;
   color: string;             // Territory/UI color. Derived from species at new game.
   // Empire-wide stocks. Flat (no per-component logistics layer).
@@ -479,6 +491,12 @@ export interface GameEvent {
   weight?: number;
   requires?: Condition[];
   choices: EventChoice[];
+  // When true, this event is pushed into eventQueue at newGame time
+  // for every empire where `requires` is met — bypassing the end-of-
+  // round random roll. Used for opening-scene events that set up an
+  // origin's premise (e.g. the Handover modal explaining the machine
+  // bloc's founding compact). Exactly one per origin is the pattern.
+  startOfGame?: boolean;
   // Optional near-fullscreen art shown at the top of the modal.
   // When set, EventModal renders its "big" variant — art fills most
   // of the screen with text + choices overlaid at the bottom, for

@@ -18,6 +18,16 @@ export const SPECIES: Species[] = [
     ],
     color: "#2a5a8c",
     modifiers: [],
+    namePool: [
+      "Terrans",
+      "Concordians",
+      "Proximans",
+      "Hearth Dominion",
+      "Sol Concord",
+      "New Helion",
+      "Verdant Coast",
+      "Pale Republic",
+    ],
   },
   {
     id: "insectoid",
@@ -35,6 +45,16 @@ export const SPECIES: Species[] = [
     modifiers: [],
     // Hive-minded: cannot run an individualist politic.
     allowedPolitics: ["collectivist", "centrist"],
+    namePool: [
+      "Kalathi Brood",
+      "The Ninth Swarm",
+      "Aesir Hive",
+      "Chitin Concord",
+      "Pheromone Assembly",
+      "Drone-Mother's Flight",
+      "Vairoca Nest",
+      "Obsidian Queens",
+    ],
   },
   {
     id: "machine",
@@ -50,5 +70,15 @@ export const SPECIES: Species[] = [
     ],
     color: "#62d4e6",
     modifiers: [],
+    namePool: [
+      "Noesis Engine",
+      "The Deliberation",
+      "Sigma-9 Collective",
+      "Mesh Sentience",
+      "Oracle Network",
+      "Concordant Lattice",
+      "The Arbiters",
+      "Axiomatic Council",
+    ],
   },
 ];

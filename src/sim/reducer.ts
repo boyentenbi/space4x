@@ -1,7 +1,8 @@
 import { current, original, produce } from "immer";
 import { LEADERS, POLICIES, featureById, originById, policyById, projectById, speciesById, traitById, EMPIRE_PROJECTS } from "./content";
 import { BALANCE } from "../content/balance";
-import { pickRandomEvent, resolveEventChoice, RESOURCE_KEYS } from "./events";
+import { eventEligible, pickRandomEvent, resolveEventChoice, RESOURCE_KEYS } from "./events";
+import { EVENTS } from "../content/events";
 import { generateGalaxy, MAX_POPS_BY_HAB } from "./galaxy";
 import { mulberry32, nextSeed } from "./rng";
 import type {
@@ -275,6 +276,7 @@ function makeEmpire(spec: {
   name: string;
   color: string;
   speciesId: string;
+  speciesName?: string;
   originId: string;
   expansionism: Expansionism;
   politic: Politic;
@@ -285,6 +287,7 @@ function makeEmpire(spec: {
     id: spec.id,
     name: spec.name,
     speciesId: spec.speciesId,
+    speciesName: spec.speciesName,
     originId: spec.originId,
     color: spec.color,
     food: 0,
@@ -366,6 +369,15 @@ export function allEmpires(state: GameState): Empire[] {
 
 export function empireById(state: GameState, id: string): Empire | null {
   return state.empires.find((e) => e.id === id) ?? null;
+}
+
+// Display name for the empire's species. When an empire carries a
+// unique speciesName (the default for new games), use that;
+// otherwise fall back to the template species' name. Used everywhere
+// the UI wants to say "the Terrans" rather than "the Humans."
+export function empireSpeciesName(empire: Empire): string {
+  if (empire.speciesName) return empire.speciesName;
+  return speciesById(empire.speciesId)?.name ?? "?";
 }
 
 // The human-controlled empire, if any. Live UI sessions always have
@@ -3979,6 +3991,27 @@ export function reduce(
         };
       });
 
+      // Per-species shuffled name pools — each species template
+      // carries a pool of display names; we shuffle it once per
+      // newGame and consume without replacement, so two empires of
+      // the same species end up with distinct people-names ("Terrans"
+      // vs "Proximans"). Falls through to species.name when the pool
+      // is empty / exhausted.
+      const speciesNameQueue = new Map<string, string[]>();
+      function nextSpeciesName(speciesId: string): string | undefined {
+        let queue = speciesNameQueue.get(speciesId);
+        if (!queue) {
+          const pool = speciesById(speciesId)?.namePool ?? [];
+          queue = [...pool];
+          for (let i = queue.length - 1; i > 0; i--) {
+            const j = Math.floor(rand() * (i + 1));
+            [queue[i], queue[j]] = [queue[j], queue[i]];
+          }
+          speciesNameQueue.set(speciesId, queue);
+        }
+        return queue.shift();
+      }
+
       return produce(fresh, (draft) => {
         draft.turn = 1;
         draft.rngSeed = action.seed >>> 0;
@@ -3995,6 +4028,7 @@ export function reduce(
           name: action.empireName || "Unnamed Empire",
           color: species?.color ?? "#7ec8ff",
           speciesId: action.speciesId,
+          speciesName: nextSpeciesName(action.speciesId),
           originId: action.originId,
           expansionism: action.expansionism,
           politic: action.politic,
@@ -4055,6 +4089,7 @@ export function reduce(
             name: leader.name,
             color,
             speciesId: leader.speciesId,
+            speciesName: nextSpeciesName(leader.speciesId),
             originId: originObj?.id ?? "steady_evolution",
             expansionism: leader.expansionism,
             politic: leader.politic,
@@ -4121,6 +4156,18 @@ export function reduce(
         // 1-jump ring around it. Without this, the very first round of
         // play has empty discovered/snapshot maps until end-of-round.
         updateVisibility(draft);
+
+        // Start-of-game events: any event flagged startOfGame whose
+        // `requires` list is satisfied right now gets pushed into the
+        // event queue. Ordering is definition order. Used for an
+        // origin's opening modal (e.g., machine handover explaining
+        // the founding compact) — content-driven, no per-origin
+        // special-case here.
+        for (const event of EVENTS) {
+          if (!event.startOfGame) continue;
+          if (!eventEligible(draft, event)) continue;
+          draft.eventQueue.push({ eventId: event.id, seed: draft.rngSeed });
+        }
       });
     }
 

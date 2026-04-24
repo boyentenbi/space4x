@@ -19,6 +19,7 @@ import {
   effectiveColonizePolitical,
   maxPopsFor,
   empireById,
+  empireSpeciesName,
   fleetEtaTurns,
   empireResourceStock,
   expectedPopGrowth,
@@ -885,9 +886,9 @@ export function MainScreen() {
           <div
             className="portrait-card"
             style={{ borderColor: player.color }}
-            title={`${species?.name ?? ""} · ${player.name}`}
+            title={`${empireSpeciesName(player)} · ${player.name}`}
           >
-            <img src={player.portraitArt || species?.art} alt={species?.name ?? ""} />
+            <img src={player.portraitArt || species?.art} alt={empireSpeciesName(player)} />
           </div>
         )}
         {(() => {
@@ -1309,7 +1310,7 @@ export function MainScreen() {
                 })
               : (
                 <div className="empire-card">
-                  <div><span className="stat-label">Species:</span> {species?.name ?? "?"}</div>
+                  <div><span className="stat-label">Species:</span> {empireSpeciesName(player)}</div>
                   <div><span className="stat-label">Origin:</span> {origin?.name ?? "?"}</div>
                   <div><span className="stat-label">Population:</span> {totalPops(state)}</div>
                 </div>

@@ -12,6 +12,7 @@ import {
   canEnterSystem,
   empireById,
   filterStateFor,
+  initialState,
   foreignFleetsInSensor,
   hostileFleetsInSensor,
   needsPlayerAttention,
@@ -3694,6 +3695,54 @@ describe("brood mother events", () => {
         secondBodyWithMother: true,
       }))).map((e) => e.id),
     ).toContain("brood_the_sacrifice");
+  });
+});
+
+// =====================================================================
+describe("newGame species name + startOfGame event", () => {
+  it("picks unique speciesName for each new empire and pushes startOfGame events", () => {
+    // Real newGame via the reducer so we exercise the whole path —
+    // starter assignment, speciesName pick, startOfGame eventQueue
+    // push. Graceful-handover machine origin triggers the handover
+    // event by startOfGame gating, giving us both a species-name
+    // and a event-queue assertion from one setup.
+    const s0: GameState = initialState();
+    const next = reduce(s0, {
+      type: "newGame",
+      empireName: "Test Empire",
+      originId: "graceful_handover",
+      speciesId: "machine",
+      seed: 42,
+      expansionism: "pragmatist",
+      politic: "centrist",
+    });
+    const player = next.empires.find((e) => e.id === next.humanEmpireId);
+    expect(player?.speciesName).toBeTruthy();
+    // Per-species-name pool is shuffled and consumed without
+    // replacement, so two machine empires in the same game
+    // shouldn't collide on name.
+    const machineEmpires = next.empires.filter((e) => e.speciesId === "machine");
+    const names = machineEmpires.map((e) => e.speciesName);
+    expect(new Set(names).size).toBe(names.length);
+    // Handover event is startOfGame-gated on graceful_handover —
+    // must be in the event queue at t=1.
+    const queuedIds = next.eventQueue.map((q) => q.eventId);
+    expect(queuedIds).toContain("machine_handover");
+  });
+
+  it("non-handover origins don't get the handover event", () => {
+    const s0: GameState = initialState();
+    const next = reduce(s0, {
+      type: "newGame",
+      empireName: "Test Empire",
+      originId: "steady_evolution",
+      speciesId: "humans",
+      seed: 42,
+      expansionism: "pragmatist",
+      politic: "centrist",
+    });
+    const queuedIds = next.eventQueue.map((q) => q.eventId);
+    expect(queuedIds).not.toContain("machine_handover");
   });
 });
 
