@@ -1094,15 +1094,27 @@ export function needsPlayerAttention(state: GameState): boolean {
     if (f.autoDiscover) continue; // the auto-discover chooser will set a route
     return true; // idle, non-sleeping, non-auto fleet
   }
-  // Per-body idle check: hammers are body-local (each body drains its
-  // own hammers into its own FIFO queue; no cross-body pooling), so
-  // any colonised body with pops > 0 and an empty queue is wasting
-  // its entire output this turn. The old "empire has zero orders"
-  // check would let three bodies sit idle as long as one somewhere
-  // else had a queued project.
-  for (const body of ownedBodiesOf(state, player)) {
-    if (body.pops <= 0) continue;
-    if (body.queue.length === 0) return true;
+  // Per-system idle check. Hammers are body-local, but the player
+  // experiences the nag at the system level — they see "this system
+  // has something queued" even if a specific body's queue is empty
+  // (e.g., an outpost queued on the capital body makes the capital
+  // SYSTEM look busy, regardless of whether a sibling planet's queue
+  // happens to be empty). Nag only when an owned system has at least
+  // one populated body AND zero orders anywhere in the system. Keeps
+  // the intent of "wasted hammers in this system" while matching
+  // player intuition.
+  for (const sid of player.systemIds) {
+    const sys = state.galaxy.systems[sid];
+    if (!sys) continue;
+    let hasPopulated = false;
+    let hasAnyQueue = false;
+    for (const bid of sys.bodyIds) {
+      const b = state.galaxy.bodies[bid];
+      if (!b) continue;
+      if (b.pops > 0) hasPopulated = true;
+      if (b.queue.length > 0) { hasAnyQueue = true; break; }
+    }
+    if (hasPopulated && !hasAnyQueue) return true;
   }
   return false;
 }

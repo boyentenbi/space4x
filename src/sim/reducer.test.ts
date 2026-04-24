@@ -2369,6 +2369,74 @@ describe("autoplay attention: hostile fleet in sensor", () => {
   });
 });
 
+describe("autoplay attention: idle-system nag scopes to system-level", () => {
+  // Reproduces a real-game bug: "Queue Build" was focusing on a
+  // system where an outpost was already queued (on the capital body
+  // targeting an adjacent star), because a SIBLING populated body
+  // in that same system happened to have an empty queue. The nag
+  // should be per-system, not per-body — if the system has any
+  // queued work anywhere, it's not idle.
+  it("a system with ANY queued order doesn't need attention, even if some bodies have empty queues", () => {
+    const home = makeSystem({
+      id: "s_home",
+      bodyIds: ["b_cap", "b_mine"],
+      ownerId: "e_player",
+    });
+    // Capital has an outpost order (hosted here because outpost
+    // targets an unowned star). Sibling body on same system is
+    // populated but empty-queued — under the old per-body rule this
+    // would have flagged "s_home needs attention".
+    const cap = makeBody({
+      id: "b_cap",
+      systemId: "s_home",
+      pops: 30,
+      queue: [
+        {
+          kind: "empire_project",
+          id: "o1",
+          projectId: "build_outpost",
+          hammersRequired: 3000,
+          hammersPaid: 0,
+          targetBodyId: "b_cap",
+        },
+      ],
+    });
+    const mine = makeBody({ id: "b_mine", systemId: "s_home", pops: 10 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: ["s_home"],
+    });
+    const state = makeState({
+      systems: [home],
+      bodies: [cap, mine],
+      empire: player,
+    });
+    expect(needsPlayerAttention(state)).toBe(false);
+  });
+
+  it("a truly-idle owned system still triggers the nag", () => {
+    // Owned system with a populated body, zero queued work. Nag.
+    const home = makeSystem({
+      id: "s_home",
+      bodyIds: ["b_cap"],
+      ownerId: "e_player",
+    });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: ["s_home"],
+    });
+    const state = makeState({
+      systems: [home],
+      bodies: [cap],
+      empire: player,
+    });
+    expect(needsPlayerAttention(state)).toBe(true);
+  });
+});
+
 describe("fog of war: AI info-leak invariants", () => {
   function runAiMoves(state: GameState, empireId: string): GameState {
     return produce(state, (d) => {

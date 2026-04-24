@@ -116,14 +116,23 @@ function attentionFocus(state: GameState): AttentionFocus {
     if (f.autoDiscover) continue;
     return { kind: "idleFleet", fleetId: f.id, systemId: f.systemId };
   }
-  // Per-body idle: same rule as needsPlayerAttention. Focus on the
-  // first empty-queue body so the player can queue something there.
-  // Prefer the capital when it's the idle one, else whichever we hit
-  // first via ownedBodiesOf.
-  for (const body of ownedBodiesOf(state, player)) {
-    if (body.pops <= 0) continue;
-    if (body.queue.length > 0) continue;
-    return { kind: "emptyQueue", systemId: body.systemId };
+  // Per-system idle: same rule as needsPlayerAttention. Focus on
+  // the first owned system that has populated bodies but NO queued
+  // orders anywhere in the system — player sees the nag at system
+  // level, so a sibling body's queue-entry counts as "this system
+  // is busy."
+  for (const sid of player.systemIds) {
+    const sys = state.galaxy.systems[sid];
+    if (!sys) continue;
+    let hasPopulated = false;
+    let hasAnyQueue = false;
+    for (const bid of sys.bodyIds) {
+      const b = state.galaxy.bodies[bid];
+      if (!b) continue;
+      if (b.pops > 0) hasPopulated = true;
+      if (b.queue.length > 0) { hasAnyQueue = true; break; }
+    }
+    if (hasPopulated && !hasAnyQueue) return { kind: "emptyQueue", systemId: sid };
   }
   return { kind: "none" };
 }
