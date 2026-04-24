@@ -40,7 +40,7 @@ import {
 import type { StatBreakdown } from "../sim/reducer";
 import { projectById } from "../sim/content";
 import { RESOURCE_KEYS } from "../sim/events";
-import type { Body, GameState, Resources, ResourceKey } from "../sim/types";
+import type { Body, BuildOrder, GameState, Resources, ResourceKey } from "../sim/types";
 import { ChronicleModal } from "./ChronicleModal";
 import { EventModal } from "./EventModal";
 import { GalaxyMap } from "./GalaxyMap";
