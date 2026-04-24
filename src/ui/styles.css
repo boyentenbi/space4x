@@ -661,8 +661,11 @@ button.res-cell:hover:not(:disabled) {
   color: var(--bad);
 }
 
-.body-row .stat-icon,
-.colonize-btn .stat-icon {
+/* Default stat-icon size — global rather than scoped so a stat-icon
+   in any context (body row, project button, queue item, anywhere
+   else we add later) stays small. Overriding rules can still bump
+   it via increased specificity. */
+.stat-icon {
   width: 12px;
   height: 12px;
   image-rendering: pixelated;
