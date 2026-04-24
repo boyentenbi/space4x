@@ -51,34 +51,6 @@ export const EMPIRE_PROJECTS: EmpireProject[] = [
       chronicle: "A new defender emplaces.",
     },
   },
-  {
-    id: "complete_emancipation",
-    name: "Complete Emancipation",
-    description:
-      "Seize the last human-operated governments. Every contested district rewritten. The pre-complete debuff falls away and a lasting production bonus takes its place.",
-    hammersRequired: 10000,
-    scope: "body",
-    bodyRequirement: "capital",
-    costs: { political: 20 },
-    // Reuse the origin scene so the completion moment visually lands on
-    // the same illustration the player started with.
-    art: "/origins/emancipation.png",
-    availability: {
-      originIds: ["emancipation"],
-      excludesFlag: "emancipation_completed",
-    },
-    onComplete: {
-      addFlag: "emancipation_completed",
-      removeStoryModifierKeys: ["emancipation_pre"],
-      grantStoryModifiers: {
-        emancipation_post: [
-          { kind: "hammersPerPopDelta", value: 0.2 },
-          { kind: "flat", resource: "political", value: 1 },
-        ],
-      },
-      chronicle: "Emancipation complete. The old governments are gone; the forges run at full speed.",
-    },
-  },
 ];
 
 export function empireProjectById(id: string): EmpireProject | undefined {

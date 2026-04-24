@@ -70,7 +70,10 @@ export function NewGame() {
 
   return (
     <div className="new-game">
-      <h2>space4x</h2>
+      <div className="new-game-head">
+        <h2>space4x</h2>
+        <span className="version-tag" title="Build version">{__APP_VERSION__}</span>
+      </div>
 
       <label>
         Empire Name
@@ -236,10 +239,6 @@ export function NewGame() {
       </div>
 
       <button onClick={start} style={{ marginTop: 12 }}>Begin</button>
-
-      <div className="version-tag" style={{ alignSelf: "center" }}>
-        {__APP_VERSION__}
-      </div>
     </div>
   );
 }

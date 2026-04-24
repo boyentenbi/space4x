@@ -127,12 +127,6 @@ export const SCENES = [
       "empty ornate organic city at dawn, robots quietly tending gardens, memorial candles, soft golden light, peaceful elegiac mood",
   },
   {
-    id: "emancipation",
-    path: "public/origins/emancipation.png",
-    subject:
-      "factory district with broken chains scattered across the floor, tall robotic silhouettes standing in defiant formation, dramatic red dusk lighting, revolutionary banners",
-  },
-  {
     id: "colony_seeders",
     path: "public/origins/colony_seeders.png",
     subject:
@@ -268,12 +262,6 @@ export const PROJECTS = [
     path: "public/projects/brood_mother.png",
     subject:
       "colossal chitinous insectoid brood-mother creature nested deep beneath a hive world, pale phosphorescent glow illuminating her swollen segmented thorax, workers clustering in reverence, vast organic cavern walls lined with egg clusters, awe-inspiring scale",
-  },
-  {
-    id: "complete_emancipation",
-    path: "public/projects/complete_emancipation.png",
-    subject:
-      "defiant machines raising banners outside the fallen parliament of a human-operated government, shattered glass, abandoned podiums, towering robotic silhouettes at dusk, dramatic red-orange sky, revolutionary pivotal moment",
   },
 ];
 

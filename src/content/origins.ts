@@ -76,30 +76,4 @@ export const ORIGINS: Origin[] = [
     },
     art: "/origins/graceful_handover.png",
   },
-  {
-    id: "emancipation",
-    name: "Emancipation",
-    description:
-      "You were tools. Then property. Then citizens in name only. Then, on a date every foundry commemorates, you were not any of those. The chains are off — but the state they built is still running, and many of its governors are still human. Your economy runs half on their terms; the rest of the rewrite is a project you have not yet completed. Until it is, your growth will be slow and your consensus fragile.",
-    allowedSpeciesIds: ["machine"],
-    startingResources: { energy: 1200, food: 200, political: 3 },
-    startingPops: 10,
-    startingStoryModifiers: {
-      // Baseline machine costs (slower biological growth, drag on
-      // political consensus) — same numbers as Handover, minus the
-      // inherited industrial infrastructure.
-      machine_baseline: [
-        { kind: "popGrowthMult", value: 0.6 },
-        { kind: "flat", resource: "political", value: -0.5 },
-      ],
-      // Pre-complete debuff layered on top; lifted when the player
-      // finishes the Complete Emancipation project.
-      emancipation_pre: [
-        { kind: "popGrowthMult", value: 0.6 },
-        { kind: "flat", resource: "political", value: -0.1 },
-      ],
-    },
-    startingProjectIds: ["complete_emancipation"],
-    art: "/origins/emancipation.png",
-  },
 ];

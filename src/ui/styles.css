@@ -1072,6 +1072,13 @@ button.res-cell:hover:not(:disabled) {
   letter-spacing: 0.04em;
 }
 
+.new-game .new-game-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
 .new-game label {
   display: flex;
   flex-direction: column;
