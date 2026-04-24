@@ -1,7 +1,7 @@
 import { produce } from "immer";
 import { eventById, EVENTS } from "./content";
 import { mulberry32 } from "./rng";
-import type { Condition, Effect, Empire, GameEvent, GameState, ResourceKey } from "./types";
+import type { Body, Condition, Effect, Empire, Fleet, GameEvent, GameState, ResourceKey } from "./types";
 
 const RESOURCE_KEYS: ResourceKey[] = ["food", "energy", "political"];
 
@@ -24,6 +24,28 @@ export function conditionMet(state: GameState, cond: Condition): boolean {
       return player[cond.resource] >= cond.value;
     case "originIs":
       return player.originId === cond.originId;
+    case "turnAtLeast":
+      return state.turn >= cond.value;
+    case "popsAtCapitalAtLeast": {
+      if (!player.capitalBodyId) return false;
+      const cap = state.galaxy.bodies[player.capitalBodyId];
+      if (!cap) return false;
+      return cap.pops >= cond.value;
+    }
+    case "featureCountAtLeast": {
+      let count = 0;
+      for (const sid of player.systemIds) {
+        const sys = state.galaxy.systems[sid];
+        if (!sys) continue;
+        for (const bid of sys.bodyIds) {
+          const b = state.galaxy.bodies[bid];
+          if (b && b.features.includes(cond.featureId)) count++;
+        }
+      }
+      return count >= cond.value;
+    }
+    case "foodBelow":
+      return player.food < cond.value;
   }
 }
 
@@ -46,6 +68,54 @@ export function pickRandomEvent(state: GameState, seed: number): GameEvent | nul
     if (roll <= 0) return e;
   }
   return pool[pool.length - 1];
+}
+
+// Find the player's capital system id, or null. Used by effects
+// that target "at the capital" — ships, defenders, features.
+function capitalSystemId(state: GameState, player: Empire): string | null {
+  if (!player.capitalBodyId) return null;
+  const cap = state.galaxy.bodies[player.capitalBodyId];
+  return cap?.systemId ?? null;
+}
+
+// Inline copy of reducer.spawnShipsInSystem — events.ts can't import
+// reducer (that way lies a circular dep). Same rule: merge into an
+// existing stationary fleet at the system, else create a fresh one.
+// Fleet id counter — local, incremented per call, and prefixed with
+// `ev_` so these can't collide with reducer-minted fleet ids.
+let evFleetCounter = 0;
+function spawnShipsEvent(draft: GameState, empireId: string, systemId: string, count: number): void {
+  if (count <= 0) return;
+  for (const f of Object.values(draft.fleets) as Fleet[]) {
+    if (f.empireId === empireId && f.systemId === systemId && !f.destinationSystemId) {
+      f.shipCount += count;
+      return;
+    }
+  }
+  evFleetCounter += 1;
+  const id = `ev_${draft.turn}_${evFleetCounter}`;
+  draft.fleets[id] = { id, empireId, systemId, shipCount: count };
+}
+
+// Pick a second body to host a feature: the most-populated owned
+// body that isn't the capital and doesn't already have the feature.
+// Returns null when no eligible body exists.
+function pickSecondFeatureHost(state: GameState, player: Empire, featureId: string): Body | null {
+  let best: Body | null = null;
+  for (const sid of player.systemIds) {
+    const sys = state.galaxy.systems[sid];
+    if (!sys) continue;
+    for (const bid of sys.bodyIds) {
+      const b = state.galaxy.bodies[bid];
+      if (!b) continue;
+      if (b.id === player.capitalBodyId) continue;
+      if (b.kind === "star") continue;
+      if (b.features.includes(featureId)) continue;
+      if (b.pops <= 0) continue;
+      if (!best || b.pops > best.pops) best = b;
+    }
+  }
+  return best;
 }
 
 export function applyEffect(state: GameState, effect: Effect): GameState {
@@ -75,6 +145,64 @@ export function applyEffect(state: GameState, effect: Effect): GameState {
         break;
       case "logText":
         break;
+      case "addShips": {
+        const sysId = capitalSystemId(draft, player);
+        if (sysId) spawnShipsEvent(draft, player.id, sysId, effect.value);
+        break;
+      }
+      case "addDefenders": {
+        const sysId = capitalSystemId(draft, player);
+        if (!sysId) break;
+        const sys = draft.galaxy.systems[sysId];
+        if (!sys) break;
+        sys.defenders = (sys.defenders ?? 0) + effect.value;
+        break;
+      }
+      case "grantFeatureOnCapital": {
+        if (!player.capitalBodyId) break;
+        const cap = draft.galaxy.bodies[player.capitalBodyId];
+        if (!cap) break;
+        if (!cap.features.includes(effect.featureId)) cap.features.push(effect.featureId);
+        break;
+      }
+      case "removeFeatureFromCapital": {
+        if (!player.capitalBodyId) break;
+        const cap = draft.galaxy.bodies[player.capitalBodyId];
+        if (!cap) break;
+        cap.features = cap.features.filter((f) => f !== effect.featureId);
+        break;
+      }
+      case "grantFeatureOnSecondBody": {
+        const host = pickSecondFeatureHost(draft, player, effect.featureId);
+        if (!host) break;
+        // `host` was read from the snapshot state; index into draft
+        // to get a mutable proxy.
+        const target = draft.galaxy.bodies[host.id];
+        if (target && !target.features.includes(effect.featureId)) {
+          target.features.push(effect.featureId);
+        }
+        break;
+      }
+      case "grantStoryModifier": {
+        // Overwrite (not append) if the key already exists — events
+        // that re-fire with the same key are re-stating, not stacking.
+        player.storyModifiers[effect.key] = [...effect.modifiers];
+        if (effect.durationTurns !== undefined && effect.durationTurns > 0) {
+          if (!player.storyModifierExpiries) player.storyModifierExpiries = {};
+          player.storyModifierExpiries[effect.key] = draft.turn + effect.durationTurns;
+        } else if (player.storyModifierExpiries?.[effect.key]) {
+          // Re-granting permanently — drop any existing expiry.
+          delete player.storyModifierExpiries[effect.key];
+        }
+        break;
+      }
+      case "liftStoryModifier": {
+        delete player.storyModifiers[effect.key];
+        if (player.storyModifierExpiries) {
+          delete player.storyModifierExpiries[effect.key];
+        }
+        break;
+      }
     }
   });
 }

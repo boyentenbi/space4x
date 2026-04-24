@@ -307,7 +307,7 @@ function makeEmpire(spec: {
 
 export function initialState(): GameState {
   return {
-    schemaVersion: 29,
+    schemaVersion: 30,
     turn: 0,
     rngSeed: 0,
     galaxy: { systems: {}, bodies: {}, hyperlanes: [], width: 0, height: 0 },
@@ -4235,6 +4235,22 @@ function applyBeginRound(state: GameState, policies?: Map<string, Policy>): Game
   return produce(state, (draft) => {
     draft.turn += 1;
     draft.rngSeed = nextSeed(draft.rngSeed);
+
+    // Expire any story modifiers whose TTL has run out. Event-granted
+    // bundles with `durationTurns` record an expiry turn in
+    // empire.storyModifierExpiries; once draft.turn catches up, drop
+    // both the bundle and the expiry entry. Runs BEFORE tickEmpire so
+    // this turn's calculations already reflect the expiration.
+    for (const e of draft.empires) {
+      const exp = e.storyModifierExpiries;
+      if (!exp) continue;
+      for (const key of Object.keys(exp)) {
+        if (draft.turn >= exp[key]) {
+          delete e.storyModifiers[key];
+          delete exp[key];
+        }
+      }
+    }
 
     for (const e of draft.empires) {
       const policy = resolvePolicy(draft, e.id, policies);

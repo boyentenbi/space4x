@@ -81,6 +81,7 @@ function makeEmpire(overrides: LegacyEmpireOverrides): Empire {
     capitalBodyId: overrides.capitalBodyId ?? null,
     systemIds,
     storyModifiers: overrides.storyModifiers ?? {},
+    storyModifierExpiries: overrides.storyModifierExpiries,
     completedProjects: overrides.completedProjects ?? [],
     adoptedPolicies: overrides.adoptedPolicies ?? [],
     flags: overrides.flags ?? [],
@@ -137,7 +138,7 @@ function makeState(overrides: {
   for (const f of overrides.fleets ?? []) fleetsRec[f.id] = f;
   const ais = overrides.aiEmpires ?? [];
   const raw: GameState = {
-    schemaVersion: 29,
+    schemaVersion: 30,
     turn: overrides.turn ?? 1,
     rngSeed: 1,
     galaxy: {
@@ -3427,6 +3428,277 @@ describe("stationary defenders", () => {
     expect(t1.fleets["f_visitor"]?.shipCount).toBe(5);
     expect(t1.galaxy.systems["s_home"]?.defenders).toBe(2);
     expect(t1.galaxy.systems["s_home"]?.occupation).toBeUndefined();
+  });
+});
+
+// =====================================================================
+// Event infra: new Effect + Condition kinds, TTL modifier expiry.
+// =====================================================================
+describe("event effects", () => {
+  it("addShips spawns ships at the capital system", async () => {
+    const { applyEffect } = await import("./events");
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const player = makeEmpire({ id: "e_player", capitalBodyId: "b_cap", systemIds: ["s_home"] });
+    const state = makeState({ systems: [home], bodies: [cap], empire: player });
+    const next = applyEffect(state, { kind: "addShips", value: 3 });
+    const ships = Object.values(next.fleets).filter(
+      (f) => f.empireId === "e_player" && f.systemId === "s_home",
+    );
+    expect(ships.reduce((s, f) => s + f.shipCount, 0)).toBe(3);
+  });
+
+  it("addDefenders increments sys.defenders on the capital system", async () => {
+    const { applyEffect } = await import("./events");
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player", defenders: 1 });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const player = makeEmpire({ id: "e_player", capitalBodyId: "b_cap", systemIds: ["s_home"] });
+    const state = makeState({ systems: [home], bodies: [cap], empire: player });
+    const next = applyEffect(state, { kind: "addDefenders", value: 2 });
+    expect(next.galaxy.systems["s_home"]?.defenders).toBe(3);
+  });
+
+  it("grantFeatureOnCapital and removeFeatureFromCapital mutate body.features", async () => {
+    const { applyEffect } = await import("./events");
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30, features: ["brood_mother"] });
+    const player = makeEmpire({ id: "e_player", capitalBodyId: "b_cap", systemIds: ["s_home"] });
+    const state = makeState({ systems: [home], bodies: [cap], empire: player });
+    const added = applyEffect(state, { kind: "grantFeatureOnCapital", featureId: "super_brood_mother" });
+    expect(added.galaxy.bodies["b_cap"]?.features).toContain("super_brood_mother");
+    const removed = applyEffect(added, { kind: "removeFeatureFromCapital", featureId: "brood_mother" });
+    expect(removed.galaxy.bodies["b_cap"]?.features).not.toContain("brood_mother");
+    expect(removed.galaxy.bodies["b_cap"]?.features).toContain("super_brood_mother");
+  });
+
+  it("grantFeatureOnSecondBody picks the most-populated non-capital owned body", async () => {
+    const { applyEffect } = await import("./events");
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const other = makeSystem({ id: "s_other", bodyIds: ["b_small", "b_big"], ownerId: "e_player" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 50 });
+    const small = makeBody({ id: "b_small", systemId: "s_other", pops: 5 });
+    const big = makeBody({ id: "b_big", systemId: "s_other", pops: 20 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: ["s_home", "s_other"],
+    });
+    const state = makeState({
+      systems: [home, other],
+      bodies: [cap, small, big],
+      empire: player,
+    });
+    const next = applyEffect(state, { kind: "grantFeatureOnSecondBody", featureId: "brood_mother" });
+    expect(next.galaxy.bodies["b_big"]?.features).toContain("brood_mother");
+    expect(next.galaxy.bodies["b_small"]?.features).not.toContain("brood_mother");
+    expect(next.galaxy.bodies["b_cap"]?.features).not.toContain("brood_mother");
+  });
+
+  it("grantStoryModifier stores the bundle, optional durationTurns records an expiry", async () => {
+    const { applyEffect } = await import("./events");
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: ["s_home"],
+    });
+    const state = makeState({ systems: [home], bodies: [cap], empire: player, turn: 5 });
+    const next = applyEffect(state, {
+      kind: "grantStoryModifier",
+      key: "test_bundle",
+      modifiers: [{ kind: "popGrowthMult", value: 1.0 }],
+      durationTurns: 10,
+    });
+    const nextPlayer = next.empires.find((e) => e.id === "e_player")!;
+    expect(nextPlayer.storyModifiers["test_bundle"]).toEqual([{ kind: "popGrowthMult", value: 1.0 }]);
+    expect(nextPlayer.storyModifierExpiries?.["test_bundle"]).toBe(15);
+  });
+
+  it("liftStoryModifier removes both the bundle and any expiry entry", async () => {
+    const { applyEffect } = await import("./events");
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: ["s_home"],
+      storyModifiers: { k: [{ kind: "popGrowthMult", value: 1.5 }] },
+      storyModifierExpiries: { k: 100 },
+    });
+    const state = makeState({ systems: [home], bodies: [cap], empire: player });
+    const next = applyEffect(state, { kind: "liftStoryModifier", key: "k" });
+    const nextPlayer = next.empires.find((e) => e.id === "e_player")!;
+    expect(nextPlayer.storyModifiers["k"]).toBeUndefined();
+    expect(nextPlayer.storyModifierExpiries?.["k"]).toBeUndefined();
+  });
+
+  it("TTL story modifiers are stripped once state.turn reaches the expiry", () => {
+    // Grant a modifier with duration 2 at turn 5 (expires at 7),
+    // then endTurn twice and check it's gone after the second tick.
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap"], ownerId: "e_player" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 30 });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: ["s_home"],
+      storyModifiers: { expire_me: [{ kind: "popGrowthMult", value: 1.5 }] },
+      storyModifierExpiries: { expire_me: 7 },
+    });
+    const state = makeState({ systems: [home], bodies: [cap], empire: player, turn: 5 });
+    // Turn 6: still present (6 < 7).
+    const t6 = reduce(state, { type: "beginRound" });
+    expect(t6.empires.find((e) => e.id === "e_player")?.storyModifiers["expire_me"]).toBeDefined();
+    // End the phase to advance cleanly, then another beginRound to
+    // hit turn 7 where expiry fires.
+    let s = t6;
+    while (s.currentPhaseEmpireId) s = reduce(s, { type: "runPhase" });
+    const t7 = reduce(s, { type: "beginRound" });
+    const player7 = t7.empires.find((e) => e.id === "e_player")!;
+    expect(player7.storyModifiers["expire_me"]).toBeUndefined();
+    expect(player7.storyModifierExpiries?.["expire_me"]).toBeUndefined();
+  });
+});
+
+describe("event conditions", () => {
+  it("turnAtLeast / foodBelow / popsAtCapitalAtLeast / featureCountAtLeast all work", async () => {
+    const { conditionMet } = await import("./events");
+    const home = makeSystem({ id: "s_home", bodyIds: ["b_cap", "b_other"], ownerId: "e_player" });
+    const cap = makeBody({ id: "b_cap", systemId: "s_home", pops: 120, features: ["brood_mother"] });
+    const other = makeBody({ id: "b_other", systemId: "s_home", pops: 10, features: ["brood_mother"] });
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: ["s_home"],
+      resources: { food: 150, energy: 500, political: 20 },
+    });
+    const state = makeState({ systems: [home], bodies: [cap, other], empire: player, turn: 42 });
+
+    expect(conditionMet(state, { kind: "turnAtLeast", value: 40 })).toBe(true);
+    expect(conditionMet(state, { kind: "turnAtLeast", value: 50 })).toBe(false);
+    expect(conditionMet(state, { kind: "foodBelow", value: 200 })).toBe(true);
+    expect(conditionMet(state, { kind: "foodBelow", value: 100 })).toBe(false);
+    expect(conditionMet(state, { kind: "popsAtCapitalAtLeast", value: 100 })).toBe(true);
+    expect(conditionMet(state, { kind: "popsAtCapitalAtLeast", value: 150 })).toBe(false);
+    expect(
+      conditionMet(state, { kind: "featureCountAtLeast", featureId: "brood_mother", value: 2 }),
+    ).toBe(true);
+    expect(
+      conditionMet(state, { kind: "featureCountAtLeast", featureId: "brood_mother", value: 3 }),
+    ).toBe(false);
+  });
+});
+
+// =====================================================================
+// Brood Mother events — smoke tests that each event's eligibility
+// gate behaves as written. We don't validate every branch's effects
+// in detail (that's covered by the individual effect tests above);
+// these just make sure the right event surfaces in the right state.
+// =====================================================================
+describe("brood mother events", () => {
+  async function broodPool(state: GameState) {
+    const { eventEligible } = await import("./events");
+    const { EVENTS } = await import("./content");
+    return EVENTS.filter((e) => e.id.startsWith("brood_") && eventEligible(state, e));
+  }
+
+  function broodState(overrides: {
+    turn?: number;
+    food?: number;
+    pops?: number;
+    flags?: string[];
+    secondBodyWithMother?: boolean;
+  }): GameState {
+    const home = makeSystem({
+      id: "s_home",
+      bodyIds: ["b_cap"],
+      ownerId: "e_player",
+    });
+    const cap = makeBody({
+      id: "b_cap",
+      systemId: "s_home",
+      pops: overrides.pops ?? 30,
+      features: ["brood_mother"],
+    });
+    const bodies: Body[] = [cap];
+    const systems: StarSystem[] = [home];
+    if (overrides.secondBodyWithMother) {
+      const other = makeSystem({ id: "s_other", bodyIds: ["b_other"], ownerId: "e_player" });
+      const otherBody = makeBody({
+        id: "b_other",
+        systemId: "s_other",
+        pops: 20,
+        features: ["brood_mother"],
+      });
+      systems.push(other);
+      bodies.push(otherBody);
+    }
+    const player = makeEmpire({
+      id: "e_player",
+      capitalBodyId: "b_cap",
+      systemIds: systems.map((s) => s.id),
+      originId: "matriarchal_hive",
+      resources: {
+        food: overrides.food ?? 1000,
+        energy: 500,
+        political: 20,
+      },
+      flags: overrides.flags ?? [],
+    });
+    return makeState({
+      systems,
+      bodies,
+      empire: player,
+      turn: overrides.turn ?? 1,
+    });
+  }
+
+  it("first_hatch gates on turn and lacks_flag", async () => {
+    expect((await broodPool(broodState({ turn: 10 }))).map((e) => e.id)).not.toContain("brood_first_hatch");
+    expect((await broodPool(broodState({ turn: 20 }))).map((e) => e.id)).toContain("brood_first_hatch");
+    expect(
+      (await broodPool(broodState({ turn: 20, flags: ["brood_first_hatch_done"] }))).map((e) => e.id),
+    ).not.toContain("brood_first_hatch");
+  });
+
+  it("drought fires only when food is low", async () => {
+    expect((await broodPool(broodState({ food: 500 }))).map((e) => e.id)).not.toContain("brood_drought");
+    expect((await broodPool(broodState({ food: 100 }))).map((e) => e.id)).toContain("brood_drought");
+  });
+
+  it("rival needs turn 50+ and 100+ pops at capital", async () => {
+    expect((await broodPool(broodState({ turn: 40, pops: 150 }))).map((e) => e.id)).not.toContain("brood_rival");
+    expect((await broodPool(broodState({ turn: 60, pops: 50 }))).map((e) => e.id)).not.toContain("brood_rival");
+    expect((await broodPool(broodState({ turn: 60, pops: 150 }))).map((e) => e.id)).toContain("brood_rival");
+  });
+
+  it("the_sacrifice requires two brood_mother features AND the resolved flag", async () => {
+    // Turn, flag, and pops set but only one feature — not eligible.
+    expect(
+      (await broodPool(broodState({
+        turn: 200,
+        pops: 200,
+        flags: ["brood_rival_resolved"],
+        secondBodyWithMother: false,
+      }))).map((e) => e.id),
+    ).not.toContain("brood_the_sacrifice");
+    // Two features but no flag — not eligible.
+    expect(
+      (await broodPool(broodState({
+        turn: 200,
+        pops: 200,
+        secondBodyWithMother: true,
+      }))).map((e) => e.id),
+    ).not.toContain("brood_the_sacrifice");
+    // Everything set — eligible.
+    expect(
+      (await broodPool(broodState({
+        turn: 200,
+        pops: 200,
+        flags: ["brood_rival_resolved"],
+        secondBodyWithMother: true,
+      }))).map((e) => e.id),
+    ).toContain("brood_the_sacrifice");
   });
 });
 

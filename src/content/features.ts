@@ -27,6 +27,20 @@ export const FEATURES: Feature[] = [
       { kind: "maxPopsDelta", value: 200 },
     ],
   },
+  {
+    id: "super_brood_mother",
+    name: "Great Matriarch",
+    description:
+      "The Brood Mother you kept. The pretender's body was folded into hers; her output tripled. The hive's entire future flows from one chamber, and the empire's fortunes with it. Rivals who expected the split to weaken you find the opposite.",
+    art: "/projects/brood_mother.png",
+    empireModifiers: [
+      { kind: "popGrowthMult", value: 0 },
+    ],
+    bodyModifiers: [
+      { kind: "popGrowthAdd", value: 3 },
+      { kind: "maxPopsDelta", value: 400 },
+    ],
+  },
 ];
 
 export function featureById(id: string): Feature | undefined {

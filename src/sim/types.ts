@@ -347,6 +347,12 @@ export interface Empire {
   capitalBodyId: string | null;
   systemIds: string[];       // Owned systems.
   storyModifiers: Record<string, Modifier[]>;
+  // Optional expiry turn per storyModifier key. When state.turn
+  // reaches or exceeds the stored value, applyBeginRound strips the
+  // bundle from storyModifiers AND the entry here. Keys without an
+  // expiry are permanent (the default). Shape is Record not Map so
+  // JSON save/load keeps working.
+  storyModifierExpiries?: Record<string, number>;
   completedProjects: string[];
   adoptedPolicies: string[];
   flags: string[];
@@ -414,7 +420,7 @@ export type PerceivedGameState = GameState & {
 };
 
 export interface GameState {
-  schemaVersion: 29;
+  schemaVersion: 30;
   turn: number;
   rngSeed: number;
   galaxy: Galaxy;
@@ -479,11 +485,44 @@ export type Condition =
   | { kind: "hasFlag"; flag: string }
   | { kind: "lacksFlag"; flag: string }
   | { kind: "minResource"; resource: ResourceKey; value: number }
-  | { kind: "originIs"; originId: string };
+  | { kind: "originIs"; originId: string }
+  | { kind: "turnAtLeast"; value: number }
+  // True when the empire has `value` or more colonised pops on its
+  // capital body. Useful for "the hive is big enough now" gates.
+  | { kind: "popsAtCapitalAtLeast"; value: number }
+  // True when the empire has `value` or more bodies carrying the
+  // given feature across its territory. Used for end-game Brood
+  // Mother events that only fire after a rival queen has been
+  // exiled into a second body.
+  | { kind: "featureCountAtLeast"; featureId: string; value: number }
+  // True when the empire's food stockpile is below `value`.
+  | { kind: "foodBelow"; value: number };
 
 export type Effect =
   | { kind: "addResource"; resource: ResourceKey; value: number }
   | { kind: "addPops"; value: number }        // Added to capital body.
   | { kind: "addFlag"; flag: string }
   | { kind: "removeFlag"; flag: string }
-  | { kind: "logText"; text: string };
+  | { kind: "logText"; text: string }
+  // Spawn frigate-class ships at the empire's capital system.
+  | { kind: "addShips"; value: number }
+  // Add stationary defenders to the capital system.
+  | { kind: "addDefenders"; value: number }
+  // Install a feature on the capital body. No-op if the feature is
+  // already installed there.
+  | { kind: "grantFeatureOnCapital"; featureId: string }
+  // Remove a feature from the capital body. No-op if absent.
+  | { kind: "removeFeatureFromCapital"; featureId: string }
+  // Spread a feature across the empire: try the capital first, then
+  // any other owned body that doesn't already have it — pick the
+  // most-populated eligible body. No-op if every owned body already
+  // has it or the empire has no other bodies.
+  | { kind: "grantFeatureOnSecondBody"; featureId: string }
+  // Install a story-modifier bundle keyed by `key`. When
+  // `durationTurns` is set, the bundle is recorded in
+  // storyModifierExpiries and automatically lifted at state.turn
+  // reaching `state.turn + durationTurns` in a later applyBeginRound.
+  // Absent duration = permanent (lifted only by an explicit lift).
+  | { kind: "grantStoryModifier"; key: string; modifiers: Modifier[]; durationTurns?: number }
+  // Explicitly remove a story-modifier bundle by key.
+  | { kind: "liftStoryModifier"; key: string };

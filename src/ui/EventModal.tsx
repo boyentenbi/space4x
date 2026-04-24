@@ -16,6 +16,21 @@ function effectLabel(effect: Effect): { text: string; sign: "pos" | "neg" | "" }
       return { text: `-flag: ${effect.flag}`, sign: "" };
     case "logText":
       return null;
+    case "addShips":
+      return { text: `+${effect.value} ship${effect.value === 1 ? "" : "s"}`, sign: "pos" };
+    case "addDefenders":
+      return { text: `+${effect.value} defender${effect.value === 1 ? "" : "s"}`, sign: "pos" };
+    case "grantFeatureOnCapital":
+    case "grantFeatureOnSecondBody":
+      return { text: `install: ${effect.featureId.replace(/_/g, " ")}`, sign: "pos" };
+    case "removeFeatureFromCapital":
+      return { text: `remove: ${effect.featureId.replace(/_/g, " ")}`, sign: "neg" };
+    case "grantStoryModifier":
+    case "liftStoryModifier":
+      // Story-modifier effects are too varied to label meaningfully
+      // in a single chip; the event text itself should describe what
+      // they do. Suppress them from the preview.
+      return null;
   }
 }
 
